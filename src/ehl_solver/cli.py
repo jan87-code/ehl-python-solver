@@ -3,7 +3,7 @@ import argparse
 
 import numpy as np
 
-from ehl_solver.backend import as_float64, make_backend
+from ehl_solver.backend import make_backend
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.hertz import circular_point_contact
 

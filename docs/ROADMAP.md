@@ -3,8 +3,8 @@
 - [x] Python packaging, GitHub CPU CI, Codex guidance and optional GPU backend
 - [x] Analytical Hertz reference and unit tests
 - [x] FFT linear convolution parity with direct CPU reference (generic kernel)
-- [ ] Half-space elasticity: singularity-aware cell-integrated DC-FFT kernel
-- [ ] Dry-contact Hertz pressure discretization / displacement benchmark
+- [x] Half-space elasticity: singularity-aware cell-integrated DC-FFT kernel
+- [x] Dry-contact Hertz pressure discretization / displacement benchmark
 - [ ] Nondimensional isoviscous-incompressible Reynolds residual and manufactured solutions
 - [ ] Cavitation with explicit model and mass conservation verification
 - [ ] Coupling of Reynolds + elasticity + film thickness + load control

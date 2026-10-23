@@ -1,6 +1,10 @@
 # Python EHL Solver — research starter
 
-**Status: engineering foundation only, NOT a complete EHL solver.** It currently includes analytical Hertz formulas, a generic tested 2-D FFT *linear* convolution utility and optional PyTorch tensor backend. The nonlinear Reynolds/film/load coupled solver is deliberately future work.
+**Status: research foundation, NOT a complete EHL solver.** It includes
+analytical Hertz formulas, tested linear convolution and elasticity, a
+prescribed-film Reynolds solver, and an experimentally scoped weak
+Reynolds-elasticity coupling. Cavitation, load balance, and a fully validated
+EHL calculation remain future work.
 
 ## Quick start (Linux Mint / Ubuntu)
 
@@ -52,6 +56,19 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `backend.py`: minimal NumPy/PyTorch backend selection; GPU is optional
 - `convolution.py`: zero-padded full linear convolution with same-shape centered output
 - `hertz.py`: independent analytical formulas using *effective plane-strain contact modulus* `E_star` (Pa)
-- `reynolds.py`: dimensionless conservative Reynolds residual; no pressure solver or cavitation model
+- `reynolds.py`: dimensionless conservative residual and prescribed-film full-film solve, with parabolic verification, physical diagnostics, and sparse direct/iterative comparison; no cavitation model
+- `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
+- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, convergence histories and accepted-iteration snapshots
+
+Run the weakly coupled benchmark and save report figures under
+`results/weak_coupling_demo/`:
+
+```bash
+python examples/run_coupled_ehl_demo.py
+```
+
+The solver does not require plotting or collect snapshots unless
+`plot_every` or `snapshot_iterations` is explicitly set. Generated
+`results/` output is ignored by Git.
 
 See `docs/PHYSICS.md`, `docs/MATLAB_LESSONS.md`, `docs/ROADMAP.md`.

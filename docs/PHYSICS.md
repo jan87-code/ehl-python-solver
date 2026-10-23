@@ -6,10 +6,18 @@ Steady, isothermal 2D point-contact EHL, extended stage-wise to pressure-depende
 ## Coordinates
 Array shape `(ny, nx)`. `x` follows lubricant entrainment; `y` is transverse. Use SI units at interfaces and explicit grid spacing `dx`, `dy`. Center odd-sized grids about x=y=0 for analytical comparisons.
 
-## Film thickness (planned)
-`h(x,y) = h0 + x²/(2 Rx) + y²/(2 Ry) + delta_elastic(x,y)` with a clearly documented sign convention. Rigid approach / reference indentation conventions must be validated before coupling.
+## Film thickness
+The prescribed-offset model uses
+`h(x,y) = h0 + x²/(2 Rx) + y²/(2 Ry) + w(x,y)`. Here `h0` is the
+dimensional central rigid-gap offset [m], not a prescribed load or an unknown
+solved by force balance. `w` is the positive gap-increasing displacement [m]
+from the existing cell-integrated half-space kernel. Thus positive pressure
+produces positive displacement and increases the film gap in this model.
+The actual minimum sampled film need not equal `h0` if the grid does not
+include the coordinate origin or if the elastic deformation varies. Rigid
+approach and reference indentation are not load-controlled.
 
-## Reynolds residual (implemented foundation)
+## Prescribed-film Reynolds solver (implemented foundation)
 For steady, incompressible, isoviscous flow, the dimensional flux is
 `q = -h**3 / (12 eta0) * grad(p) + Ue * h * e_x`, where
 `Ue = (u1 + u2) / 2` is the mean of the two surface velocities in the
@@ -26,15 +34,203 @@ entrainment speed is instead defined as `u1 + u2`, the coefficient is
 `6 eta0 (u1 + u2) L / (h_ref**2 p_ref)`; do not mix these conventions.
 
 `reynolds_residual` in `src/ehl_solver/reynolds.py` computes a conservative
-finite-volume divergence on cell-centered arrays of shape `(ny, nx)`, with x
-along entrainment and y transverse. `dx` and `dy` are dimensionless spacings;
-the output contains only interior cells, shape `(ny - 2, nx - 2)`. Face
-values of `H**3` use arithmetic interpolation. The optional dimensionless
-source `S` forms the manufactured equation
-`div(H**3 grad(P)) - Lambda * dH/dX - S = 0`; it is for discretization tests.
-The routine does not impose boundary conditions or solve for pressure. This
-validated residual does not implement cavitation, coupling, or load control
-and is not a complete Reynolds or EHL solver.
+finite-volume divergence on uniform grid arrays of shape `(ny, nx)`, with x
+along entrainment and y transverse. The edge entries represent boundary
+nodes, and the residual is returned only for the `(ny - 2, nx - 2)` interior
+control volumes. `dx` and `dy` are dimensionless spacings. Face values of
+`H**3` use arithmetic interpolation.
+
+`assemble_reynolds_system` assembles the same interior stencil as a float64
+SciPy sparse system. The edge nodes are fixed at homogeneous Dirichlet
+pressure `P = 0`, and only interior pressures are unknown; no other boundary
+condition is implied. The operator is `-div(H**3 grad(P))`, positive definite
+for positive prescribed `H` and these Dirichlet edges. The source-free right
+hand side is `-Lambda*dH/dX`. `solve_reynolds_pressure` uses conjugate
+gradients with configurable relative and absolute linear-system tolerances.
+It reports the algebraic residual of the assembled system separately from a
+global discrete flux-balance error computed from the net boundary flux and
+integrated source. Nonconvergence raises an error.
+
+The source-free regression wedge uses `H(X) = 1.4 - 0.4 X` over a unit
+rectangular domain with `Lambda = 2`. It checks positive interior pressure,
+transverse symmetry, zero edge pressure, small algebraic residual, and global
+boundary-flux balance. This is a numerical verification case, not a
+calibrated experimental benchmark.
+
+`solve_reynolds_pressure` is a full-film solve: pressure values, including
+negative values, are returned without clipping. Negative pressures indicate
+that the unconstrained full-film assumption may not be physically valid in
+that region; they are not corrected by this solver. Optional dimensionless
+source `S` gives `div(H**3 grad(P)) - Lambda*dH/dX - S = 0` for manufactured
+solution verification and is not an additional physical model. The solver
+assumes a prescribed, strictly positive film, uniform grid spacings, steady
+flow, constant viscosity and density, and homogeneous pressure on all domain
+edges. It does not implement cavitation, elasticity, film coupling, load
+control, or pressure-dependent properties; it is not a complete EHL solver.
+
+## Prescribed-offset Reynolds-elasticity coupling
+`solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples
+the prescribed rigid geometry to the independently validated Reynolds solver
+and cell-integrated elastic kernel. Its public geometry and material inputs
+are SI: coordinate vectors `x_m`, `y_m` [m], central rigid-gap offset `h0`
+[m], radii [m], effective modulus `E*` [Pa], and dimensional reference
+scales `L`, `h_ref` [m] and `p_ref` [Pa]. Coordinates must be uniformly
+spaced, strictly ascending 1-D arrays. Internal pressure, film, and grid
+spacing passed to the Reynolds solver are `P=p/p_ref`, `H=h/h_ref`,
+`dx=delta_x/L`, and `dy=delta_y/L`. The dimensionless speed parameter
+`Lambda=12*eta0*Ue*L/(h_ref**2*p_ref)` is passed by the caller, with
+`Ue=(u1+u2)/2`.
+
+The coupled gap is the reference rigid paraboloid plus the elastic
+displacement: `h=h0+x**2/(2*Rx)+y**2/(2*Ry)+gamma*w`. The elasticity routine
+receives pressure `P*p_ref` [Pa], dimensional cell widths [m], and `E*`
+[Pa], returning `w` [m]. Its kernel represents the integral of `1/r`
+divided by `pi*E*`; linear FFT convolution is zero-padded rather than
+circular. The displacement is interpreted as positive gap increase; it is
+not subtracted from the film. The dimensionless continuation factor gamma
+multiplies compliance only as a numerical continuation device and reaches
+one by default. `continuation_factors=(0.0,)` isolates the exact zero
+compliance limit for comparison to the prescribed-film solver.
+
+At each outer iteration, conjugate gradients solve the Reynolds equation on
+the current film, pressure is relaxed toward that solution, and the elastic
+gap is recomputed from the relaxed dimensional pressure. The film update is
+also explicitly relaxed. Convergence requires all three independent
+criteria: relative RMS pressure update, relative RMS film update, and the
+Reynolds residual normalized by the RMS diffusion and entrainment terms.
+The Reynolds residual is recomputed on the updated pressure and film. The
+history records these metrics, minimum film, pressure extrema, compliance
+stage, and inner linear iteration count. The standard logger emits progress
+at the configured `log_every` interval. A non-finite or nonpositive proposed
+film is rejected; it is never clamped.
+
+### Weak-coupling verification and limits
+The reproducible CPU regression case uses the parabolic geometry and
+low-pressure scaling above (`p_ref=21.25 kPa`, `Lambda=12`) on a
+17 x 13 grid with `x=[-0.5, 0.75] mm`, `y=[-0.5, 0.5] mm`. `E*=100 MPa`
+is an intentionally compliant numerical benchmark material chosen to make
+the small elastic feedback measurable at low pressure; it is not a
+representative metal contact modulus. With pressure and film relaxation
+0.6, default continuation factors `(0, 0.25, 0.5, 0.75, 1)`, and tolerances
+`1e-6`, `1e-6`, `1e-8` for pressure update, film update, and relative Reynolds
+residual respectively, the measured stage histories were:
+
+| Compliance factor | Outer iterations | Final relative pressure update | Final relative film update | Final relative Reynolds residual |
+|---:|---:|---:|---:|---:|
+| 0.00 | 20 | 1.65e-8 | 0 | 5.50e-9 |
+| 0.25 | 16 | 2.55e-8 | 1.58e-10 | 5.27e-9 |
+| 0.50 | 16 | 2.57e-8 | 1.52e-10 | 5.26e-9 |
+| 0.75 | 16 | 2.59e-8 | 1.52e-10 | 5.26e-9 |
+| 1.00 | 16 | 2.62e-8 | 1.59e-10 | 5.29e-9 |
+
+The final minimum gap was `20.0297 um`; peak absolute elastic displacement
+was `70.5 nm`. Pressure ranged from approximately `-13.99 kPa` to
+`7.94 kPa`. These observations show convergence of this weak-compliance
+fixed-point test, not validation at realistic EHL loads or modulus. The
+zero-compliance test compares the pressure field to the existing
+prescribed-film solve. Relaxation-setting tests verify convergence to the
+same pressure within their nonlinear tolerances.
+
+This remains an unconstrained, stationary, isoviscous, incompressible
+full-film calculation with homogeneous zero-pressure boundary conditions.
+Negative pressures are retained and indicate that the full-film assumptions
+are not physically valid there; no cavitation or mass-conserving rupture
+model is included. There is no prescribed-load controller or load balance:
+`h0` is fixed, and integrated pressure is not forced to match an applied
+load. Grid/domain boundary sensitivity, realistic strong-coupling
+continuation, and load closure remain unvalidated. A test with excessive
+compliance confirms nonpositive film iterates raise an error rather than
+being modified.
+
+## Coupled visualization
+`src/ehl_solver/visualization.py` is independent of the numerical iteration
+and plots dimensional pressure [MPa], film thickness [um], central
+entrainment-direction sections, transverse sections, and nonlinear history.
+Section requests use linear interpolation between nodes and reject
+coordinates outside the domain. Film maps mark the sampled minimum and its
+coordinate. Pressure color scales include both signs; negative full-film
+pressure is displayed rather than clipped.
+
+The coupled solver collects no snapshots by default. `plot_every=N` requests
+a copied pressure [Pa] and film [m] snapshot at every Nth accepted global
+outer iteration. `snapshot_iterations=(...)` requests selected one-based
+global accepted iterations; both selectors may be used together. Invalid
+film proposals fail before snapshot collection. The report writer creates
+`results/<case_name>/` and saves pressure/film maps, x- and y-directed
+sections, convergence history, and paired pressure/film snapshots as PNGs.
+These generated results are excluded from version control. The complete demo
+is `examples/run_coupled_ehl_demo.py`.
+
+### Parabolic point-contact verification
+`parabolic_point_contact_film` provides the prescribed rigid geometry
+`h = h_min + x**2/(2 Rx) + y**2/(2 Ry)` in SI metres; it adds no elastic
+deformation. The verification case uses `h_min = 20 um`, `Rx = 10 mm`,
+`Ry = 20 mm`, `eta0 = 0.04 Pa s`, surface speeds `u1 = 0.85 m/s` and
+`u2 = 0 m/s`, so `Ue = 0.425 m/s`. With `L = 0.5 mm`,
+`h_ref = 20 um`, and `p_ref = eta0*Ue*L/h_ref**2 = 21.25 kPa`, the
+`dimensionless_reynolds_parameter` utility returns `Lambda = 12`. This also
+checks equivalence of `12*eta0*((u1+u2)/2)*L/(h_ref**2*p_ref)` and
+`6*eta0*(u1+u2)*L/(h_ref**2*p_ref)`; using the sum speed in the first formula
+would double the correct coefficient.
+
+The default grid-convergence case covers `x = [-2, 1.5] mm` and
+`y = [-1.5, 1.5] mm`, with homogeneous Dirichlet pressure on the rectangular
+edges. It has asymmetric x extents so the signed integral does not cancel by
+symmetry. On the development CPU, the following values were measured:
+
+| Grid `(ny, nx)` | Maximum pressure [Pa] | Signed pressure integral [N] | RMS `P` change on shared nodes |
+|---|---:|---:|---:|
+| 33 x 33 | 24,405 | 0.0052909 | — |
+| 65 x 65 | 24,671 | 0.0053056 | 0.00378 |
+| 97 x 97 | 24,720 | 0.0053083 | 0.000710 |
+
+The decreasing successive changes demonstrate spatial convergence for this
+specific prescribed geometry and domain; they are not an EHL reference
+solution. Pressure is negative in parts of the full-film solution. The signed
+integral retains those negative values and is not a physically corrected
+load.
+
+The domain study uses symmetric x extents from `[-1, 1] mm` through
+`[-4, 4] mm`, with a fixed `0.05 mm` x spacing and fixed `y = [-1.5, 1.5] mm`.
+The maximum pressure changes from approximately `19.68 kPa` at a `2 mm`
+streamwise domain to `25.13 kPa` at an `8 mm` domain. The change from the
+`6 mm` to `8 mm` domain is below 1% of the latter maximum, but the results
+show that pressure remains sensitive to nearby zero-pressure boundaries.
+For this symmetric geometry/domain, the unconstrained pressure is odd in x
+and the signed integrated load is approximately zero; that cancellation is
+not evidence of a physical zero contact load.
+
+`reynolds_diagnostics` reports dimensional pressure extrema and trapezoidal
+signed load, the relative algebraic L2 residual `||A p - b||2/||b||2`, the
+maximum absolute and locally normalized control-volume flux imbalance, and
+each integrated outward boundary flux. Boundary and local fluxes are
+dimensionless integrals of `q = -H**3 grad(P) + Lambda*H*e_x`. For the
+source-free solved cases, their net boundary flux should balance to solver
+tolerance. Local balances are independent measurements from the global sum.
+For the 33 x 33 asymmetric parabolic case, a representative run reported
+relative algebraic residual `7.3e-11`, maximum relative local imbalance
+`4.0e-11`, maximum absolute local balance `4.1e-10`, and net boundary flux
+`2.4e-9` (dimensionless integrated-flux units).
+
+`compare_reynolds_linear_solvers` times SciPy `spsolve` and unpreconditioned
+conjugate gradients on the same assembled float64 system; it reports each
+elapsed solve time and relative algebraic residual. One representative
+development run gave:
+
+| Grid `(ny, nx)` | Direct time [s] | Direct relative residual | CG time [s] | CG relative residual |
+|---|---:|---:|---:|---:|
+| 33 x 33 | 0.036 | 6.9e-15 | 0.380 | 9.7e-10 |
+| 65 x 65 | 0.051 | 2.8e-14 | 0.987 | 8.3e-10 |
+
+These single-run timings are machine- and load-dependent, not performance
+guarantees. The benchmark timer excludes matrix assembly and includes the CG
+iteration callback. The direct solver is a useful reference and can be faster
+on these small systems; its memory and factorization costs grow quickly.
+Unpreconditioned CG uses less factorization memory but converges slowly as the
+grid is refined. Use `rtol=1e-10` (or tighter when verifying) and an explicit
+`atol` for near-zero right-hand sides; check reported residuals rather than
+relying on SciPy's status alone. For larger grids, a tested preconditioner or
+iterative method study is still needed before recommending a solver.
 
 ## Elastic deformation
 For combined elastic half-spaces, the normal displacement is
@@ -62,10 +258,16 @@ does not constitute a coupled EHL solver.
 1. Hertz contact radius and peak pressure with known analytical values.
 2. FFT convolution against direct loops, including corners and non-square arrays.
 3. Cell-integrated kernel tests, direct-convolution parity, and Hertz center-displacement grid refinement.
-4. Reynolds manufactured residual convergence (validated); full pressure
-   solution, boundary-condition, mass-conservation and mesh-independence
-   benchmarks remain planned.
-5. Coupled load closure, positivity, residual decay, grid/domain studies (planned).
+4. Reynolds manufactured residual and prescribed-film pressure convergence,
+   homogeneous Dirichlet boundary conditions, sparse-system consistency,
+   parabolic point-contact spatial/domain studies, local/global flux balance,
+   positive-film SPD checks, and direct-versus-iterative comparisons
+   (validated). Other boundary conditions and cavitation mass-conservation
+   verification remain planned.
+5. Prescribed-offset weak Reynolds-elasticity fixed-point convergence and
+   zero-compliance limit (validated only for the documented low-pressure
+   numerical benchmark). Strong coupling, coupled grid/domain studies, and
+   load closure remain planned.
 6. Reference film-thickness cases and GPU double precision parity (planned).
 
 ## Computational strategy

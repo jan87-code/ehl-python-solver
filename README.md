@@ -52,5 +52,6 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `backend.py`: minimal NumPy/PyTorch backend selection; GPU is optional
 - `convolution.py`: zero-padded full linear convolution with same-shape centered output
 - `hertz.py`: independent analytical formulas using *effective plane-strain contact modulus* `E_star` (Pa)
+- `reynolds.py`: dimensionless conservative Reynolds residual; no pressure solver or cavitation model
 
 See `docs/PHYSICS.md`, `docs/MATLAB_LESSONS.md`, `docs/ROADMAP.md`.

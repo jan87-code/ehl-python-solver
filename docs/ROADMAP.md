@@ -5,7 +5,7 @@
 - [x] FFT linear convolution parity with direct CPU reference (generic kernel)
 - [x] Half-space elasticity: singularity-aware cell-integrated DC-FFT kernel
 - [x] Dry-contact Hertz pressure discretization / displacement benchmark
-- [ ] Nondimensional isoviscous-incompressible Reynolds residual and manufactured solutions
+- [x] Nondimensional isoviscous-incompressible Reynolds residual and manufactured solutions
 - [ ] Cavitation with explicit model and mass conservation verification
 - [ ] Coupling of Reynolds + elasticity + film thickness + load control
 - [ ] Stable continuation/load stepping and convergence / energy diagnostics

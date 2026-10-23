@@ -1,6 +1,14 @@
-
-# Local Python virtual environment
+# Python virtual environments
 .venv/
+venv/
 
-# Local Python virtual environment
-.venv/
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Python packaging
+*.egg-info/
+build/
+dist/

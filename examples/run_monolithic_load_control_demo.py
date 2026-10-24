@@ -1,0 +1,333 @@
+"""Compare signed full-film load-control solvers on the weak-coupling case."""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+import numpy as np
+from scipy.integrate import trapezoid
+
+from ehl_solver.coupled import solve_coupled_reynolds_elasticity
+from ehl_solver.load_control import solve_full_film_at_load
+from ehl_solver.monolithic import (
+    BorderedReynoldsElasticityProblem,
+    continue_monolithic_load,
+    solve_monolithic_full_film_load,
+)
+from ehl_solver.reynolds import (
+    dimensionless_reynolds_parameter,
+    reynolds_residual,
+    solve_reynolds_pressure,
+)
+from ehl_solver.visualization import save_monolithic_figures
+
+VISCOSITY_PA_S = 0.04
+SURFACE_SPEED_M_S = 0.85
+LENGTH_SCALE_M = 5e-4
+FILM_SCALE_M = 20e-6
+PRESSURE_SCALE_PA = (
+    VISCOSITY_PA_S
+    * SURFACE_SPEED_M_S
+    * 0.5
+    * LENGTH_SCALE_M
+    / FILM_SCALE_M**2
+)
+REYNOLDS_PARAMETER = dimensionless_reynolds_parameter(
+    VISCOSITY_PA_S,
+    SURFACE_SPEED_M_S,
+    0.0,
+    LENGTH_SCALE_M,
+    FILM_SCALE_M,
+    PRESSURE_SCALE_PA,
+)
+RADIUS_X_M = 0.01
+RADIUS_Y_M = 0.02
+E_STAR_PA = 1e8
+
+
+def _integrated_load(pressure_pa: np.ndarray, x_m: np.ndarray, y_m: np.ndarray) -> float:
+    return float(trapezoid(trapezoid(pressure_pa, x_m, axis=1), y_m))
+
+
+def _prescribed_pressure(
+    x_m: np.ndarray, y_m: np.ndarray, h0_m: float
+) -> np.ndarray:
+    xx, yy = np.meshgrid(x_m, y_m, indexing="xy")
+    film = (
+        h0_m + xx**2 / (2.0 * RADIUS_X_M) + yy**2 / (2.0 * RADIUS_Y_M)
+    ) / FILM_SCALE_M
+    return solve_reynolds_pressure(
+        film,
+        (x_m[1] - x_m[0]) / LENGTH_SCALE_M,
+        (y_m[1] - y_m[0]) / LENGTH_SCALE_M,
+        REYNOLDS_PARAMETER,
+        rtol=1e-12,
+        atol=1e-14,
+    ).pressure
+
+
+def _elapsed(function):
+    start = time.perf_counter()
+    result = function()
+    return result, time.perf_counter() - start
+
+
+def main() -> None:
+    x_m = np.linspace(-0.5e-3, 0.75e-3, 17)
+    y_m = np.linspace(-0.5e-3, 0.5e-3, 13)
+    coupling_options = {
+        "pressure_relaxation": 0.6,
+        "film_relaxation": 0.6,
+        "pressure_tolerance": 1e-6,
+        "film_tolerance": 1e-6,
+        "reynolds_tolerance": 1e-8,
+        "inner_rtol": 1e-10,
+        "inner_atol": 1e-12,
+        "log_every": 1000,
+    }
+
+    reference, reference_seconds = _elapsed(
+        lambda: solve_coupled_reynolds_elasticity(
+            x_m,
+            y_m,
+            FILM_SCALE_M,
+            RADIUS_X_M,
+            RADIUS_Y_M,
+            E_STAR_PA,
+            LENGTH_SCALE_M,
+            FILM_SCALE_M,
+            PRESSURE_SCALE_PA,
+            REYNOLDS_PARAMETER,
+            **coupling_options,
+        )
+    )
+    target_load_n = _integrated_load(reference.pressure_pa, x_m, y_m)
+
+    initial_pressure = _prescribed_pressure(x_m, y_m, 18e-6)
+    problem = BorderedReynoldsElasticityProblem(
+        x_m,
+        y_m,
+        RADIUS_X_M,
+        RADIUS_Y_M,
+        E_STAR_PA,
+        LENGTH_SCALE_M,
+        FILM_SCALE_M,
+        PRESSURE_SCALE_PA,
+        REYNOLDS_PARAMETER,
+        target_load_n,
+        reynolds_residual_scale=100.0,
+        krylov_rtol=1e-8,
+        krylov_max_iterations=300,
+    )
+    monolithic, monolithic_seconds = _elapsed(
+        lambda: solve_monolithic_full_film_load(
+            problem,
+            initial_pressure,
+            18e-6,
+            reynolds_tolerance=1e-7,
+            load_tolerance=1e-7,
+        )
+    )
+    moderate_problem = BorderedReynoldsElasticityProblem(
+        x_m,
+        y_m,
+        RADIUS_X_M,
+        RADIUS_Y_M,
+        1e7,
+        LENGTH_SCALE_M,
+        FILM_SCALE_M,
+        PRESSURE_SCALE_PA,
+        REYNOLDS_PARAMETER,
+        target_load_n,
+        reynolds_residual_scale=100.0,
+        krylov_rtol=1e-8,
+        krylov_max_iterations=300,
+    )
+    moderate, moderate_seconds = _elapsed(
+        lambda: solve_monolithic_full_film_load(
+            moderate_problem,
+            initial_pressure,
+            18e-6,
+            reynolds_tolerance=1e-7,
+            load_tolerance=1e-7,
+        )
+    )
+
+    nested, nested_seconds = _elapsed(
+        lambda: solve_full_film_at_load(
+            x_m,
+            y_m,
+            target_load_n,
+            RADIUS_X_M,
+            RADIUS_Y_M,
+            E_STAR_PA,
+            LENGTH_SCALE_M,
+            FILM_SCALE_M,
+            PRESSURE_SCALE_PA,
+            REYNOLDS_PARAMETER,
+            h0_bracket_m=(15e-6, 25e-6),
+            load_tolerance=1e-6,
+            h0_tolerance_m=1e-12,
+            coupling_options=coupling_options,
+        )
+    )
+
+    continuation, continuation_seconds = _elapsed(
+        lambda: continue_monolithic_load(
+            problem,
+            monolithic,
+            target_load_n * 0.8,
+            initial_step_fraction=0.5,
+            minimum_step_fraction=1e-3,
+            maximum_step_fraction=0.5,
+            newton_options={
+                "reynolds_tolerance": 1e-7,
+                "load_tolerance": 1e-7,
+            },
+        )
+    )
+
+    comparison = (
+        (
+            "Picard at prescribed h0",
+            reference.pressure_pa,
+            reference.film_thickness_m,
+            reference.elastic_displacement_m,
+            target_load_n,
+            target_load_n,
+            reference_seconds,
+            len(reference.history),
+            sum(entry.linear_iterations for entry in reference.history),
+        ),
+        (
+            "Nested h0 load controller",
+            nested.coupled_solution.pressure_pa,
+            nested.coupled_solution.film_thickness_m,
+            nested.coupled_solution.elastic_displacement_m,
+            nested.calculated_signed_load_n,
+            target_load_n,
+            nested_seconds,
+            sum(item.nonlinear_iterations for item in nested.evaluations),
+            len(nested.evaluations),
+        ),
+        (
+            "Bordered Newton",
+            monolithic.pressure_pa,
+            monolithic.film_thickness_m,
+            monolithic.elastic_displacement_m,
+            monolithic.calculated_load_n,
+            target_load_n,
+            monolithic_seconds,
+            len(monolithic.history),
+            monolithic.operator_evaluations,
+        ),
+        (
+            "Bordered Newton (E*=10 MPa)",
+            moderate.pressure_pa,
+            moderate.film_thickness_m,
+            moderate.elastic_displacement_m,
+            moderate.calculated_load_n,
+            target_load_n,
+            moderate_seconds,
+            len(moderate.history),
+            moderate.operator_evaluations,
+        ),
+    )
+    print("Signed full-film mathematical verification only; negative pressure retained.")
+    print(f"Reference target signed load: {target_load_n:.9e} N")
+    print(
+        "method | relative pressure L2 | film RMS difference [m] | "
+        "peak |w| [m] | scaled Reynolds RMS | load residual [N] | "
+        "nonlinear work | reported solver work | wall time [s]"
+    )
+    for (
+        name,
+        pressure_pa,
+        film_m,
+        displacement_m,
+        calculated_load_n,
+        expected_load_n,
+        elapsed,
+        iterations,
+        work_count,
+    ) in comparison:
+        pressure_difference = pressure_pa - reference.pressure_pa
+        relative_pressure = float(
+            np.linalg.norm(pressure_difference)
+            / max(np.linalg.norm(reference.pressure_pa), np.finfo(float).tiny)
+        )
+        film_rms = float(np.sqrt(np.mean((film_m - reference.film_thickness_m) ** 2)))
+        dimensionless_residual = reynolds_residual(
+            pressure_pa / PRESSURE_SCALE_PA,
+            film_m / FILM_SCALE_M,
+            (x_m[1] - x_m[0]) / LENGTH_SCALE_M,
+            (y_m[1] - y_m[0]) / LENGTH_SCALE_M,
+            REYNOLDS_PARAMETER,
+        )
+        scaled_reynolds_rms = (
+            np.linalg.norm(dimensionless_residual)
+            / np.sqrt(problem.pressure_size)
+            / problem.reynolds_residual_scale
+        )
+        print(
+            f"{name} | {relative_pressure:.3e} | {film_rms:.3e} | "
+            f"{np.max(np.abs(displacement_m)):.3e} | {scaled_reynolds_rms:.3e} | "
+            f"{calculated_load_n - expected_load_n:.3e} | {iterations} | "
+            f"{work_count} | {elapsed:.3f}"
+        )
+
+    final_reynolds = reynolds_residual(
+        monolithic.pressure_dimensionless,
+        monolithic.film_thickness_m / FILM_SCALE_M,
+        (x_m[1] - x_m[0]) / LENGTH_SCALE_M,
+        (y_m[1] - y_m[0]) / LENGTH_SCALE_M,
+        REYNOLDS_PARAMETER,
+    )
+    print(
+        f"Bordered Newton final: h0={monolithic.central_film_offset_m * 1e6:.9f} µm; "
+        f"p=[{monolithic.pressure_pa.min():.6e}, "
+        f"{monolithic.pressure_pa.max():.6e}] Pa; "
+        f"h_min={monolithic.film_thickness_m.min() * 1e6:.9f} µm; "
+        f"independent Reynolds RMS="
+        f"{np.linalg.norm(final_reynolds) / np.sqrt(problem.pressure_size):.6e}; "
+        f"load residual={monolithic.load_residual_n:.6e} N; "
+        f"residual evaluations={monolithic.operator_evaluations}"
+    )
+    print("Newton iteration history (residual at state before accepted correction):")
+    for iteration in monolithic.history:
+        print(
+            f"  {iteration.iteration}: R_P={iteration.reynolds_residual_scaled:.3e}; "
+            f"R_Q={iteration.load_residual_n:.3e} N; "
+            f"alpha_feasible={iteration.feasible_step_limit:.3e}; "
+            f"alpha={iteration.accepted_step_length:.3e}; "
+            f"rejected={iteration.rejected_line_search_trials}; "
+            f"GMRES={iteration.krylov_iterations}; "
+            f"GMRES-relres={iteration.krylov_residual_relative:.3e}; "
+            f"Schur-scale={iteration.schur_condition_indicator:.3e}"
+        )
+
+    output = Path("results/monolithic_signed_load_demo")
+    paths = save_monolithic_figures(
+        x_m,
+        y_m,
+        continuation.solution,
+        case_name=output.name,
+        results_directory=output.parent,
+        continuation=continuation,
+    )
+    print(f"Load-continuation wall time: {continuation_seconds:.3f} s")
+    print("Continuation attempts:")
+    for step in continuation.steps:
+        print(
+            f"  {step.attempt}: {'accepted' if step.accepted else 'rejected'} "
+            f"load={step.target_load_n:.9e} N; "
+            f"{step.newton_iterations} Newton iterations; {step.reason}"
+        )
+    print("Generated figures:")
+    for path in paths:
+        print(f"  {path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -6,9 +6,10 @@ prescribed-film Reynolds solver, an independent prescribed-film
 mass-conserving cavitation prototype, and an experimentally scoped weak
 full-film Reynolds-elasticity coupling. Strongly coupled cavitation, load
 physical equilibrium, and a fully validated EHL calculation remain future
-work. A bracketed root finder exists for signed full-film load closure, but
-it is a mathematical verification tool and can include negative-pressure
-tensile contributions.
+work. A nested root finder and a matrix-free bordered Newton solver exist for
+signed full-film load closure, but these are mathematical verification
+tools: the formulation can include negative-pressure tensile contributions
+and is not a physically validated load-controlled EHL model.
 
 ## Quick start (Linux Mint / Ubuntu)
 
@@ -63,8 +64,9 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `reynolds.py`: dimensionless conservative residual and prescribed-film full-film solve, with parabolic verification, physical diagnostics, and sparse direct/iterative comparison; no cavitation model
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with mass-conservation and complementarity diagnostics; not yet coupled to elasticity or load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
-- `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only, not physical load control
-- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, convergence histories and accepted-iteration snapshots
+- `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only
+- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve, Schur/GMRES corrections, dual line search and adaptive signed-load continuation; weak numerical benchmark only
+- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/continuation histories and accepted-iteration snapshots
 
 Run the weakly coupled benchmark and save report figures under
 `results/weak_coupling_demo/`:
@@ -72,6 +74,19 @@ Run the weakly coupled benchmark and save report figures under
 ```bash
 python examples/run_coupled_ehl_demo.py
 ```
+
+Compare the Picard, nested load-control and monolithic Newton formulations,
+run adaptive load continuation, and generate Newton/load-history PNGs with:
+
+```bash
+python examples/run_monolithic_load_control_demo.py
+```
+
+The monolithic example and its regression tests establish only mathematical
+signed full-film convergence on the documented weak-coupling case. Negative
+pressure remains in the equations; cavitation, physical load validation,
+moderate/strong coupling and realistic branch continuation are not yet
+validated.
 
 The solver does not require plotting or collect snapshots unless
 `plot_every` or `snapshot_iterations` is explicitly set. Generated

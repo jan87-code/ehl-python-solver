@@ -14,11 +14,16 @@
     regressions exist in `src/ehl_solver/cavitation.py`; physical benchmark,
     front-continuity, starvation, and coupled verification remain incomplete.
 - [ ] Coupling of Reynolds + elasticity + film thickness + physical load control
-  - A signed full-film h0 root finder exists for mathematical verification
-    only; robust adaptive nonlinear coupling, load stepping, warm starts,
-    positive-pressure/cavitation physics, and physical load validation remain
-    incomplete.
+  - A signed full-film h0 root finder and bordered Newton-Krylov solver with
+    dual line search/adaptive load stepping now converge on the documented
+    weak numerical benchmark. This is mathematical verification only:
+    moderate/strong coupling, arbitrary load branches, cavitation, and
+    physical load validation remain incomplete.
 - [ ] Stable continuation/load stepping and convergence / energy diagnostics
+  - Adaptive Newton load steps, retry records, and Newton/continuation plots
+    are implemented, but verified only over a short weak-coupling signed-load
+    sequence; broad continuation robustness and energy diagnostics remain
+    unfinished.
 - [ ] Density- and pressure-dependent viscosity
 - [ ] Shear thinning and thermal EHL when isothermal validation passes
 - [ ] Optional CUDA / ROCm benchmarks, parity tests and profiling

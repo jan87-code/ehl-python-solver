@@ -16,6 +16,11 @@ from scipy.interpolate import RegularGridInterpolator
 if TYPE_CHECKING:
     from ehl_solver.coupled import CoupledReynoldsSolution, CoupledSnapshot
     from ehl_solver.load_control import FullFilmLoadSolution
+    from ehl_solver.monolithic import (
+        MonolithicIteration,
+        MonolithicLoadContinuation,
+        MonolithicLoadSolution,
+    )
 
 
 def _validated_plot_fields(
@@ -393,6 +398,230 @@ def save_coupled_figures(
                 f"snapshot_iter_{snapshot.global_iteration:04d}_"
                 f"gamma_{snapshot.compliance_factor:.2f}.png",
                 plot_snapshot(x, y, snapshot)[0],
+            )
+        )
+    paths: list[Path] = []
+    for filename, figure in figures:
+        path = output / filename
+        figure.savefig(path, dpi=160)
+        plt.close(figure)
+        paths.append(path)
+    return tuple(paths)
+
+
+def plot_monolithic_newton_history(
+    history: tuple[MonolithicIteration, ...],
+    *,
+    failure_diagnostics: dict[str, float | int | str] | None = None,
+) -> tuple[Figure, NDArray[Any]]:
+    """Plot Newton residuals, globalization, Krylov work and Schur diagnostics."""
+    if not history:
+        raise ValueError("history must contain at least one Newton iteration")
+    iterations = np.asarray([entry.iteration for entry in history])
+    fig, axes = plt.subplots(4, 1, figsize=(10, 12), constrained_layout=True)
+    axes[0].semilogy(
+        iterations,
+        [
+            max(abs(entry.reynolds_residual_scaled), 1e-16)
+            for entry in history
+        ],
+        "o-",
+        label="Scaled Reynolds residual",
+    )
+    axes[0].semilogy(
+        iterations,
+        [max(abs(entry.load_residual_scaled), 1e-16) for entry in history],
+        "s-",
+        label="Scaled load residual",
+    )
+    axes[0].set_ylabel("Scaled residual")
+    axes[0].legend()
+    axes[0].grid(True, which="both", alpha=0.25)
+    load_axis = axes[0].twinx()
+    load_axis.semilogy(
+        iterations,
+        [max(abs(entry.load_residual_n), 1e-30) for entry in history],
+        "^:",
+        color="tab:purple",
+        label="Load residual [N]",
+    )
+    load_axis.set_ylabel("Absolute load residual [N]")
+
+    axes[1].plot(
+        iterations,
+        [entry.feasible_step_limit for entry in history],
+        "o-",
+        label="Feasible step limit",
+    )
+    axes[1].plot(
+        iterations,
+        [entry.accepted_step_length for entry in history],
+        "s-",
+        label="Accepted step length",
+    )
+    axes[1].set_ylabel("Newton step length")
+    axes[1].set_ylim(bottom=0.0)
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.25)
+
+    axes[2].step(
+        iterations,
+        [entry.krylov_iterations for entry in history],
+        where="mid",
+        label="Krylov iterations",
+    )
+    axes[2].set_ylabel("Krylov iterations")
+    schur_axis = axes[2].twinx()
+    schur_axis.semilogy(
+        iterations,
+        [
+            max(entry.schur_condition_indicator, np.finfo(float).tiny)
+            for entry in history
+        ],
+        "d--",
+        color="tab:orange",
+        label="Schur scale indicator",
+    )
+    schur_axis.set_ylabel("Schur scale indicator")
+    axes[2].grid(True, alpha=0.25)
+
+    axes[3].plot(
+        iterations,
+        [entry.minimum_film_thickness_m * 1e6 for entry in history],
+        "o-",
+        label="Minimum film [µm]",
+    )
+    pressure_axis = axes[3].twinx()
+    pressure_axis.plot(
+        iterations,
+        [entry.maximum_pressure_pa / 1e6 for entry in history],
+        "s--",
+        color="tab:red",
+        label="Maximum pressure [MPa]",
+    )
+    axes[3].set_ylabel("Minimum film [µm]")
+    pressure_axis.set_ylabel("Maximum pressure [MPa]")
+    axes[3].set_xlabel("Newton iteration")
+    axes[3].grid(True, alpha=0.25)
+    if failure_diagnostics:
+        diagnostic_text = "\n".join(
+            f"{key}: {value}"
+            for key, value in failure_diagnostics.items()
+        )
+        fig.suptitle(
+            "Monolithic Newton history (failed: "
+            f"{failure_diagnostics.get('iteration', 'unknown')} iteration diagnostic)"
+        )
+        axes[0].text(
+            0.01,
+            0.02,
+            diagnostic_text,
+            transform=axes[0].transAxes,
+            va="bottom",
+            fontsize="small",
+        )
+    else:
+        fig.suptitle("Monolithic Newton convergence history")
+    return fig, axes
+
+
+def plot_monolithic_continuation_history(
+    continuation: MonolithicLoadContinuation,
+) -> tuple[Figure, NDArray[Any]]:
+    """Plot attempted load steps and accepted h0/minimum-film branches."""
+    steps = tuple(continuation.steps)
+    if not steps:
+        raise ValueError("continuation must contain at least one attempted load step")
+    attempts = np.asarray([step.attempt for step in steps])
+    loads = np.asarray([step.target_load_n for step in steps])
+    accepted = np.asarray([step.accepted for step in steps], dtype=bool)
+    fig, axes = plt.subplots(3, 1, figsize=(9, 10), constrained_layout=True)
+    axes[0].plot(
+        attempts[accepted],
+        loads[accepted],
+        "o-",
+        color="tab:green",
+        label="Accepted load",
+    )
+    axes[0].scatter(
+        attempts[~accepted],
+        loads[~accepted],
+        marker="x",
+        color="tab:red",
+        label="Rejected load",
+        zorder=3,
+    )
+    axes[0].set_xlabel("Continuation attempt")
+    axes[0].set_ylabel("Target signed load [N]")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.25)
+
+    axes[1].plot(
+        loads[accepted],
+        [step.central_film_offset_m * 1e6 for step in steps if step.accepted],
+        "o-",
+        color="tab:blue",
+    )
+    axes[1].set_xlabel("Target signed load [N]")
+    axes[1].set_ylabel("Central film offset h0 [µm]")
+    axes[1].grid(True, alpha=0.25)
+
+    axes[2].plot(
+        loads[accepted],
+        [step.minimum_film_thickness_m * 1e6 for step in steps if step.accepted],
+        "o-",
+        color="tab:purple",
+    )
+    axes[2].set_xlabel("Target signed load [N]")
+    axes[2].set_ylabel("Minimum film thickness [µm]")
+    axes[2].grid(True, alpha=0.25)
+    fig.suptitle("Adaptive signed-load continuation history")
+    return fig, axes
+
+
+def save_monolithic_figures(
+    x_m: ArrayLike,
+    y_m: ArrayLike,
+    solution: MonolithicLoadSolution,
+    *,
+    case_name: str,
+    results_directory: str | Path = "results",
+    continuation: MonolithicLoadContinuation | None = None,
+) -> tuple[Path, ...]:
+    """Save final fields, center sections, Newton and optional load histories."""
+    x, y, pressure, film = _validated_plot_fields(
+        x_m, y_m, solution.pressure_pa, solution.film_thickness_m
+    )
+    case = re.sub(r"[^A-Za-z0-9_.-]+", "_", case_name).strip("._")
+    if not case:
+        raise ValueError("case_name must contain at least one safe filename character")
+    output = Path(results_directory) / case
+    output.mkdir(parents=True, exist_ok=True)
+    figures: list[tuple[str, Figure]] = [
+        ("pressure_distribution.png", plot_pressure_distribution(x, y, pressure)[0]),
+        (
+            "film_thickness_distribution.png",
+            plot_film_thickness_distribution(x, y, film)[0],
+        ),
+        (
+            "pressure_centerline.png",
+            plot_field_cross_section(
+                x, y, pressure, axis="x", coordinate_m=0.0, quantity="pressure"
+            )[0],
+        ),
+        (
+            "film_centerline.png",
+            plot_field_cross_section(
+                x, y, film, axis="x", coordinate_m=0.0, quantity="film"
+            )[0],
+        ),
+        ("newton_history.png", plot_monolithic_newton_history(solution.history)[0]),
+    ]
+    if continuation is not None:
+        figures.append(
+            (
+                "load_continuation_history.png",
+                plot_monolithic_continuation_history(continuation)[0],
             )
         )
     paths: list[Path] = []

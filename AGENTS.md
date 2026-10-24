@@ -10,6 +10,8 @@ Build a *new*, research-grade, reproducible 2-D point-contact elastohydrodynamic
 - Compute linear convolutions correctly using zero-padding; no circular wraparound. Explicitly document coordinate conventions and FFT normalization.
 - For each physical extension, first add a benchmark: Hertz dry contact, discrete Reynolds residual, FFT vs direct convolution, load closure, grid convergence and eventually EHL film-height comparisons.
 - Check positivity, mass conservation, boundary conditions and physically meaningful convergence diagnostics; do not mask divergence with clamps without documenting their impact.
+- Keep the signed full-film monolithic Newton/load-continuation implementation explicitly mathematical until independent evidence covers the requested coupling/load range; retain the prescribed-h0 Picard and nested load solvers as reference implementations.
+- For bordered Newton changes, test complete matrix-free Jacobian products, the reconstructed bordered correction, strict film feasibility, both line-search stages, Krylov/Schur recovery, load-step retries, and independently recomputed final Reynolds/load residuals. Do not treat a low-pressure weak benchmark as strong-coupling or physical-load validation.
 - Prefer small, reviewed numerical increments to monolithic rewrites. Update docs and add regression tests with each change.
 - Do not overwrite results/ or change any baseline without explaining it; do not store credentials or large output datasets in Git.
 - Before finishing a change, run `ruff check .` and `pytest -q`, noting any tests that could not run. GPU tests are optional and must skip gracefully if no GPU exists.
@@ -21,6 +23,7 @@ Build a *new*, research-grade, reproducible 2-D point-contact elastohydrodynamic
 `src/ehl_solver/convolution.py`: tested zero-padded 2-D linear convolution
 `src/ehl_solver/hertz.py`: Hertz analytical reference
 `src/ehl_solver/`: add geometry, kernels, Reynolds, rheology, load control and solver modules incrementally
+`src/ehl_solver/monolithic.py`: signed full-film bordered Newton verification solver; not yet a physical EHL solution
 `tests/`: CPU tests mandatory; GPU tests conditional
 
 ## First development task

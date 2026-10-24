@@ -15,6 +15,7 @@ from scipy.interpolate import RegularGridInterpolator
 
 if TYPE_CHECKING:
     from ehl_solver.coupled import CoupledReynoldsSolution, CoupledSnapshot
+    from ehl_solver.load_control import FullFilmLoadSolution
 
 
 def _validated_plot_fields(
@@ -250,6 +251,50 @@ def plot_convergence_history(
     axes[2].set_ylim(bottom=0)
     axes[2].legend()
     axes[2].grid(True, alpha=0.25)
+    return fig, axes
+
+
+def plot_load_control_history(
+    solution: FullFilmLoadSolution,
+) -> tuple[Figure, NDArray[Any]]:
+    """Plot converged signed load versus h0 and relative error per evaluation."""
+    if not solution.evaluations:
+        raise ValueError("load solution must contain at least one evaluation")
+    evaluations_by_offset = sorted(
+        solution.evaluations, key=lambda evaluation: evaluation.central_film_offset_m
+    )
+    evaluation_indices = np.arange(1, len(solution.evaluations) + 1)
+    relative_errors = np.asarray(
+        [evaluation.relative_load_error for evaluation in solution.evaluations],
+        dtype=np.float64,
+    )
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)
+    axes[0].plot(
+        [item.central_film_offset_m * 1e6 for item in evaluations_by_offset],
+        [item.calculated_signed_load_n for item in evaluations_by_offset],
+        "o-",
+        label="Converged signed load",
+    )
+    axes[0].axhline(
+        solution.target_load_n, color="black", linestyle="--", label="Target signed load"
+    )
+    axes[0].axvline(
+        solution.central_film_offset_m * 1e6,
+        color="tab:red",
+        linestyle=":",
+        label="Root h0",
+    )
+    axes[0].set_xlabel("Central film offset h0 [µm]")
+    axes[0].set_ylabel("Signed pressure integral [N]")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.25)
+
+    positive_errors = np.where(relative_errors > 0.0, relative_errors, np.nan)
+    axes[1].semilogy(evaluation_indices, positive_errors, "o-")
+    axes[1].set_xlabel("Converged load-function evaluation")
+    axes[1].set_ylabel("Relative signed-load error")
+    axes[1].grid(True, which="both", alpha=0.25)
+    fig.suptitle("Mathematical full-film load-control history")
     return fig, axes
 
 

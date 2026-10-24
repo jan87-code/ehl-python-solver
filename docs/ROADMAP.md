@@ -10,7 +10,14 @@
 - [x] Prescribed-h0 weak Reynolds-elasticity coupling with compliance continuation and zero-compliance regression
 - [x] Coupled pressure/film visualization, interpolated cross sections, convergence histories, and optional accepted-iteration PNG snapshots
 - [ ] Cavitation with explicit model and mass conservation verification
-- [ ] Coupling of Reynolds + elasticity + film thickness + load control
+  - A prescribed-film JFO active-set prototype and discrete wedge/conservation
+    regressions exist in `src/ehl_solver/cavitation.py`; physical benchmark,
+    front-continuity, starvation, and coupled verification remain incomplete.
+- [ ] Coupling of Reynolds + elasticity + film thickness + physical load control
+  - A signed full-film h0 root finder exists for mathematical verification
+    only; robust adaptive nonlinear coupling, load stepping, warm starts,
+    positive-pressure/cavitation physics, and physical load validation remain
+    incomplete.
 - [ ] Stable continuation/load stepping and convergence / energy diagnostics
 - [ ] Density- and pressure-dependent viscosity
 - [ ] Shear thinning and thermal EHL when isothermal validation passes

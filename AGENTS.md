@@ -14,6 +14,7 @@ Build a *new*, research-grade, reproducible 2-D point-contact elastohydrodynamic
 - Do not overwrite results/ or change any baseline without explaining it; do not store credentials or large output datasets in Git.
 - Before finishing a change, run `ruff check .` and `pytest -q`, noting any tests that could not run. GPU tests are optional and must skip gracefully if no GPU exists.
 - Do not install drivers, modify system packages, force-push to GitHub, or perform destructive operations without explicit permission.
+- After a development milestone is independently implemented and tested, commit the completed, directly relevant changes on `develop` and push them to `origin/develop`. Before editing, inspect the worktree, branch and tracking state. Preserve pre-existing user changes and stage only relevant files; never stage virtual environments, caches, simulation outputs, core dumps or temporary data. If only part of a milestone is validated, commit that independently verified portion with an accurate message and document the unfinished work. Never force-push or rewrite published history. If the remote advanced, fetch and reconcile safely before pushing. Verify and report the commit hash, branch, push result, test results and remaining limitations; do not claim success without Git confirmation.
 
 ## Layout
 `src/ehl_solver/backend.py`: NumPy/PyTorch backend selection and FFT primitives

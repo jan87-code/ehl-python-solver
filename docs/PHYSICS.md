@@ -68,6 +68,47 @@ flow, constant viscosity and density, and homogeneous pressure on all domain
 edges. It does not implement cavitation, elasticity, film coupling, load
 control, or pressure-dependent properties; it is not a complete EHL solver.
 
+## Prescribed-film mass-conserving cavitation prototype
+`src/ehl_solver/cavitation.py` adds a separate stationary, prescribed-film
+JFO/Elrod-Adams formulation. It retains the full-film pressure diffusion
+stencil and solves the conservative dimensionless flux balance
+`div(q)=0`, with
+`q = -H**3 grad(P) + Lambda*H*theta*e_x`. Here `P=p/p_ref` is gauge
+pressure relative to the cavitation pressure, and `theta` is fractional
+film content. The complementarity conditions are `P >= 0`,
+`0 <= theta <= 1`, and `P*(1-theta)=0`: full-film cells have `theta=1`,
+while cavitated cells have `P=0` and may carry reduced lubricant content.
+This is not pressure clipping; pressure and saturation are obtained together
+from a sparse active-set system.
+
+The positive-x saturation flux uses first-order upwinding of `theta` and the
+same arithmetic face average of `H` as the validated Reynolds operator.
+Consequently, setting `theta=1` exactly recovers the existing full-film
+convection stencil. Diffusion retains the arithmetic face conductance for
+`H**3`. The west boundary is a fully flooded supply (`theta=1`); pressure is
+zero on all domain edges. The east edge is outflow, and no transverse
+advective saturation flux exists. This assumes constant lubricant density,
+zero-gauge cavitation pressure, steady flow, no starvation at the inlet, and
+no transient squeeze term. The formulation is a fixed-film numerical
+prototype, not yet integrated with elasticity, load control, or the coupled
+outer iteration.
+
+The active-set solve rejects negative saturation, active-set cycling and
+linear-system failures rather than clipping state variables. It reports
+local control-volume mass residuals, the sum of outward boundary fluxes and
+the complementarity violation separately. A reproducible nondimensional
+converging-diverging wedge (`H=1.4-0.4 X+0.8 X**2`, `Lambda=2`, `X in
+[0,1]`, `Y in [-0.5,0.5]`) gives positive pressure in the converging region
+and reduced saturation downstream. For grids `(ny,nx)` of 9x21, 17x41 and
+33x81, the trapezoidal dimensionless pressure integrals are respectively
+`2.4104e-4`, `2.5522e-4` and `2.5883e-4`; successive changes decrease.
+The finest-grid maximum local mass residual is `1.42e-11`, complementarity
+violation is zero, and net boundary flux is approximately `-2.9e-15`.
+These are discretization and conservation checks, not an independent
+experimental or analytical validation. Pressure/saturation continuity at
+general cavitation and reformation fronts, starvation, and coupling to
+elastic deformation have not been validated.
+
 ## Prescribed-offset Reynolds-elasticity coupling
 `solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples
 the prescribed rigid geometry to the independently validated Reynolds solver
@@ -138,9 +179,54 @@ are not physically valid there; no cavitation or mass-conserving rupture
 model is included. There is no prescribed-load controller or load balance:
 `h0` is fixed, and integrated pressure is not forced to match an applied
 load. Grid/domain boundary sensitivity, realistic strong-coupling
-continuation, and load closure remain unvalidated. A test with excessive
+continuation, and physical load closure remain unvalidated. A test with excessive
 compliance confirms nonpositive film iterates raise an error rather than
 being modified.
+
+An exploratory stronger-compliance run on the same small grid/scales with
+`E*=100 kPa` did **not** converge reliably using the existing fixed-relaxation
+Picard iteration. At relaxation 0.5 and 100 iterations per stage it failed
+at `gamma=0.25` with relative pressure update `2.78e-6`, film update
+`2.38e-7`, and Reynolds residual `1.09e-6`. Reducing both relaxations to
+0.2 and allowing 1200 iterations moved the failure to `gamma=0.75`, where
+the final metrics had grown to `0.301`, `0.0338`, and `0.198`, respectively.
+This is evidence of instability/divergence at stronger compliance, not a
+converged strong-coupling result. Adaptive globalization and separately
+tracked rejected trials are still required before extending this method.
+
+### Mathematical signed-full-film load control
+`solve_full_film_at_load` in `src/ehl_solver/load_control.py` searches for
+the prescribed central offset `h0` such that the signed pressure integral
+matches a requested signed target load. The interface uses dimensional
+coordinates and offset [m], pressure [Pa], target/integrated load [N] and
+returns the converged coupled state. Each load-function evaluation calls
+`solve_coupled_reynolds_elasticity`; nonconverged states propagate as errors
+and are never accepted by the scalar root finder. Before Brent's bracketed
+method runs, equally spaced samples must show a strictly monotone load
+response across the supplied `h0` interval and bracket the target. This
+finite sampling is a local plausibility check, not proof of global
+monotonicity. The returned evaluation history stores every converged h0,
+calculated signed load, load residual, relative error and inner iteration
+count. The present implementation does not warm-start across h0 samples or
+continue in applied load.
+
+This is a mathematical verification tool only. The full-film model retains
+negative pressure; the signed load can be negative and includes tensile
+contributions. On the weak-coupling verification grid with zero compliance,
+the sampled signed load increased monotonically from `-7.0291e-3 N` at
+`h0=10 um` to `-7.2887e-4 N` at `h0=40 um`. A 20 um reference-offset case
+was recovered by a bracketed root over 15--25 um with relative signed-load
+error below `1e-6`. This tests root closure against a numerical reference
+generated by the same discretization; it is not independent physical
+validation and does not establish positive-load monotonicity, cavitation, or
+load balance for realistic EHL contacts.
+
+The existing nonlinear coupling remains fixed-relaxation Picard with a
+user-prescribed compliance sequence; robust residual-globalized updates and
+adaptive continuation are not implemented. The previously documented
+`E*=100 kPa` stress case remains a measured nonconvergence/divergence, not a
+strong-coupling result. Load-control must not be used to label a
+cavitation-free solution physically admissible.
 
 ## Coupled visualization
 `src/ehl_solver/visualization.py` is independent of the numerical iteration
@@ -262,8 +348,9 @@ does not constitute a coupled EHL solver.
    homogeneous Dirichlet boundary conditions, sparse-system consistency,
    parabolic point-contact spatial/domain studies, local/global flux balance,
    positive-film SPD checks, and direct-versus-iterative comparisons
-   (validated). Other boundary conditions and cavitation mass-conservation
-   verification remain planned.
+   (validated). The separate prescribed-film cavitation prototype has a
+   conservative wedge refinement regression, but physical benchmark and
+   cavitation-front validation remain planned.
 5. Prescribed-offset weak Reynolds-elasticity fixed-point convergence and
    zero-compliance limit (validated only for the documented low-pressure
    numerical benchmark). Strong coupling, coupled grid/domain studies, and

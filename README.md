@@ -2,9 +2,13 @@
 
 **Status: research foundation, NOT a complete EHL solver.** It includes
 analytical Hertz formulas, tested linear convolution and elasticity, a
-prescribed-film Reynolds solver, and an experimentally scoped weak
-Reynolds-elasticity coupling. Cavitation, load balance, and a fully validated
-EHL calculation remain future work.
+prescribed-film Reynolds solver, an independent prescribed-film
+mass-conserving cavitation prototype, and an experimentally scoped weak
+full-film Reynolds-elasticity coupling. Strongly coupled cavitation, load
+physical equilibrium, and a fully validated EHL calculation remain future
+work. A bracketed root finder exists for signed full-film load closure, but
+it is a mathematical verification tool and can include negative-pressure
+tensile contributions.
 
 ## Quick start (Linux Mint / Ubuntu)
 
@@ -57,7 +61,9 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `convolution.py`: zero-padded full linear convolution with same-shape centered output
 - `hertz.py`: independent analytical formulas using *effective plane-strain contact modulus* `E_star` (Pa)
 - `reynolds.py`: dimensionless conservative residual and prescribed-film full-film solve, with parabolic verification, physical diagnostics, and sparse direct/iterative comparison; no cavitation model
+- `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with mass-conservation and complementarity diagnostics; not yet coupled to elasticity or load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
+- `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only, not physical load control
 - `visualization.py`: independent MPa/µm distributions, interpolated cross sections, convergence histories and accepted-iteration snapshots
 
 Run the weakly coupled benchmark and save report figures under

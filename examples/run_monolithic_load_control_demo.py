@@ -12,7 +12,10 @@ from ehl_solver.coupled import solve_coupled_reynolds_elasticity
 from ehl_solver.load_control import solve_full_film_at_load
 from ehl_solver.monolithic import (
     BorderedReynoldsElasticityProblem,
+    MonolithicNewtonError,
+    compare_bordered_preconditioners,
     continue_monolithic_load,
+    make_feasible_initial_state,
     solve_monolithic_full_film_load,
 )
 from ehl_solver.reynolds import (
@@ -120,6 +123,15 @@ def main() -> None:
         krylov_rtol=1e-8,
         krylov_max_iterations=300,
     )
+    starting_state = np.concatenate(
+        (
+            initial_pressure[1:-1, 1:-1].ravel(),
+            [18e-6 / FILM_SCALE_M],
+        )
+    )
+    preconditioner_results = compare_bordered_preconditioners(
+        problem, starting_state
+    )
     monolithic, monolithic_seconds = _elapsed(
         lambda: solve_monolithic_full_film_load(
             problem,
@@ -152,6 +164,84 @@ def main() -> None:
             reynolds_tolerance=1e-7,
             load_tolerance=1e-7,
         )
+    )
+    strong_problem = BorderedReynoldsElasticityProblem(
+        x_m,
+        y_m,
+        RADIUS_X_M,
+        RADIUS_Y_M,
+        1e6,
+        LENGTH_SCALE_M,
+        FILM_SCALE_M,
+        PRESSURE_SCALE_PA,
+        REYNOLDS_PARAMETER,
+        target_load_n,
+        reynolds_residual_scale=100.0,
+        krylov_rtol=1e-8,
+        krylov_max_iterations=300,
+    )
+    strong_solution = None
+    try:
+        strong_solution = solve_monolithic_full_film_load(
+            strong_problem,
+            initial_pressure,
+            18e-6,
+            reynolds_tolerance=1e-7,
+            load_tolerance=1e-7,
+            max_iterations=40,
+        )
+    except MonolithicNewtonError as error:
+        diagnostics = error.diagnostics
+        failed_krylov = error.diagnostics.get("krylov_diagnostics", ())
+        final_krylov = failed_krylov[-1] if failed_krylov else None
+        print(
+            "Exploratory E*=1 MPa failure retained: "
+            f"{error}; iteration={diagnostics.get('iteration')}; "
+            f"scaled Reynolds residual="
+            f"{diagnostics.get('reynolds_residual_scaled')}; "
+            f"load residual [N]={diagnostics.get('load_residual_n')}; "
+            f"p_range [Pa]=({diagnostics.get('minimum_pressure_pa')}, "
+            f"{diagnostics.get('maximum_pressure_pa')}); "
+            f"h_min [m]={diagnostics.get('minimum_film_thickness_m')}; "
+            f"deformation/rigid-gap="
+            f"{diagnostics.get('elastic_deformation_to_rigid_gap_ratio')}; "
+            f"last GMRES true residual="
+            f"{getattr(final_krylov, 'true_relative_residual', None)}; "
+            f"GMRES termination="
+            f"{getattr(final_krylov, 'termination_reason', None)}; "
+            f"line-search slope="
+            f"{diagnostics.get('merit_directional_derivative')}; "
+            f"merit={diagnostics.get('current_merit')} -> "
+            f"{diagnostics.get('last_trial_merit')} "
+            f"(limit {diagnostics.get('armijo_merit_limit')})"
+        )
+        strong_failure_diagnostics = diagnostics
+    else:
+        strong_failure_diagnostics = {}
+
+    extreme_problem = BorderedReynoldsElasticityProblem(
+        x_m,
+        y_m,
+        RADIUS_X_M,
+        RADIUS_Y_M,
+        1e5,
+        LENGTH_SCALE_M,
+        FILM_SCALE_M,
+        PRESSURE_SCALE_PA,
+        REYNOLDS_PARAMETER,
+        target_load_n,
+        reynolds_residual_scale=100.0,
+        krylov_rtol=1e-8,
+        krylov_max_iterations=300,
+    )
+    feasible_initial = make_feasible_initial_state(
+        extreme_problem, initial_pressure, 18e-6
+    )
+    print(
+        "E*=100 kPa feasible-start adjustment (initialization only): "
+        f"h0 increase={feasible_initial.h0_adjustment_m:.6e} m; "
+        f"minimum film {feasible_initial.original_minimum_film_thickness_m:.6e} -> "
+        f"{feasible_initial.adjusted_minimum_film_thickness_m:.6e} m"
     )
 
     nested, nested_seconds = _elapsed(
@@ -237,8 +327,20 @@ def main() -> None:
     print("Signed full-film mathematical verification only; negative pressure retained.")
     print(f"Reference target signed load: {target_load_n:.9e} N")
     print(
+        "Frozen-film preconditioner comparison (includes sparse setup/factorization):"
+    )
+    for result in preconditioner_results:
+        print(
+            f"  {result.preconditioner}: used={result.preconditioner_used}; "
+            f"converged={result.converged}; Krylov={result.krylov_iterations}; "
+            f"true residual={result.maximum_true_relative_residual:.3e}; "
+            f"bordered residual={result.bordered_residual_relative:.3e}; "
+            f"time={result.elapsed_seconds:.6f} s; {result.termination_reason}"
+        )
+    print(
         "method | relative pressure L2 | film RMS difference [m] | "
-        "peak |w| [m] | scaled Reynolds RMS | load residual [N] | "
+        "peak |w| [m] | |w|max/min rigid gap | scaled Reynolds RMS | "
+        "load residual [N] | "
         "nonlinear work | reported solver work | wall time [s]"
     )
     for (
@@ -270,9 +372,15 @@ def main() -> None:
             / np.sqrt(problem.pressure_size)
             / problem.reynolds_residual_scale
         )
+        rigid_gap_m = film_m - displacement_m
+        deformation_ratio = float(
+            np.max(np.abs(displacement_m))
+            / max(np.min(rigid_gap_m), np.finfo(float).tiny)
+        )
         print(
             f"{name} | {relative_pressure:.3e} | {film_rms:.3e} | "
-            f"{np.max(np.abs(displacement_m)):.3e} | {scaled_reynolds_rms:.3e} | "
+            f"{np.max(np.abs(displacement_m)):.3e} | "
+            f"{deformation_ratio:.3e} | {scaled_reynolds_rms:.3e} | "
             f"{calculated_load_n - expected_load_n:.3e} | {iterations} | "
             f"{work_count} | {elapsed:.3f}"
         )
@@ -308,6 +416,36 @@ def main() -> None:
         )
 
     output = Path("results/monolithic_signed_load_demo")
+    coupling_ratios = [
+        np.max(np.abs(reference.elastic_displacement_m))
+        / np.min(reference.film_thickness_m - reference.elastic_displacement_m),
+        np.max(np.abs(moderate.elastic_displacement_m))
+        / np.min(moderate.film_thickness_m - moderate.elastic_displacement_m),
+    ]
+    coupling_moduli = [E_STAR_PA, 1e7]
+    coupling_converged = [True, True]
+    if strong_solution is not None:
+        coupling_moduli.append(1e6)
+        coupling_ratios.append(
+            float(
+                np.max(np.abs(strong_solution.elastic_displacement_m))
+                / np.min(
+                    strong_solution.film_thickness_m
+                    - strong_solution.elastic_displacement_m
+                )
+            )
+        )
+        coupling_converged.append(True)
+    elif "elastic_deformation_to_rigid_gap_ratio" in strong_failure_diagnostics:
+        coupling_moduli.append(1e6)
+        coupling_ratios.append(
+            float(
+                strong_failure_diagnostics[
+                    "elastic_deformation_to_rigid_gap_ratio"
+                ]
+            )
+        )
+        coupling_converged.append(False)
     paths = save_monolithic_figures(
         x_m,
         y_m,
@@ -315,6 +453,10 @@ def main() -> None:
         case_name=output.name,
         results_directory=output.parent,
         continuation=continuation,
+        preconditioner_comparison=preconditioner_results,
+        effective_modulus_pa=coupling_moduli,
+        deformation_to_rigid_gap_ratio=coupling_ratios,
+        coupling_converged=coupling_converged,
     )
     print(f"Load-continuation wall time: {continuation_seconds:.3f} s")
     print("Continuation attempts:")

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from dataclasses import dataclass, replace
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.integrate import trapezoid
+from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import LinearOperator, gmres, spilu
 
 from ehl_solver.backend import make_backend
@@ -17,6 +19,45 @@ from ehl_solver.elasticity import cell_integrated_kernel
 from ehl_solver.reynolds import assemble_reynolds_system, reynolds_residual
 
 logger = logging.getLogger(__name__)
+MAX_INEXACT_KRYLOV_RTOL = 1e-2
+
+
+@dataclass(frozen=True)
+class KrylovSolveDiagnostic:
+    """Per-solve GMRES stopping data and preconditioned residual history."""
+
+    label: str
+    preconditioner: str
+    requested_rtol: float
+    effective_rtol: float
+    iterations: int
+    info: int
+    true_relative_residual: float
+    preconditioned_residual_history: tuple[float, ...]
+    termination_reason: str
+
+
+@dataclass(frozen=True)
+class PreconditionerBenchmark:
+    """One timed bordered-correction attempt with a configured preconditioner."""
+
+    preconditioner: str
+    preconditioner_used: str
+    converged: bool
+    elapsed_seconds: float
+    krylov_iterations: int
+    maximum_true_relative_residual: float
+    bordered_residual_relative: float
+    termination_reason: str
+
+
+@dataclass(frozen=True)
+class FrozenFilmPreconditioner:
+    """Scaled sparse Reynolds block and its reusable approximate inverse."""
+
+    matrix: csr_matrix
+    operator: LinearOperator
+    strategy: str
 
 
 @dataclass(frozen=True)
@@ -31,6 +72,8 @@ class BorderedCorrection:
     schur_condition_indicator: float
     bordered_residual_relative: float
     used_fallback: bool
+    preconditioner_used: str
+    krylov_diagnostics: tuple[KrylovSolveDiagnostic, ...]
 
 
 @dataclass(frozen=True)
@@ -44,6 +87,7 @@ class MonolithicIteration:
     pressure_correction_relative: float
     h0_correction_relative: float
     minimum_film_thickness_m: float
+    minimum_pressure_pa: float
     maximum_pressure_pa: float
     feasible_step_limit: float
     accepted_step_length: float
@@ -54,6 +98,8 @@ class MonolithicIteration:
     schur_denominator: float
     schur_condition_indicator: float
     bordered_residual_relative: float
+    forcing_tolerance: float
+    krylov_diagnostics: tuple[KrylovSolveDiagnostic, ...]
 
 
 @dataclass(frozen=True)
@@ -70,6 +116,18 @@ class MonolithicLoadSolution:
     load_residual_n: float
     history: tuple[MonolithicIteration, ...]
     operator_evaluations: int
+    initial_h0_adjustment_m: float = 0.0
+
+
+@dataclass(frozen=True)
+class FeasibleInitialState:
+    """Admissible pressure/offset initial state and explicit offset change."""
+
+    pressure_dimensionless: NDArray[np.float64]
+    central_film_offset_m: float
+    original_minimum_film_thickness_m: float
+    adjusted_minimum_film_thickness_m: float
+    h0_adjustment_m: float
 
 
 @dataclass(frozen=True)
@@ -85,7 +143,7 @@ class LoadContinuationStep:
     central_film_offset_m: float
     minimum_film_thickness_m: float
     reason: str
-    failure_diagnostics: tuple[tuple[str, float | int | str], ...] = ()
+    failure_diagnostics: tuple[tuple[str, object], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,11 +161,23 @@ class MonolithicNewtonError(RuntimeError):
         self,
         message: str,
         history: tuple[MonolithicIteration, ...],
-        diagnostics: dict[str, float | int | str] | None = None,
+        diagnostics: dict[str, object] | None = None,
     ):
         super().__init__(message)
         self.history = history
         self.diagnostics = dict(diagnostics or {})
+
+
+class BorderedLinearSolveError(RuntimeError):
+    """Failed bordered Krylov correction retaining every completed GMRES record."""
+
+    def __init__(
+        self,
+        message: str,
+        krylov_diagnostics: tuple[KrylovSolveDiagnostic, ...],
+    ):
+        super().__init__(message)
+        self.krylov_diagnostics = krylov_diagnostics
 
 
 class BorderedReynoldsElasticityProblem:
@@ -138,9 +208,12 @@ class BorderedReynoldsElasticityProblem:
         reynolds_residual_scale: float = 1.0,
         load_residual_scale_n: float | None = None,
         film_floor_m: float = 1e-12,
-        finite_difference_step: float = 2e-7,
         krylov_rtol: float = 1e-8,
         krylov_max_iterations: int | None = None,
+        gmres_restart: int = 80,
+        preconditioner: str = "ilu",
+        ilu_drop_tolerance: float = 1e-3,
+        ilu_fill_factor: float = 10.0,
     ) -> None:
         self.x = np.asarray(x_m, dtype=np.float64)
         self.y = np.asarray(y_m, dtype=np.float64)
@@ -175,11 +248,12 @@ class BorderedReynoldsElasticityProblem:
             pressure_scale_pa,
             reynolds_residual_scale,
             film_floor_m,
-            finite_difference_step,
             krylov_rtol,
         )
         if not all(math.isfinite(value) and value > 0.0 for value in positive):
-            raise ValueError("radii, scales, floor and solver tolerances must be positive")
+            raise ValueError(
+                "radii, scales, floor and solver tolerances must be positive"
+            )
         if not math.isfinite(reynolds_parameter) or reynolds_parameter < 0.0:
             raise ValueError("reynolds_parameter must be finite and nonnegative")
         if not math.isfinite(target_load_n):
@@ -194,6 +268,21 @@ class BorderedReynoldsElasticityProblem:
             or krylov_max_iterations < 1
         ):
             raise ValueError("krylov_max_iterations must be positive or None")
+        if (
+            not isinstance(gmres_restart, int)
+            or isinstance(gmres_restart, bool)
+            or gmres_restart < 1
+        ):
+            raise ValueError("gmres_restart must be a positive integer")
+        if preconditioner not in ("ilu", "jacobi", "none"):
+            raise ValueError("preconditioner must be 'ilu', 'jacobi', or 'none'")
+        if (
+            not math.isfinite(ilu_drop_tolerance)
+            or ilu_drop_tolerance < 0.0
+            or not math.isfinite(ilu_fill_factor)
+            or ilu_fill_factor < 1.0
+        ):
+            raise ValueError("ILU drop tolerance must be nonnegative and fill factor >= 1")
         self.radius_x_m = radius_x_m
         self.radius_y_m = radius_y_m
         self.e_star_pa = e_star_pa
@@ -215,9 +304,12 @@ class BorderedReynoldsElasticityProblem:
         ):
             raise ValueError("load_residual_scale_n must be finite and positive")
         self.film_floor_m = film_floor_m
-        self.finite_difference_step = finite_difference_step
         self.krylov_rtol = krylov_rtol
         self.krylov_max_iterations = krylov_max_iterations
+        self.gmres_restart = gmres_restart
+        self.preconditioner = preconditioner
+        self.ilu_drop_tolerance = ilu_drop_tolerance
+        self.ilu_fill_factor = ilu_fill_factor
         self.dx = self.dx_m / length_scale_m
         self.dy = self.dy_m / length_scale_m
         self.xx, self.yy = np.meshgrid(self.x, self.y, indexing="xy")
@@ -285,33 +377,116 @@ class BorderedReynoldsElasticityProblem:
         )
 
     def jacobian_vector(self, state: ArrayLike, direction: ArrayLike) -> NDArray[np.float64]:
-        """Centered matrix-free Jv including p->w->h->Reynolds and h0 paths."""
+        """Apply the exact discrete directional derivative without dense storage."""
         z = np.asarray(state, dtype=np.float64)
         v = np.asarray(direction, dtype=np.float64)
         if z.shape != (self.pressure_size + 1,) or v.shape != z.shape:
             raise ValueError("state and direction must have pressure_size + 1 entries")
-        norm_v = float(np.linalg.norm(v))
-        if norm_v == 0.0:
+        if not np.all(np.isfinite(v)):
+            raise ValueError("direction must contain only finite values")
+        if not np.any(v):
             return np.zeros_like(v)
-        step = self.finite_difference_step * (1.0 + np.linalg.norm(z)) / norm_v
-        for _ in range(12):
-            try:
-                forward = self.residual(z + step * v)
-                backward = self.residual(z - step * v)
-                return (forward - backward) / (2.0 * step)
-            except ValueError:
-                try:
-                    forward = self.residual(z + step * v)
-                    base = self.residual(z)
-                    return (forward - base) / step
-                except ValueError:
-                    try:
-                        backward = self.residual(z - step * v)
-                        base = self.residual(z)
-                        return (base - backward) / step
-                    except ValueError:
-                        step *= 0.5
-        raise RuntimeError("could not form a feasible Jacobian-vector product")
+        pressure, film_m, _ = self.state_fields(z[:-1], float(z[-1]))
+        if not np.all(np.isfinite(film_m)) or np.any(film_m <= self.film_floor_m):
+            raise ValueError("Jacobian state must have film thickness above the floor")
+
+        pressure_direction = self.unpack_pressure(v[:-1])
+        displacement_direction = np.asarray(
+            fft_convolve_same(
+                pressure_direction * self.pressure_scale_pa,
+                self.elastic_kernel,
+                self.backend,
+            ),
+            dtype=np.float64,
+        )
+        film_direction = (
+            v[-1] * self.film_scale_m
+            + self.compliance_factor * displacement_direction
+        ) / self.film_scale_m
+
+        h = film_m / self.film_scale_m
+        h3 = h**3
+        dh3 = 3.0 * h**2 * film_direction
+        p_center = pressure[1:-1, 1:-1]
+        dp_center = pressure_direction[1:-1, 1:-1]
+        h3_center = h3[1:-1, 1:-1]
+        dh3_center = dh3[1:-1, 1:-1]
+
+        def directional_face_flux(
+            p_neighbor: NDArray[np.float64],
+            p_center_field: NDArray[np.float64],
+            dp_neighbor: NDArray[np.float64],
+            dp_center_field: NDArray[np.float64],
+            h3_neighbor: NDArray[np.float64],
+            h3_center_field: NDArray[np.float64],
+            dh3_neighbor: NDArray[np.float64],
+            dh3_center_field: NDArray[np.float64],
+            spacing: float,
+        ) -> NDArray[np.float64]:
+            conductance = 0.5 * (h3_center_field + h3_neighbor)
+            conductance_direction = 0.5 * (dh3_center_field + dh3_neighbor)
+            pressure_difference = p_neighbor - p_center_field
+            pressure_difference_direction = dp_neighbor - dp_center_field
+            return (
+                conductance_direction * pressure_difference
+                + conductance * pressure_difference_direction
+            ) / spacing**2
+
+        east = directional_face_flux(
+            pressure[1:-1, 2:],
+            p_center,
+            pressure_direction[1:-1, 2:],
+            dp_center,
+            h3[1:-1, 2:],
+            h3_center,
+            dh3[1:-1, 2:],
+            dh3_center,
+            self.dx,
+        )
+        west = directional_face_flux(
+            pressure[1:-1, :-2],
+            p_center,
+            pressure_direction[1:-1, :-2],
+            dp_center,
+            h3[1:-1, :-2],
+            h3_center,
+            dh3[1:-1, :-2],
+            dh3_center,
+            self.dx,
+        )
+        north = directional_face_flux(
+            pressure[2:, 1:-1],
+            p_center,
+            pressure_direction[2:, 1:-1],
+            dp_center,
+            h3[2:, 1:-1],
+            h3_center,
+            dh3[2:, 1:-1],
+            dh3_center,
+            self.dy,
+        )
+        south = directional_face_flux(
+            pressure[:-2, 1:-1],
+            p_center,
+            pressure_direction[:-2, 1:-1],
+            dp_center,
+            h3[:-2, 1:-1],
+            h3_center,
+            dh3[:-2, 1:-1],
+            dh3_center,
+            self.dy,
+        )
+        reynolds_direction = east + west + north + south
+        reynolds_direction -= self.reynolds_parameter * (
+            film_direction[1:-1, 2:] - film_direction[1:-1, :-2]
+        ) / (2.0 * self.dx)
+        load_direction = float(np.dot(self.load_gradient(), v[:-1]))
+        return np.concatenate(
+            (
+                (reynolds_direction / self.reynolds_residual_scale).ravel(),
+                np.array([load_direction]),
+            )
+        )
 
     def load_gradient(self) -> NDArray[np.float64]:
         """Exact load-row derivative with respect to interior dimensionless P."""
@@ -337,14 +512,156 @@ def _integrated_load_n(
     return float(trapezoid(trapezoid(pressure_pa, x_m, axis=1), y_m))
 
 
+def build_frozen_film_preconditioner(
+    problem: BorderedReynoldsElasticityProblem,
+    state: ArrayLike,
+    *,
+    strategy: str | None = None,
+) -> FrozenFilmPreconditioner:
+    """Build the scaled pressure preconditioner at a feasible current state.
+
+    The matrix is the negative conservative Reynolds diffusion operator
+    divided by the configured residual scale, matching the sign and scaling
+    of the pressure Jacobian. The returned factorization/operator is intended
+    to be reused for both Schur solves and the full bordered fallback within
+    one Newton correction. ILU failures fall back explicitly to Jacobi and
+    then identity if the diagonal itself is invalid.
+    """
+    requested = problem.preconditioner if strategy is None else strategy
+    if requested not in ("ilu", "jacobi", "none"):
+        raise ValueError("strategy must be 'ilu', 'jacobi', or 'none'")
+    z = np.asarray(state, dtype=np.float64)
+    if z.shape != (problem.pressure_size + 1,) or not np.all(np.isfinite(z)):
+        raise ValueError("state must be a finite pressure-interior vector plus h0/h_ref")
+    _, film_m, _ = problem.state_fields(z[:-1], float(z[-1]))
+    if not np.all(np.isfinite(film_m)) or np.any(film_m <= problem.film_floor_m):
+        raise ValueError("preconditioner state film thickness must exceed the floor")
+    reynolds_matrix, _ = assemble_reynolds_system(
+        film_m / problem.film_scale_m,
+        problem.dx,
+        problem.dy,
+        problem.reynolds_parameter,
+    )
+    matrix = (-reynolds_matrix / problem.reynolds_residual_scale).tocsr()
+    diagonal = np.asarray(matrix.diagonal(), dtype=np.float64)
+    used = requested
+    try:
+        if requested == "ilu":
+            factorization = spilu(
+                matrix.tocsc(),
+                drop_tol=problem.ilu_drop_tolerance,
+                fill_factor=problem.ilu_fill_factor,
+            )
+            operator = LinearOperator(
+                matrix.shape, matvec=factorization.solve, dtype=np.float64
+            )
+        elif requested == "jacobi":
+            if np.any(~np.isfinite(diagonal)) or np.any(diagonal == 0.0):
+                raise ArithmeticError("Jacobi preconditioner has an invalid diagonal")
+            inverse_diagonal = 1.0 / diagonal
+            operator = LinearOperator(
+                matrix.shape,
+                matvec=lambda vector: inverse_diagonal * vector,
+                dtype=np.float64,
+            )
+        else:
+            operator = LinearOperator(
+                matrix.shape,
+                matvec=lambda vector: np.asarray(vector, dtype=np.float64),
+                dtype=np.float64,
+            )
+    except (ArithmeticError, RuntimeError, ValueError) as error:
+        logger.warning(
+            "%s Reynolds preconditioner failed (%s); falling back to Jacobi",
+            requested,
+            error,
+        )
+        used = "jacobi"
+        if np.any(~np.isfinite(diagonal)) or np.any(diagonal == 0.0):
+            logger.warning("Jacobi fallback has invalid diagonal; using identity")
+            used = "none"
+            operator = LinearOperator(
+                matrix.shape,
+                matvec=lambda vector: np.asarray(vector, dtype=np.float64),
+                dtype=np.float64,
+            )
+        else:
+            inverse_diagonal = 1.0 / diagonal
+            operator = LinearOperator(
+                matrix.shape,
+                matvec=lambda vector: inverse_diagonal * vector,
+                dtype=np.float64,
+            )
+    return FrozenFilmPreconditioner(matrix, operator, used)
+
+
+def make_feasible_initial_state(
+    problem: BorderedReynoldsElasticityProblem,
+    initial_pressure_dimensionless: ArrayLike,
+    initial_h0_m: float,
+    *,
+    film_margin_fraction: float = 1e-3,
+) -> FeasibleInitialState:
+    """Raise ``h0`` explicitly when needed to make a finite initial film feasible.
+
+    Pressure is retained exactly, including signed values. This is an
+    initialization aid, not a pressure or film clamp: it changes only the
+    scalar starting offset and reports the required change. The nonlinear
+    equations still determine the converged offset. Non-finite elastic fields
+    and invalid pressure boundaries are rejected.
+    """
+    pressure = np.asarray(initial_pressure_dimensionless, dtype=np.float64)
+    if pressure.shape != (problem.y.size, problem.x.size):
+        raise ValueError("initial pressure must have shape (ny, nx)")
+    if (
+        not np.all(np.isfinite(pressure))
+        or np.any(pressure[0, :] != 0.0)
+        or np.any(pressure[-1, :] != 0.0)
+        or np.any(pressure[:, 0] != 0.0)
+        or np.any(pressure[:, -1] != 0.0)
+    ):
+        raise ValueError("initial pressure must be finite and satisfy zero boundaries")
+    if not math.isfinite(initial_h0_m) or initial_h0_m <= 0.0:
+        raise ValueError("initial_h0_m must be finite and positive")
+    if (
+        not math.isfinite(film_margin_fraction)
+        or film_margin_fraction <= 0.0
+    ):
+        raise ValueError("film_margin_fraction must be finite and positive")
+    state = np.concatenate(
+        (
+            pressure[1:-1, 1:-1].ravel(),
+            [initial_h0_m / problem.film_scale_m],
+        )
+    )
+    _, film, _ = problem.state_fields(state[:-1], float(state[-1]))
+    if not np.all(np.isfinite(film)):
+        raise ValueError("initial film contains non-finite values")
+    original_minimum = float(np.min(film))
+    target_minimum = problem.film_floor_m + film_margin_fraction * problem.film_scale_m
+    h0_adjustment = max(0.0, target_minimum - original_minimum)
+    adjusted_h0 = initial_h0_m + h0_adjustment
+    adjusted_film = film + h0_adjustment
+    if np.min(adjusted_film) <= problem.film_floor_m:
+        raise RuntimeError("could not construct a strictly feasible initial film")
+    return FeasibleInitialState(
+        pressure_dimensionless=pressure.copy(),
+        central_film_offset_m=adjusted_h0,
+        original_minimum_film_thickness_m=original_minimum,
+        adjusted_minimum_film_thickness_m=float(np.min(adjusted_film)),
+        h0_adjustment_m=h0_adjustment,
+    )
+
+
 def solve_bordered_correction(
     problem: BorderedReynoldsElasticityProblem,
     state: ArrayLike,
     *,
     schur_tolerance: float = 1e-10,
-    bordered_tolerance: float = 1e-7,
+    bordered_tolerance: float | None = None,
     krylov_rtol: float | None = None,
     krylov_max_iterations: int | None = None,
+    preconditioner_strategy: str | None = None,
 ) -> BorderedCorrection:
     """Solve a matrix-free Newton system through a Schur complement.
 
@@ -354,31 +671,62 @@ def solve_bordered_correction(
     to GMRES on the complete bordered Jacobian with a block preconditioner.
     """
     z = np.asarray(state, dtype=np.float64)
+    requested_rtol = problem.krylov_rtol if krylov_rtol is None else krylov_rtol
+    maxiter = (
+        problem.krylov_max_iterations
+        if krylov_max_iterations is None
+        else krylov_max_iterations
+    )
+    if (
+        not math.isfinite(requested_rtol)
+        or requested_rtol <= 0.0
+        or requested_rtol > 1.0
+        or not math.isfinite(schur_tolerance)
+        or schur_tolerance <= 0.0
+        or (
+            bordered_tolerance is not None
+            and (
+                not math.isfinite(bordered_tolerance)
+                or bordered_tolerance <= 0.0
+            )
+        )
+        or (
+            maxiter is not None
+            and (
+                not isinstance(maxiter, int)
+                or isinstance(maxiter, bool)
+                or maxiter < 1
+            )
+        )
+    ):
+        raise ValueError("Krylov and bordered tolerances must be finite and positive")
+    rtol = min(requested_rtol, MAX_INEXACT_KRYLOV_RTOL)
+    linear_residual_tolerance = min(
+        MAX_INEXACT_KRYLOV_RTOL,
+        max(1e-7, 2.0 * rtol)
+        if bordered_tolerance is None
+        else bordered_tolerance,
+    )
     residual = problem.residual(z)
     pressure_count = problem.pressure_size
     h_direction = np.zeros_like(z)
     h_direction[-1] = 1.0
     b = problem.jacobian_vector(z, h_direction)[:-1]
     load_gradient = problem.load_gradient()
-    rtol = problem.krylov_rtol if krylov_rtol is None else krylov_rtol
-    maxiter = (
-        problem.krylov_max_iterations
-        if krylov_max_iterations is None
-        else krylov_max_iterations
-    )
-    restart = min(80, pressure_count + 1)
+    restart = min(problem.gmres_restart, pressure_count + 1)
 
-    pressure, film, _ = problem.state_fields(z[:-1], float(z[-1]))
-    frozen_matrix, _ = assemble_reynolds_system(
-        film / problem.film_scale_m,
-        problem.dx,
-        problem.dy,
-        problem.reynolds_parameter,
+    requested_preconditioner = (
+        problem.preconditioner
+        if preconditioner_strategy is None
+        else preconditioner_strategy
     )
-    ilu = spilu((-frozen_matrix / problem.reynolds_residual_scale).tocsc())
-    preconditioner = LinearOperator(
-        frozen_matrix.shape, matvec=ilu.solve, dtype=np.float64
+    if requested_preconditioner not in ("ilu", "jacobi", "none"):
+        raise ValueError("preconditioner_strategy must be 'ilu', 'jacobi', or 'none'")
+    frozen_preconditioner = build_frozen_film_preconditioner(
+        problem, z, strategy=requested_preconditioner
     )
+    preconditioner = frozen_preconditioner.operator
+    preconditioner_used = frozen_preconditioner.strategy
 
     def pressure_matvec(vector: NDArray[np.float64]) -> NDArray[np.float64]:
         direction = np.zeros_like(z)
@@ -389,14 +737,20 @@ def solve_bordered_correction(
         (pressure_count, pressure_count), matvec=pressure_matvec, dtype=np.float64
     )
     iterations = 0
+    krylov_diagnostics: list[KrylovSolveDiagnostic] = []
+    current_preconditioned_residuals: list[float] = []
 
-    def callback(_: NDArray[np.float64]) -> None:
+    def callback(residual_norm: float) -> None:
         nonlocal iterations
         iterations += 1
+        current_preconditioned_residuals.append(float(residual_norm))
 
-    def solve_pressure(rhs: NDArray[np.float64]) -> tuple[NDArray[np.float64], float]:
+    def solve_pressure(
+        rhs: NDArray[np.float64], label: str
+    ) -> tuple[NDArray[np.float64], float]:
         nonlocal iterations
         iterations = 0
+        current_preconditioned_residuals.clear()
         solution, info = gmres(
             pressure_operator,
             rhs,
@@ -408,33 +762,56 @@ def solve_bordered_correction(
             callback=callback,
             callback_type="pr_norm",
         )
-        if info != 0 or not np.all(np.isfinite(solution)):
-            raise RuntimeError(f"pressure-block GMRES failed with info={info}")
         solution = np.asarray(solution, dtype=np.float64)
         relative_residual = float(
             np.linalg.norm(pressure_operator @ solution - rhs)
             / max(np.linalg.norm(rhs), np.finfo(np.float64).tiny)
         )
-        if not math.isfinite(relative_residual) or relative_residual > 10.0 * rtol:
+        termination = (
+            "converged"
+            if info == 0 and math.isfinite(relative_residual)
+            else f"GMRES info={info}"
+        )
+        krylov_diagnostics.append(
+            KrylovSolveDiagnostic(
+                label=label,
+                preconditioner=preconditioner_used,
+                requested_rtol=requested_rtol,
+                effective_rtol=rtol,
+                iterations=iterations,
+                info=int(info),
+                true_relative_residual=relative_residual,
+                preconditioned_residual_history=tuple(
+                    current_preconditioned_residuals
+                ),
+                termination_reason=termination,
+            )
+        )
+        if (
+            info != 0
+            or not np.all(np.isfinite(solution))
+            or not math.isfinite(relative_residual)
+            or relative_residual
+            > min(MAX_INEXACT_KRYLOV_RTOL, max(1.25 * rtol, 1e-12))
+        ):
             raise RuntimeError(
-                "pressure-block GMRES returned an inaccurate solve: "
-                f"relative residual={relative_residual:.3e}"
+                f"{label} GMRES failed or was inaccurate: {termination}; "
+                f"true relative residual={relative_residual:.3e}, requested rtol={rtol:.3e}"
             )
         return solution, relative_residual
 
     try:
-        x, residual_x = solve_pressure(-residual[:-1])
+        x, residual_x = solve_pressure(-residual[:-1], "pressure_residual")
         count_x = iterations
-        y, residual_y = solve_pressure(b)
+        y, residual_y = solve_pressure(b, "h0_response")
         count_y = iterations
         pressure_krylov_residual = max(residual_x, residual_y)
         schur = -float(np.dot(load_gradient, y))
-        scale = max(
-            abs(float(np.dot(load_gradient, y))),
-            np.linalg.norm(load_gradient) * np.linalg.norm(y) * np.finfo(float).eps,
+        schur_scale = max(
+            np.linalg.norm(load_gradient) * np.linalg.norm(y),
             np.finfo(float).tiny,
         )
-        indicator = abs(schur) / scale
+        indicator = abs(schur) / schur_scale
         if not math.isfinite(schur) or indicator <= schur_tolerance:
             raise ArithmeticError("Schur denominator is singular or ill-conditioned")
         delta_h0 = (-residual[-1] - float(np.dot(load_gradient, x))) / schur
@@ -450,7 +827,10 @@ def solve_bordered_correction(
             np.linalg.norm(full_jacobian_action + residual)
             / max(np.linalg.norm(residual), np.finfo(float).tiny)
         )
-        if not math.isfinite(relative) or relative > bordered_tolerance:
+        if (
+            not math.isfinite(relative)
+            or relative > linear_residual_tolerance
+        ):
             raise ArithmeticError("Schur correction failed the bordered residual check")
         return BorderedCorrection(
             pressure_correction=delta_p.reshape(problem.interior_shape),
@@ -461,8 +841,14 @@ def solve_bordered_correction(
             schur_condition_indicator=indicator,
             bordered_residual_relative=relative,
             used_fallback=False,
+            preconditioner_used=preconditioner_used,
+            krylov_diagnostics=tuple(krylov_diagnostics),
         )
-    except (ArithmeticError, RuntimeError):
+    except (ArithmeticError, RuntimeError) as schur_error:
+        logger.info(
+            "Schur solve unavailable (%s); using full bordered GMRES fallback",
+            schur_error,
+        )
         def full_matvec(vector: NDArray[np.float64]) -> NDArray[np.float64]:
             return problem.jacobian_vector(z, vector)
 
@@ -474,11 +860,12 @@ def solve_bordered_correction(
         block_inverse = LinearOperator(
             (pressure_count + 1, pressure_count + 1),
             matvec=lambda rhs: np.concatenate(
-                (preconditioner @ rhs[:-1], [rhs[-1]])
+                (frozen_preconditioner.operator @ rhs[:-1], [rhs[-1]])
             ),
             dtype=np.float64,
         )
         iterations = 0
+        current_preconditioned_residuals.clear()
         correction, info = gmres(
             full_operator,
             -residual,
@@ -490,19 +877,43 @@ def solve_bordered_correction(
             callback=callback,
             callback_type="pr_norm",
         )
-        if info != 0 or not np.all(np.isfinite(correction)):
-            raise RuntimeError(
-                f"full bordered GMRES fallback failed with info={info}"
-            ) from None
+        correction = np.asarray(correction, dtype=np.float64)
         linear_residual = full_operator @ correction + residual
         relative = float(
             np.linalg.norm(linear_residual)
             / max(np.linalg.norm(residual), np.finfo(float).tiny)
         )
-        if relative > bordered_tolerance:
-            raise RuntimeError(
-                "full bordered GMRES fallback correction is inaccurate: "
-                f"relative residual={relative:.3e}"
+        termination = (
+            "converged"
+            if info == 0 and math.isfinite(relative)
+            else f"GMRES info={info}"
+        )
+        krylov_diagnostics.append(
+            KrylovSolveDiagnostic(
+                label="full_bordered_fallback",
+                preconditioner=preconditioner_used,
+                requested_rtol=requested_rtol,
+                effective_rtol=rtol,
+                iterations=iterations,
+                info=int(info),
+                true_relative_residual=relative,
+                preconditioned_residual_history=tuple(
+                    current_preconditioned_residuals
+                ),
+                termination_reason=termination,
+            )
+        )
+        if (
+            info != 0
+            or not np.all(np.isfinite(correction))
+            or not math.isfinite(relative)
+            or relative > linear_residual_tolerance
+        ):
+            raise BorderedLinearSolveError(
+                f"full bordered GMRES fallback failed or was inaccurate: "
+                f"{termination}; true relative residual={relative:.3e}; "
+                f"Schur failure: {schur_error}",
+                tuple(krylov_diagnostics),
             ) from None
         return BorderedCorrection(
             pressure_correction=correction[:-1].reshape(problem.interior_shape),
@@ -513,7 +924,85 @@ def solve_bordered_correction(
             schur_condition_indicator=0.0,
             bordered_residual_relative=relative,
             used_fallback=True,
+            preconditioner_used=preconditioner_used,
+            krylov_diagnostics=tuple(krylov_diagnostics),
         )
+
+
+def compare_bordered_preconditioners(
+    problem: BorderedReynoldsElasticityProblem,
+    state: ArrayLike,
+    *,
+    strategies: tuple[str, ...] = ("ilu", "jacobi", "none"),
+    krylov_rtol: float | None = None,
+) -> tuple[PreconditionerBenchmark, ...]:
+    """Time the same bordered Newton correction with selected preconditioners.
+
+    Each strategy builds its sparse preconditioner once for the frozen-film
+    pressure block and reuses it for both Schur solves and any bordered
+    fallback. The nonlinear state and configured problem preconditioner are
+    not modified. Timings include assembly and factorization.
+    """
+    if not strategies:
+        raise ValueError("strategies must contain at least one preconditioner")
+    if len(set(strategies)) != len(strategies):
+        raise ValueError("strategies must not contain duplicates")
+    invalid = set(strategies) - {"ilu", "jacobi", "none"}
+    if invalid:
+        raise ValueError(f"unsupported preconditioner strategies: {sorted(invalid)}")
+    results: list[PreconditionerBenchmark] = []
+    for strategy in strategies:
+        started = time.perf_counter()
+        try:
+            correction = solve_bordered_correction(
+                problem,
+                state,
+                krylov_rtol=krylov_rtol,
+                preconditioner_strategy=strategy,
+            )
+        except BorderedLinearSolveError as error:
+            elapsed = time.perf_counter() - started
+            diagnostics = error.krylov_diagnostics
+            results.append(
+                PreconditionerBenchmark(
+                    preconditioner=strategy,
+                    preconditioner_used=(
+                        diagnostics[-1].preconditioner if diagnostics else strategy
+                    ),
+                    converged=False,
+                    elapsed_seconds=elapsed,
+                    krylov_iterations=sum(item.iterations for item in diagnostics),
+                    maximum_true_relative_residual=max(
+                        (item.true_relative_residual for item in diagnostics),
+                        default=math.inf,
+                    ),
+                    bordered_residual_relative=math.inf,
+                    termination_reason=str(error),
+                )
+            )
+            continue
+        elapsed = time.perf_counter() - started
+        results.append(
+            PreconditionerBenchmark(
+                preconditioner=strategy,
+                preconditioner_used=correction.preconditioner_used,
+                converged=True,
+                elapsed_seconds=elapsed,
+                krylov_iterations=sum(
+                    item.iterations for item in correction.krylov_diagnostics
+                ),
+                maximum_true_relative_residual=max(
+                    (
+                        item.true_relative_residual
+                        for item in correction.krylov_diagnostics
+                    ),
+                    default=0.0,
+                ),
+                bordered_residual_relative=correction.bordered_residual_relative,
+                termination_reason="converged",
+            )
+        )
+    return tuple(results)
 
 
 def _merit_directional_derivative(
@@ -543,6 +1032,7 @@ def solve_monolithic_full_film_load(
     armijo_constant: float = 1e-4,
     maximum_backtracks: int = 20,
     log_every: int = 1,
+    initial_film_strategy: str = "strict",
 ) -> MonolithicLoadSolution:
     """Solve simultaneous pressure and h0 equations with dual line searches.
 
@@ -560,6 +1050,8 @@ def solve_monolithic_full_film_load(
     pressure is retained; this function is a mathematical full-film solver,
     not a cavitation or physically validated EHL model.
     """
+    if initial_film_strategy not in ("strict", "raise_h0"):
+        raise ValueError("initial_film_strategy must be 'strict' or 'raise_h0'")
     if not 0.0 < fraction_to_boundary < 1.0:
         raise ValueError("fraction_to_boundary must be in (0, 1)")
     if not math.isfinite(armijo_constant) or not 0.0 < armijo_constant < 1.0:
@@ -596,10 +1088,28 @@ def solve_monolithic_full_film_load(
         raise ValueError("initial pressure must be finite and satisfy zero boundaries")
     if not math.isfinite(initial_h0_m) or initial_h0_m <= 0.0:
         raise ValueError("initial_h0_m must be finite and positive")
+    h0_adjustment_m = 0.0
+    if initial_film_strategy == "raise_h0":
+        feasible = make_feasible_initial_state(
+            problem,
+            pressure,
+            initial_h0_m,
+        )
+        pressure = feasible.pressure_dimensionless
+        initial_h0_m = feasible.central_film_offset_m
+        h0_adjustment_m = feasible.h0_adjustment_m
+        if h0_adjustment_m > 0.0:
+            logger.info(
+                "raised initial h0 by %.6e m to establish film positivity; "
+                "original minimum film was %.6e m",
+                h0_adjustment_m,
+                feasible.original_minimum_film_thickness_m,
+            )
     state = np.concatenate(
         (pressure[1:-1, 1:-1].ravel(), [initial_h0_m / problem.film_scale_m])
     )
     history: list[MonolithicIteration] = []
+    previous_nonlinear_norm: float | None = None
     for iteration in range(1, max_iterations + 1):
         residual = problem.residual(state)
         reynolds_norm = float(np.linalg.norm(residual[:-1]) / math.sqrt(problem.pressure_size))
@@ -608,13 +1118,37 @@ def solve_monolithic_full_film_load(
         pressure, film, displacement = problem.state_fields(state[:-1], float(state[-1]))
         load_norm = abs(load_scaled)
         merit = 0.5 * (reynolds_norm**2 + load_norm**2)
-        failure_diagnostics: dict[str, float | int | str] = {
+        nonlinear_norm = math.sqrt(2.0 * merit)
+        if previous_nonlinear_norm is None:
+            forcing_tolerance = MAX_INEXACT_KRYLOV_RTOL
+        else:
+            residual_ratio = nonlinear_norm / max(
+                previous_nonlinear_norm, np.finfo(np.float64).tiny
+            )
+            forcing_tolerance = min(
+                MAX_INEXACT_KRYLOV_RTOL,
+                max(1e-4, 0.9 * residual_ratio**1.5),
+            )
+        rigid_film = film - problem.compliance_factor * displacement
+        peak_elastic_displacement = float(
+            np.max(np.abs(problem.compliance_factor * displacement))
+        )
+        failure_diagnostics: dict[str, object] = {
             "iteration": iteration,
             "reynolds_residual_scaled": reynolds_norm,
             "load_residual_n": load_residual_n,
             "load_residual_scaled": load_scaled,
             "minimum_film_thickness_m": float(np.min(film)),
+            "minimum_pressure_pa": float(
+                np.min(pressure * problem.pressure_scale_pa)
+            ),
             "maximum_pressure_pa": float(np.max(pressure * problem.pressure_scale_pa)),
+            "maximum_elastic_displacement_m": peak_elastic_displacement,
+            "minimum_rigid_film_thickness_m": float(np.min(rigid_film)),
+            "elastic_deformation_to_rigid_gap_ratio": (
+                peak_elastic_displacement
+                / max(float(np.min(rigid_film)), np.finfo(float).tiny)
+            ),
             "operator_evaluations": problem.operator_evaluations,
         }
         if reynolds_norm <= reynolds_tolerance and load_norm <= load_tolerance:
@@ -642,11 +1176,19 @@ def solve_monolithic_full_film_load(
                 load_residual_n=independently_evaluated_load - problem.target_load_n,
                 history=tuple(history),
                 operator_evaluations=problem.operator_evaluations,
+                initial_h0_adjustment_m=h0_adjustment_m,
             )
 
         try:
-            correction = solve_bordered_correction(problem, state)
+            correction = solve_bordered_correction(
+                problem,
+                state,
+                krylov_rtol=forcing_tolerance,
+            )
         except (ArithmeticError, RuntimeError) as error:
+            if isinstance(error, BorderedLinearSolveError):
+                failure_diagnostics["krylov_diagnostics"] = error.krylov_diagnostics
+            failure_diagnostics["linear_solver_error"] = str(error)
             raise MonolithicNewtonError(
                 f"bordered Newton correction failed: {error}",
                 tuple(history),
@@ -665,20 +1207,33 @@ def solve_monolithic_full_film_load(
             if math.isfinite(merit_slope) and merit_slope < 0.0:
                 break
             if recovery == 2:
+                recovery_diagnostics = {
+                    **failure_diagnostics,
+                    "merit_directional_derivative": merit_slope,
+                    "current_merit": merit,
+                    "krylov_diagnostics": correction.krylov_diagnostics,
+                }
                 raise MonolithicNewtonError(
                     "Newton correction remained non-descent after tighter Krylov "
                     "recovery",
                     tuple(history),
-                    {**failure_diagnostics, "merit_directional_derivative": merit_slope},
+                    recovery_diagnostics,
                 )
-            tightened_rtol = max(problem.krylov_rtol * 0.1 ** (recovery + 1), 1e-12)
             try:
                 correction = solve_bordered_correction(
                     problem,
                     state,
-                    krylov_rtol=tightened_rtol,
+                    krylov_rtol=max(
+                        1e-6,
+                        min(forcing_tolerance, problem.krylov_rtol * 0.1 ** (recovery + 1)),
+                    ),
                 )
             except (ArithmeticError, RuntimeError) as error:
+                if isinstance(error, BorderedLinearSolveError):
+                    failure_diagnostics["krylov_diagnostics"] = (
+                        error.krylov_diagnostics
+                    )
+                failure_diagnostics["linear_solver_error"] = str(error)
                 raise MonolithicNewtonError(
                     f"tighter Krylov recovery failed: {error}",
                     tuple(history),
@@ -717,7 +1272,10 @@ def solve_monolithic_full_film_load(
         accepted = False
         rejected = 0
         current_merit = merit
+        last_trial_merit = math.inf
+        last_trial_step_length = step_length
         for _ in range(maximum_backtracks + 1):
+            last_trial_step_length = step_length
             trial_state = state + step_length * direction
             try:
                 trial_residual = problem.residual(trial_state)
@@ -729,9 +1287,11 @@ def solve_monolithic_full_film_load(
                 trial_merit = 0.5 * (trial_rp**2 + trial_rq**2)
             except ValueError:
                 trial_merit = math.inf
+            last_trial_merit = trial_merit
             if (
                 math.isfinite(trial_merit)
-                and trial_merit <= (1.0 - armijo_constant * step_length) * current_merit
+                and trial_merit
+                <= current_merit + armijo_constant * step_length * merit_slope
             ):
                 state = trial_state
                 accepted = True
@@ -739,17 +1299,39 @@ def solve_monolithic_full_film_load(
             rejected += 1
             step_length *= 0.5
         if not accepted:
+            failure_diagnostics.update(
+                {
+                    "feasible_step_limit": feasible_limit,
+                    "last_trial_step_length": last_trial_step_length,
+                    "rejected_line_search_trials": rejected,
+                    "merit_directional_derivative": merit_slope,
+                    "current_merit": current_merit,
+                    "last_trial_merit": last_trial_merit,
+                    "armijo_merit_limit": (
+                        current_merit
+                        + armijo_constant
+                        * last_trial_step_length
+                        * merit_slope
+                    ),
+                    "krylov_diagnostics": correction.krylov_diagnostics,
+                    "schur_denominator": correction.schur_denominator,
+                    "schur_condition_indicator": correction.schur_condition_indicator,
+                    "bordered_residual_relative": correction.bordered_residual_relative,
+                }
+            )
             raise MonolithicNewtonError(
                 "dual line search could not find an Armijo-decreasing feasible step",
                 tuple(history),
                 {
                     **failure_diagnostics,
                     "feasible_step_limit": feasible_limit,
-                    "last_trial_step_length": step_length,
+                    "last_trial_step_length": last_trial_step_length,
                     "rejected_line_search_trials": rejected,
                 },
             )
-        _, accepted_film, _ = problem.state_fields(state[:-1], float(state[-1]))
+        accepted_pressure, accepted_film, _ = problem.state_fields(
+            state[:-1], float(state[-1])
+        )
         history.append(
             MonolithicIteration(
                 iteration=iteration,
@@ -768,9 +1350,8 @@ def solve_monolithic_full_film_load(
                     / max(abs(float(state[-1]) * problem.film_scale_m), problem.film_floor_m)
                 ),
                 minimum_film_thickness_m=float(np.min(accepted_film)),
-                maximum_pressure_pa=float(
-                    max(float(np.max(state[:-1])), 0.0) * problem.pressure_scale_pa
-                ),
+                minimum_pressure_pa=float(np.min(accepted_pressure) * problem.pressure_scale_pa),
+                maximum_pressure_pa=float(np.max(accepted_pressure) * problem.pressure_scale_pa),
                 feasible_step_limit=feasible_limit,
                 accepted_step_length=step_length,
                 merit_directional_derivative=merit_slope,
@@ -780,8 +1361,11 @@ def solve_monolithic_full_film_load(
                 schur_denominator=correction.schur_denominator,
                 schur_condition_indicator=correction.schur_condition_indicator,
                 bordered_residual_relative=correction.bordered_residual_relative,
+                forcing_tolerance=forcing_tolerance,
+                krylov_diagnostics=correction.krylov_diagnostics,
             )
         )
+        previous_nonlinear_norm = nonlinear_norm
         if iteration == 1 or iteration % log_every == 0:
             logger.info(
                 "monolithic Newton iteration=%d: scaled Reynolds RMS=%.3e, "
@@ -816,6 +1400,9 @@ def solve_monolithic_full_film_load(
             "load_residual_n": float(final_residual[-1])
             * problem.load_residual_scale_n,
             "minimum_film_thickness_m": float(np.min(final_film)),
+            "minimum_pressure_pa": float(
+                np.min(final_pressure) * problem.pressure_scale_pa
+            ),
             "maximum_pressure_pa": float(
                 np.max(final_pressure) * problem.pressure_scale_pa
             ),

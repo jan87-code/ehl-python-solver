@@ -241,33 +241,51 @@ be supplied. Coordinates and material quantities use SI, arrays use
 there is no pressure clipping.
 
 The complete directional residual, including pressure-to-elasticity-to-film
-feedback, is applied matrix-free using centered finite-difference Jacobian
-products (one-sided differences are used if a centered perturbation crosses
-the film floor). The `h0` derivative is treated by the same residual
-linearization. The pressure block is solved with GMRES and an ILU
-preconditioner assembled from the current frozen-film conservative Reynolds
-matrix. A Schur-complement reconstruction is checked against the complete
-bordered residual; an unsafe denominator, failed pressure Krylov solve, or
-inaccurate Schur correction invokes preconditioned GMRES on the full bordered
-system. `schur_condition_indicator` is a relative scale/singularity
-indicator, not a matrix condition-number estimate. Each Schur pressure-block
-GMRES solution is checked using its independently recomputed relative linear
-residual; the reconstructed complete bordered correction is also checked
-against the full directional residual.
+feedback, is applied matrix-free with an analytic derivative of the discrete
+conservative Reynolds face-flux stencil. The pressure direction passes
+through the same zero-padded DC-FFT operator used by the film equation; face
+conductance, pressure gradients, entrainment source, and the exact `h0`
+direction are all differentiated. No dense elasticity Jacobian is formed.
+Centered finite-difference checks of the complete JVP are regression-tested.
+
+The frozen-film pressure preconditioner uses `-A/R_scale`, where `A` is the
+positive sparse matrix assembled for `-div(H^3 grad(P))` and `R_scale` is the
+configured Reynolds residual scale. This sign and scale match the pressure
+block of the residual Jacobian. Configurable ILU, Jacobi, and identity
+strategies are available; a failed ILU factorization falls back to Jacobi,
+then identity if the diagonal is invalid. A single sparse approximate inverse
+is reused for both Schur pressure solves and any full bordered fallback in a
+Newton correction; the matrix is rebuilt when the current film changes.
+`compare_bordered_preconditioners` times and verifies the same correction for
+each strategy. The `schur_condition_indicator` is the normalized magnitude
+of the Schur product relative to the norms of its factors; it is a
+relative-angle diagnostic, not a matrix condition-number estimate.
+
+Inexact Newton forcing starts at `1e-2`, adapts to consecutive nonlinear
+residual reduction within `[1e-4, 1e-2]`, and is tightened if the computed
+direction is not a descent direction. A requested looser tolerance is capped
+at `1e-2`; both each GMRES true residual and the complete bordered correction
+are independently checked against hard accuracy limits. The preconditioned
+GMRES callback history and the independently recomputed true residual are
+stored separately. If Schur/Krylov correction fails, the full bordered
+GMRES fallback is attempted and its termination and true residual are kept
+on `MonolithicNewtonError`.
 
 Each Newton step first computes a common fraction-to-boundary step that
 preserves `h>film_floor_m` including both pressure-induced deformation and
 the `h0` correction. Armijo backtracking then reduces the combined,
-dimensionlessly scaled Reynolds/load merit. The computed direction must have
-a negative merit derivative; up to two tighter-Krylov retries are attempted
-before a non-descent failure is raised. A small step alone is never accepted
-as convergence. Accepted-iteration history records both residuals, film
-minimum, pressure maximum, feasible and accepted step lengths, rejected
-trials, Krylov iterations, Schur diagnostics, and the bordered correction
-accuracy. `MonolithicNewtonError` retains accepted history and diagnostics
-for the failing iteration. Configure `log_every` for periodic standard
-Python logger output; the history and return values remain the authoritative
-machine-readable diagnostics.
+dimensionlessly scaled merit `M=0.5*(||R_p||_2^2/N + R_Q^2)` using the true
+directional Armijo condition `M_trial <= M + c*alpha*(dM/dalpha)`. The
+direction must have a negative derivative; up to two tighter-Krylov retries
+are attempted before a non-descent failure is raised. A small step alone is
+never accepted as convergence. Accepted-iteration history records both
+residuals, pressure extrema, film minimum, feasible and accepted step lengths,
+rejected trials, Krylov iterations and residual histories, Schur diagnostics,
+and the bordered correction accuracy. `MonolithicNewtonError` retains
+accepted history, current-state extrema, deformation-to-rigid-gap ratio,
+line-search merit data and failed Krylov records. Configure `log_every` for
+periodic standard Python logger output; the history and return values remain
+the authoritative machine-readable diagnostics.
 
 `continue_monolithic_load` verifies its supplied converged starting solution
 against the same problem, then warm-starts from the last accepted solution.
@@ -279,54 +297,72 @@ cannot be reached.
 ### Bordered Newton benchmark and present limits
 Run `python examples/run_monolithic_load_control_demo.py` to compare the
 existing Picard reference, nested signed-load controller, and bordered
-Newton solver, then execute two adaptive load steps and save field and
-convergence plots below `results/monolithic_signed_load_demo/`. The example
-uses the established low-pressure numerical case (`E*=100 MPa`, grid
+Newton solver, compare the sparse preconditioners, execute two adaptive load
+steps, and save field and convergence plots below
+`results/monolithic_signed_load_demo/`. The example uses the established
+low-pressure numerical case (`E*=100 MPa`, grid
 `(ny,nx)=13x17`, `p_ref=21.25 kPa`, `h_ref=20 um`) and sets the target to
 the signed load of the converged prescribed-offset reference at `h0=20 um`.
 On the development CPU, bordered Newton converged in 3 corrections with
-independent load residual `8.67e-19 N`, 100 counted residual evaluations,
-and relative pressure L2 difference `7.14e-8` from the Picard reference.
+independent load residual `4.34e-19 N`, 13 counted residual evaluations,
+and relative pressure L2 difference `7.23e-8` from the Picard reference.
 The nested root controller returned relative pressure L2 difference
 `1.12e-11`, load residual `-2.44e-14 N`, and used 11 converged load
 evaluations; those evaluations required 917 aggregate Picard outer
 iterations. These timings and method-specific work counts are single-run
 observations, not performance guarantees.
 
-The reference state has a small but measurable elastic deformation (peak
-`|w|` approximately `70.5 nm`) and retains negative full-film pressure.
-This evidence validates the zero-compliance limit, one weak full-compliance
-load closure, the Schur correction, and a small successful continuation
-sequence. It does not validate moderate or strong elastic coupling, the
-earlier `E*=100 kPa` failure case, branch existence at arbitrary loads,
-physical compressive contact, or a cavitating EHL solution. The monolithic
-solver is therefore a signed mathematical verification model, not a
-physically validated load-controlled EHL solver. The old prescribed-h0
-Picard and nested load solvers remain available as references.
+The weak reference state has peak `|w|` approximately `70.5 nm`, about
+`0.36%` of its minimum rigid gap, and retains negative full-film pressure.
+In the same small-grid demonstration, ILU, Jacobi and no preconditioner
+required 8, 77 and 122 aggregate Krylov iterations for one bordered
+correction. Their independently recomputed maximum true residuals were
+`9.0e-10`, `2.66e-9` and `8.85e-9`; single-run setup-plus-solve times were
+approximately `0.023`, `0.123` and `0.221 s` on the development CPU. The
+moderate `E*=10 MPa` case converged in four corrections with a deformation
+ratio about `4.18%`. These are numerical verification comparisons, not
+material validation or guaranteed performance.
 
-An additional controlled compliance run at `E*=10 MPa`, targeting the
-zero-compliance `h0=20 um` signed load, converged in three Newton corrections
-to `h0=18.7415 um`, `h_min=18.5058 um`, peak `|w|=786 nm`, and load error
-below `5e-19 N`. This is a moderate-compliance mathematical benchmark, not a
-realistic material validation. A probe at `E*=1 MPa` failed at iteration 9
-after 8 accepted steps when full bordered GMRES reached its 300-iteration
-limit; the scaled Reynolds residual was `4.56e-2`, while the load row happened
-to be zero. It is a nonconverged result. At `E*=100 kPa`, the 18 um
-rigid-film initial pressure already produced a film at/below the strict
-positive floor with full compliance, so that initial state is inadmissible.
-Neither stress case is evidence for or against existence of another solution
-branch; both remain exploratory limitations.
+The `E*=1 MPa` full-compliance stress case is still unresolved. It reaches a
+positive-film iterate with deformation about `32.9%` of the minimum rigid
+gap, but the nonlinear Reynolds residual remains about `4.55e-2`; load error
+is `7.48e-8 N`. Pressure spans approximately `-14.6 kPa` to `5.81 kPa`.
+GMRES terminates with `info=0` and a true relative residual of `7.96e-3`;
+the Newton correction is descending, but the Armijo search fails after 16
+accepted corrections as the trial merit ceases to decrease. Thus the
+reproduced failure is nonlinear line-search stagnation, not an immediate
+Krylov iteration-limit failure. On the related rigid-reference load case,
+tighter forcing caps of `1e-3` and `1e-4` also stagnated near Reynolds RMS
+`4.55e-2`, despite bordered-correction residuals of `9.93e-4` and
+`2.06e-5`, respectively. The exact JVP agrees with centered finite
+differences along the difficult Newton direction. At
+`E*=100 kPa`, the `h0=18 um` initial pressure gives a negative film minimum
+under full compliance. `make_feasible_initial_state` can explicitly raise
+`h0` by about `64.2 um` to establish a `20 nm` film margin; this only creates
+an admissible starting state and does not demonstrate convergence or a
+physical solution. Neither stress case establishes whether another solution
+branch exists.
+
+One numerical correction during this robustness work was replacing the prior
+residual-relative Armijo surrogate with the directional-derivative Armijo
+criterion above. The finite-difference JVP checks and merit-history
+regressions independently verify the derivative and acceptance condition.
+Despite this correction, the strong-coupling benchmark remains unverified.
+The monolithic solver is a signed mathematical verification model, not a
+physically validated load-controlled EHL solver. The prescribed-h0 Picard
+and nested load solvers remain independent references.
 
 `examples/run_monolithic_load_control_demo.py` prints the residuals and
 globalization/Krylov/Schur diagnostics for each accepted Newton correction,
-final independently recomputed Reynolds RMS and load closure, comparison
-metrics, and adaptive continuation attempt history. The Newton visualization
-module plots Reynolds and load residuals, feasible/accepted step lengths,
-Krylov iterations, the Schur scale indicator, minimum film and peak pressure.
-Continuation plots distinguish rejected load attempts from the accepted
-`h0` and minimum-film branches. Exceptions preserve accepted history plus
-failure-state diagnostics, which can be passed to the history plotting
-function.
+final independently recomputed Reynolds RMS and load closure, preconditioner
+comparisons, normalized deformation strengths, and adaptive continuation
+attempt history. The Newton visualization module plots Reynolds and load
+residuals, feasible/accepted step lengths, Krylov iteration counts and
+preconditioned residual histories (with true-residual markers), Schur
+indicators, minimum film, both pressure extrema, and coupling-strength
+comparisons. Continuation plots distinguish rejected load attempts from the
+accepted `h0` and minimum-film branches. Exceptions preserve accepted
+history and failed-state diagnostics for post-run inspection.
 
 ## Coupled visualization
 `src/ehl_solver/visualization.py` is independent of the numerical iteration

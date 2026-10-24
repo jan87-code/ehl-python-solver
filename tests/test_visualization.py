@@ -9,11 +9,19 @@ import numpy as np
 import pytest
 
 from ehl_solver.coupled import CoupledIteration, CoupledSnapshot
+from ehl_solver.monolithic import (
+    KrylovSolveDiagnostic,
+    MonolithicIteration,
+    PreconditionerBenchmark,
+)
 from ehl_solver.visualization import (
     interpolate_cross_section,
     plot_convergence_history,
+    plot_elastic_coupling_diagnostic,
     plot_field_cross_section,
     plot_film_thickness_distribution,
+    plot_monolithic_newton_history,
+    plot_preconditioner_comparison,
     plot_pressure_distribution,
     plot_snapshot,
     save_coupled_figures,
@@ -171,3 +179,96 @@ def test_report_saves_all_requested_pngs_with_safe_case_directory(tmp_path):
     assert all(path.is_file() and path.stat().st_size > 1000 for path in paths)
     assert paths[0].parent == tmp_path / "demo_case"
     assert any("snapshot_iter_0002" in path.name for path in paths)
+
+
+def test_monolithic_history_plots_krylov_traces_residuals_and_pressure_extrema():
+    diagnostic = KrylovSolveDiagnostic(
+        label="pressure_residual",
+        preconditioner="ilu",
+        requested_rtol=1e-4,
+        effective_rtol=1e-4,
+        iterations=3,
+        info=0,
+        true_relative_residual=1e-5,
+        preconditioned_residual_history=(0.5, 0.02, 1e-4),
+        termination_reason="converged",
+    )
+    iteration = MonolithicIteration(
+        iteration=1,
+        reynolds_residual_scaled=0.1,
+        load_residual_n=2e-6,
+        load_residual_scaled=0.02,
+        pressure_correction_relative=0.2,
+        h0_correction_relative=0.1,
+        minimum_film_thickness_m=10e-6,
+        minimum_pressure_pa=-1e3,
+        maximum_pressure_pa=2e4,
+        feasible_step_limit=0.9,
+        accepted_step_length=0.5,
+        merit_directional_derivative=-0.1,
+        rejected_line_search_trials=1,
+        krylov_iterations=3,
+        krylov_residual_relative=1e-5,
+        schur_denominator=1.0,
+        schur_condition_indicator=0.5,
+        bordered_residual_relative=1e-5,
+        forcing_tolerance=1e-4,
+        krylov_diagnostics=(diagnostic,),
+    )
+
+    figure, axes = plot_monolithic_newton_history((iteration,))
+
+    assert len(axes) == 5
+    assert axes[0].get_ylabel() == "Scaled residual"
+    assert axes[4].get_ylabel() == "Preconditioned GMRES residual"
+    assert len(axes[4].lines) == 1
+    assert axes[4].collections
+    plt.close(figure)
+
+
+def test_preconditioner_comparison_plot_shows_all_strategies():
+    results = tuple(
+        PreconditionerBenchmark(
+            preconditioner=strategy,
+            preconditioner_used=strategy,
+            converged=True,
+            elapsed_seconds=elapsed,
+            krylov_iterations=iterations,
+            maximum_true_relative_residual=residual,
+            bordered_residual_relative=residual,
+            termination_reason="converged",
+        )
+        for strategy, elapsed, iterations, residual in (
+            ("ilu", 0.02, 5, 1e-8),
+            ("jacobi", 0.04, 15, 1e-7),
+            ("none", 0.08, 30, 1e-6),
+        )
+    )
+
+    figure, axes = plot_preconditioner_comparison(results)
+
+    assert len(axes) == 3
+    assert [tick.get_text() for tick in axes[0].get_xticklabels()] == [
+        "ilu",
+        "jacobi",
+        "none",
+    ]
+    np.testing.assert_allclose(
+        [patch.get_height() for patch in axes[1].patches], [5, 15, 30]
+    )
+    plt.close(figure)
+
+
+def test_elastic_coupling_plot_distinguishes_failed_iterate():
+    figure, axes = plot_elastic_coupling_diagnostic(
+        [1e6, 1e7, 1e8],
+        [0.05, 0.04, 0.003],
+        converged=[False, True, True],
+    )
+
+    assert axes.get_xscale() == "log"
+    assert axes.get_xlabel() == "Effective elastic modulus E* [MPa]"
+    assert axes.collections
+    assert len(axes.lines) == 1
+    assert axes.lines[0].get_label() == "Converged"
+    plt.close(figure)

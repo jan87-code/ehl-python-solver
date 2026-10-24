@@ -7,9 +7,13 @@ from scipy.integrate import trapezoid
 import ehl_solver.monolithic as monolithic
 from ehl_solver.coupled import solve_coupled_reynolds_elasticity
 from ehl_solver.monolithic import (
+    BorderedLinearSolveError,
     BorderedReynoldsElasticityProblem,
     MonolithicNewtonError,
+    build_frozen_film_preconditioner,
+    compare_bordered_preconditioners,
     continue_monolithic_load,
+    make_feasible_initial_state,
     solve_bordered_correction,
     solve_monolithic_full_film_load,
 )
@@ -148,6 +152,124 @@ def test_schur_correction_satisfies_complete_bordered_linearization():
         rtol=2e-4,
         atol=2e-7,
     )
+    assert all(
+        record.true_relative_residual
+        <= max(record.effective_rtol * 1.25, 1e-12)
+        for record in correction.krylov_diagnostics
+    )
+
+
+def test_inexact_krylov_forcing_has_a_hard_accuracy_ceiling():
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target)
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
+    )
+
+    correction = solve_bordered_correction(problem, state, krylov_rtol=0.1)
+
+    assert correction.krylov_diagnostics
+    assert all(
+        record.requested_rtol == pytest.approx(0.1)
+        for record in correction.krylov_diagnostics
+    )
+    assert all(
+        record.effective_rtol == pytest.approx(1e-2)
+        for record in correction.krylov_diagnostics
+    )
+    assert all(record.true_relative_residual <= 1e-2 for record in correction.krylov_diagnostics)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"krylov_rtol": np.nan},
+        {"bordered_tolerance": np.nan},
+        {"schur_tolerance": 0.0},
+        {"krylov_max_iterations": 0},
+    ],
+)
+def test_bordered_correction_rejects_invalid_linear_solver_controls(options):
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target)
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
+    )
+
+    with pytest.raises(ValueError):
+        solve_bordered_correction(problem, state, **options)
+
+
+def test_frozen_film_preconditioner_has_consistent_scaling_and_application():
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target, compliance_factor=0.0)
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
+    )
+    preconditioner = build_frozen_film_preconditioner(
+        problem, state, strategy="jacobi"
+    )
+    vector = np.linspace(0.5, 1.5, problem.pressure_size)
+    expected = vector / preconditioner.matrix.diagonal()
+
+    np.testing.assert_allclose(preconditioner.operator @ vector, expected)
+    pressure_direction = problem.jacobian_vector(
+        state, np.concatenate((vector, [0.0]))
+    )[:-1]
+    np.testing.assert_allclose(
+        pressure_direction, preconditioner.matrix @ vector, rtol=2e-12, atol=1e-10
+    )
+    np.testing.assert_allclose(
+        preconditioner.matrix.toarray(),
+        preconditioner.matrix.toarray().T,
+        rtol=0.0,
+        atol=1e-12,
+    )
+
+
+def test_preconditioner_failure_falls_back_to_jacobi(monkeypatch):
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target)
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
+    )
+
+    def fail_ilu(*args, **kwargs):
+        raise RuntimeError("intentional factorization failure")
+
+    monkeypatch.setattr(monolithic, "spilu", fail_ilu)
+    preconditioner = build_frozen_film_preconditioner(problem, state, strategy="ilu")
+
+    assert preconditioner.strategy == "jacobi"
+    assert np.all(np.isfinite(preconditioner.operator @ np.ones(problem.pressure_size)))
+
+
+def test_preconditioner_benchmark_compares_true_residuals_without_mutating_problem():
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target, compliance_factor=0.0)
+    original_strategy = problem.preconditioner
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
+    )
+
+    results = compare_bordered_preconditioners(problem, state)
+
+    assert {result.preconditioner for result in results} == {"ilu", "jacobi", "none"}
+    assert all(result.converged for result in results)
+    assert all(result.maximum_true_relative_residual < 1e-7 for result in results)
+    assert all(result.bordered_residual_relative < 1e-7 for result in results)
+    assert all(result.elapsed_seconds >= 0.0 for result in results)
+    assert problem.preconditioner == original_strategy
 
 
 def test_singular_schur_indicator_recovers_with_full_bordered_gmres():
@@ -193,6 +315,52 @@ def test_failed_pressure_krylov_recovers_through_full_bordered_solve(monkeypatch
     assert correction.pressure_krylov_residual_relative < 1e-7
     assert correction.bordered_residual_relative < 1e-7
     assert calls >= 2
+
+
+def test_failed_bordered_krylov_preserves_true_residual_diagnostics(monkeypatch):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target)
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
+    )
+
+    def always_fail(operator, rhs, **kwargs):
+        return np.zeros_like(rhs), 1
+
+    monkeypatch.setattr(monolithic, "gmres", always_fail)
+    with pytest.raises(BorderedLinearSolveError) as failure:
+        solve_bordered_correction(problem, state)
+
+    diagnostics = failure.value.krylov_diagnostics
+    assert diagnostics
+    assert diagnostics[-1].label == "full_bordered_fallback"
+    assert diagnostics[-1].info == 1
+    assert diagnostics[-1].true_relative_residual > 0.0
+    assert "true relative residual" in str(failure.value)
+
+
+def test_newton_error_preserves_failed_krylov_diagnostics(monkeypatch):
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target)
+
+    def always_fail(operator, rhs, **kwargs):
+        return np.zeros_like(rhs), 1
+
+    monkeypatch.setattr(monolithic, "gmres", always_fail)
+    with pytest.raises(MonolithicNewtonError) as failure:
+        solve_monolithic_full_film_load(
+            problem,
+            _pressure_at_h0(x, y, 18e-6),
+            18e-6,
+        )
+
+    records = failure.value.diagnostics["krylov_diagnostics"]
+    assert records[-1].label == "full_bordered_fallback"
+    assert records[-1].info == 1
+    assert failure.value.diagnostics["linear_solver_error"]
 
 
 def test_zero_compliance_load_newton_matches_reynolds_reference():
@@ -291,8 +459,44 @@ def test_moderate_compliance_closes_load_with_measurable_deformation(caplog):
     assert solution.central_film_offset_m * 1e6 == pytest.approx(18.7415, abs=0.02)
     assert np.min(solution.film_thickness_m) > problem.film_floor_m
     assert np.max(np.abs(solution.elastic_displacement_m)) > 500e-9
-    assert abs(solution.load_residual_n) < 1e-12
-    assert len(solution.history) == 3
+    assert abs(solution.load_residual_n) < abs(target) * 1e-8
+    assert len(solution.history) >= 2
+    assert solution.history[0].forcing_tolerance == pytest.approx(1e-2)
+    assert all(1e-4 <= entry.forcing_tolerance <= 1e-2 for entry in solution.history)
+    assert all(
+        len(entry.krylov_diagnostics) >= 2 for entry in solution.history
+    )
+    final_state = np.concatenate(
+        (
+            solution.pressure_dimensionless[1:-1, 1:-1].ravel(),
+            [solution.central_film_offset_m / FILM_SCALE_M],
+        )
+    )
+    final_residual = problem.residual(final_state)
+    for index, entry in enumerate(solution.history):
+        current_merit = 0.5 * (
+            entry.reynolds_residual_scaled**2 + entry.load_residual_scaled**2
+        )
+        if index + 1 < len(solution.history):
+            next_entry = solution.history[index + 1]
+            next_merit = 0.5 * (
+                next_entry.reynolds_residual_scaled**2
+                + next_entry.load_residual_scaled**2
+            )
+        else:
+            next_merit = 0.5 * (
+                (
+                    np.linalg.norm(final_residual[:-1])
+                    / np.sqrt(problem.pressure_size)
+                )
+                ** 2
+                + final_residual[-1] ** 2
+            )
+        armijo_bound = (
+            current_merit
+            + 1e-4 * entry.accepted_step_length * entry.merit_directional_derivative
+        )
+        assert next_merit <= armijo_bound + 1e-12
     assert "monolithic Newton iteration=1" in caplog.text
     assert "monolithic Newton converged" in caplog.text
 
@@ -308,6 +512,28 @@ def test_extreme_compliance_rigid_initial_state_is_rejected_as_infeasible():
 
     with pytest.raises(ValueError, match="film thickness"):
         problem.residual(state)
+
+
+def test_feasible_initialization_adjusts_only_h0_and_reports_change():
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target, e_star=1e5)
+    pressure = _pressure_at_h0(x, y, 18e-6)
+
+    feasible = make_feasible_initial_state(problem, pressure, 18e-6)
+    state = np.concatenate(
+        (
+            feasible.pressure_dimensionless[1:-1, 1:-1].ravel(),
+            [feasible.central_film_offset_m / FILM_SCALE_M],
+        )
+    )
+    _, film, _ = problem.state_fields(state[:-1], float(state[-1]))
+
+    assert feasible.h0_adjustment_m > 0.0
+    assert feasible.original_minimum_film_thickness_m <= problem.film_floor_m
+    assert feasible.adjusted_minimum_film_thickness_m > problem.film_floor_m
+    assert np.min(film) > problem.film_floor_m
+    np.testing.assert_array_equal(feasible.pressure_dimensionless, pressure)
 
 
 def test_dual_line_search_rejects_infeasible_steps_and_keeps_diagnostics():

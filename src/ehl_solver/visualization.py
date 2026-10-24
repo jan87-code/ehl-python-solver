@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         MonolithicIteration,
         MonolithicLoadContinuation,
         MonolithicLoadSolution,
+        PreconditionerBenchmark,
     )
 
 
@@ -412,13 +413,13 @@ def save_coupled_figures(
 def plot_monolithic_newton_history(
     history: tuple[MonolithicIteration, ...],
     *,
-    failure_diagnostics: dict[str, float | int | str] | None = None,
+    failure_diagnostics: dict[str, object] | None = None,
 ) -> tuple[Figure, NDArray[Any]]:
     """Plot Newton residuals, globalization, Krylov work and Schur diagnostics."""
     if not history:
         raise ValueError("history must contain at least one Newton iteration")
     iterations = np.asarray([entry.iteration for entry in history])
-    fig, axes = plt.subplots(4, 1, figsize=(10, 12), constrained_layout=True)
+    fig, axes = plt.subplots(5, 1, figsize=(10, 15), constrained_layout=True)
     axes[0].semilogy(
         iterations,
         [
@@ -472,12 +473,12 @@ def plot_monolithic_newton_history(
     )
     axes[2].set_ylabel("Krylov iterations")
     schur_axis = axes[2].twinx()
+    schur_values = np.asarray(
+        [entry.schur_condition_indicator for entry in history], dtype=np.float64
+    )
     schur_axis.semilogy(
         iterations,
-        [
-            max(entry.schur_condition_indicator, np.finfo(float).tiny)
-            for entry in history
-        ],
+        np.where(schur_values > 0.0, schur_values, np.nan),
         "d--",
         color="tab:orange",
         label="Schur scale indicator",
@@ -494,15 +495,64 @@ def plot_monolithic_newton_history(
     pressure_axis = axes[3].twinx()
     pressure_axis.plot(
         iterations,
+        [entry.minimum_pressure_pa / 1e6 for entry in history],
+        "^-.",
+        color="tab:purple",
+        label="Minimum pressure",
+    )
+    pressure_axis.plot(
+        iterations,
         [entry.maximum_pressure_pa / 1e6 for entry in history],
         "s--",
         color="tab:red",
         label="Maximum pressure [MPa]",
     )
     axes[3].set_ylabel("Minimum film [µm]")
-    pressure_axis.set_ylabel("Maximum pressure [MPa]")
+    pressure_axis.set_ylabel("Pressure extrema [MPa]")
+    film_handles, film_labels = axes[3].get_legend_handles_labels()
+    pressure_handles, pressure_labels = pressure_axis.get_legend_handles_labels()
+    axes[3].legend(
+        film_handles + pressure_handles,
+        film_labels + pressure_labels,
+        loc="best",
+        fontsize="small",
+    )
     axes[3].set_xlabel("Newton iteration")
     axes[3].grid(True, alpha=0.25)
+    axes[4].set_ylabel("Preconditioned GMRES residual")
+    for entry in history:
+        for diagnostic in entry.krylov_diagnostics:
+            residual_history = np.asarray(
+                diagnostic.preconditioned_residual_history, dtype=np.float64
+            )
+            if residual_history.size:
+                valid_history = np.maximum(residual_history, np.finfo(float).tiny)
+                label = f"{entry.iteration}: {diagnostic.label}"
+                axes[4].semilogy(
+                    np.arange(1, residual_history.size + 1),
+                    valid_history,
+                    label=label,
+                    alpha=0.8,
+                )
+                axes[4].scatter(
+                    [residual_history.size],
+                    [max(diagnostic.true_relative_residual, np.finfo(float).tiny)],
+                    marker="x",
+                    color=axes[4].lines[-1].get_color(),
+                    label=(
+                        "True relative residual"
+                        if not any(
+                            collection.get_label() == "True relative residual"
+                            for collection in axes[4].collections
+                        )
+                        else None
+                    ),
+                )
+    axes[4].set_xlabel("Krylov iteration within each solve")
+    axes[4].grid(True, which="both", alpha=0.25)
+    if any(entry.krylov_diagnostics for entry in history):
+        axes[4].legend(fontsize="x-small", ncol=2)
+    fig.suptitle("Monolithic Newton convergence and linear-solve diagnostics")
     if failure_diagnostics:
         diagnostic_text = "\n".join(
             f"{key}: {value}"
@@ -523,6 +573,87 @@ def plot_monolithic_newton_history(
     else:
         fig.suptitle("Monolithic Newton convergence history")
     return fig, axes
+
+
+def plot_preconditioner_comparison(
+    results: tuple[PreconditionerBenchmark, ...],
+) -> tuple[Figure, NDArray[Any]]:
+    """Compare bordered-solve timings, Krylov work and verified residuals."""
+    if not results:
+        raise ValueError("results must contain at least one preconditioner benchmark")
+    labels = [item.preconditioner for item in results]
+    positions = np.arange(len(results))
+    figure, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
+    axes[0].bar(positions, [item.elapsed_seconds for item in results])
+    axes[0].set_ylabel("Elapsed time [s]")
+    axes[1].bar(positions, [item.krylov_iterations for item in results])
+    axes[1].set_ylabel("Total Krylov iterations")
+    axes[2].bar(
+        positions,
+        [
+            max(item.maximum_true_relative_residual, np.finfo(float).tiny)
+            for item in results
+        ],
+    )
+    axes[2].set_yscale("log")
+    axes[2].set_ylabel("Maximum independently evaluated true residual")
+    for axis in axes:
+        axis.set_xticks(positions, labels)
+        axis.grid(True, axis="y", alpha=0.25)
+    figure.suptitle("Frozen-film preconditioner comparison")
+    return figure, axes
+
+
+def plot_elastic_coupling_diagnostic(
+    effective_modulus_pa: ArrayLike,
+    deformation_to_rigid_gap_ratio: ArrayLike,
+    *,
+    converged: ArrayLike | None = None,
+) -> tuple[Figure, Axes]:
+    """Compare compliance strength using peak elastic gap change / rigid gap."""
+    modulus = np.asarray(effective_modulus_pa, dtype=np.float64)
+    ratio = np.asarray(deformation_to_rigid_gap_ratio, dtype=np.float64)
+    if (
+        modulus.ndim != 1
+        or ratio.shape != modulus.shape
+        or modulus.size == 0
+        or np.any(~np.isfinite(modulus))
+        or np.any(modulus <= 0.0)
+        or np.any(~np.isfinite(ratio))
+        or np.any(ratio < 0.0)
+    ):
+        raise ValueError("moduli and deformation ratios must be finite positive vectors")
+    success = (
+        np.ones(modulus.shape, dtype=bool)
+        if converged is None
+        else np.asarray(converged, dtype=bool)
+    )
+    if success.shape != modulus.shape:
+        raise ValueError("converged must match the modulus vector shape")
+    order = np.argsort(modulus)
+    figure, axes = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
+    axes.plot(
+        modulus[order][success[order]] / 1e6,
+        ratio[order][success[order]],
+        "o-",
+        color="tab:green",
+        label="Converged",
+    )
+    axes.scatter(
+        modulus[order][~success[order]] / 1e6,
+        ratio[order][~success[order]],
+        marker="x",
+        color="tab:red",
+        label="Failed iterate",
+        zorder=3,
+    )
+    axes.set_xscale("log")
+    axes.set_xlabel("Effective elastic modulus E* [MPa]")
+    axes.set_ylabel("Peak |elastic gap change| / minimum rigid gap")
+    axes.grid(True, which="both", alpha=0.25)
+    axes.legend()
+    axes.set_title("Measured Reynolds-elasticity coupling strength")
+    return figure, axes
 
 
 def plot_monolithic_continuation_history(
@@ -587,6 +718,10 @@ def save_monolithic_figures(
     case_name: str,
     results_directory: str | Path = "results",
     continuation: MonolithicLoadContinuation | None = None,
+    preconditioner_comparison: tuple[PreconditionerBenchmark, ...] | None = None,
+    effective_modulus_pa: ArrayLike | None = None,
+    deformation_to_rigid_gap_ratio: ArrayLike | None = None,
+    coupling_converged: ArrayLike | None = None,
 ) -> tuple[Path, ...]:
     """Save final fields, center sections, Newton and optional load histories."""
     x, y, pressure, film = _validated_plot_fields(
@@ -622,6 +757,29 @@ def save_monolithic_figures(
             (
                 "load_continuation_history.png",
                 plot_monolithic_continuation_history(continuation)[0],
+            )
+        )
+    if preconditioner_comparison is not None:
+        figures.append(
+            (
+                "preconditioner_comparison.png",
+                plot_preconditioner_comparison(preconditioner_comparison)[0],
+            )
+        )
+    if (effective_modulus_pa is None) != (deformation_to_rigid_gap_ratio is None):
+        raise ValueError(
+            "effective_modulus_pa and deformation_to_rigid_gap_ratio must be "
+            "provided together"
+        )
+    if effective_modulus_pa is not None and deformation_to_rigid_gap_ratio is not None:
+        figures.append(
+            (
+                "elastic_coupling_diagnostic.png",
+                plot_elastic_coupling_diagnostic(
+                    effective_modulus_pa,
+                    deformation_to_rigid_gap_ratio,
+                    converged=coupling_converged,
+                )[0],
             )
         )
     paths: list[Path] = []

@@ -65,8 +65,8 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with mass-conservation and complementarity diagnostics; not yet coupled to elasticity or load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
 - `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only
-- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve, Schur/GMRES corrections, dual line search and adaptive signed-load continuation; weak numerical benchmark only
-- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/continuation histories and accepted-iteration snapshots
+- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve with an analytic discrete JVP, Schur/GMRES, frozen-film ILU/Jacobi/identity preconditioners, dual line search and adaptive signed-load continuation; mathematical verification only
+- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/continuation histories, Krylov/preconditioner comparisons, coupling-ratio diagnostics and accepted-iteration snapshots
 
 Run the weakly coupled benchmark and save report figures under
 `results/weak_coupling_demo/`:
@@ -85,8 +85,10 @@ python examples/run_monolithic_load_control_demo.py
 The monolithic example and its regression tests establish only mathematical
 signed full-film convergence on the documented weak-coupling case. Negative
 pressure remains in the equations; cavitation, physical load validation,
-moderate/strong coupling and realistic branch continuation are not yet
-validated.
+and broader strong-coupling branch continuation are not validated. The demo
+also compares frozen-film preconditioners, reports a moderate-compliance
+reference and records the 1 MPa exploratory line-search failure rather than
+presenting it as a converged solution.
 
 The solver does not require plotting or collect snapshots unless
 `plot_every` or `snapshot_iterations` is explicitly set. Generated

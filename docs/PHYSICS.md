@@ -85,13 +85,15 @@ The positive-x saturation flux uses first-order upwinding of `theta` and the
 same arithmetic face average of `H` as the validated Reynolds operator.
 Consequently, setting `theta=1` exactly recovers the existing full-film
 convection stencil. Diffusion retains the arithmetic face conductance for
-`H**3`. The west boundary is a fully flooded supply (`theta=1`); pressure is
-zero on all domain edges. The east edge is outflow, and no transverse
-advective saturation flux exists. This assumes constant lubricant density,
-zero-gauge cavitation pressure, steady flow, no starvation at the inlet, and
-no transient squeeze term. The formulation is a fixed-film numerical
-prototype, not yet integrated with elasticity, load control, or the coupled
-outer iteration.
+`H**3`. Pressure is zero on all domain edges. The west boundary has uniform
+prescribed `inlet_fractional_film_content` in `[0,1]`; the default `1` is
+fully flooded, and lower values prescribe a starved supply. The east edge is
+outflow, and no transverse advective saturation flux exists. This assumes
+constant lubricant density, zero-gauge cavitation pressure, steady flow, a
+uniform inlet, and no transient squeeze term. The starvation boundary is
+simplified; it is not a feed-groove or inlet-meniscus model. The formulation
+is a fixed-film numerical prototype, not yet integrated with elasticity,
+load control, or the coupled outer iteration.
 
 The active-set solve rejects negative saturation, active-set cycling and
 linear-system failures rather than clipping state variables. It reports
@@ -104,10 +106,34 @@ and reduced saturation downstream. For grids `(ny,nx)` of 9x21, 17x41 and
 `2.4104e-4`, `2.5522e-4` and `2.5883e-4`; successive changes decrease.
 The finest-grid maximum local mass residual is `1.42e-11`, complementarity
 violation is zero, and net boundary flux is approximately `-2.9e-15`.
-These are discretization and conservation checks, not an independent
-experimental or analytical validation. Pressure/saturation continuity at
-general cavitation and reformation fronts, starvation, and coupling to
-elastic deformation have not been validated.
+
+The script `examples/run_cavitation_verification.py` additionally tests a
+repeated-wedge film `H=1.5+0.05*cos(4*pi*X)` at `Lambda=2`, with two
+pressurized zones, two rupture fronts and a reformation front. On
+`(ny,nx)=21x41`, `31x61`, and `51x101`, the maximum centerline pressure in
+the full-film cells directly adjacent to any front, normalized by the
+centerline peak, was `2.40e-1`, `6.96e-2`, and `3.73e-2`. Detected fronts
+were at `X=(0.35, 0.55, 0.85)`, `(0.35, 0.533, 0.85)`, and
+`(0.35, 0.53, 0.84)`; maximum local mass residuals stayed below `6.8e-11`.
+This supports front-pressure reduction with refinement for this smooth,
+mild geometry, but the mesh-aligned location and first-order discretization
+do not establish general front accuracy or higher-order convergence.
+
+Inlet starvation was checked on the converging-diverging wedge above at
+`(ny,nx)=33x81`: reducing inlet saturation from `1` to `0.99` reduced the
+dimensionless pressure integral from `2.5883e-4` to `2.4068e-4` and peak
+pressure from `1.5691e-3` to `1.4850e-3`. At inlet saturation `0.9`, this
+geometry had no pressurized cells and a zero pressure integral; saturation
+remained in `[0.7017, 0.9317]`. Net boundary flux magnitude remained below
+`3.5e-15`. These are prescribed-film numerical checks, not experimental
+validation or a general starvation law.
+
+The model still assumes a uniform scalar inlet supply and fixed film
+geometry. A stronger repeated-wedge exploratory case can drive the active
+set to negative saturation and is rejected explicitly; saturation is not
+clipped to make that case appear successful. General reformation-front
+continuity, feed geometry, transient starvation, experimental comparison,
+elastic coupling and load control remain unvalidated.
 
 ## Prescribed-offset Reynolds-elasticity coupling
 `solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples
@@ -487,9 +513,10 @@ does not constitute a coupled EHL solver.
    homogeneous Dirichlet boundary conditions, sparse-system consistency,
    parabolic point-contact spatial/domain studies, local/global flux balance,
    positive-film SPD checks, and direct-versus-iterative comparisons
-   (validated). The separate prescribed-film cavitation prototype has a
-   conservative wedge refinement regression, but physical benchmark and
-   cavitation-front validation remain planned.
+   (validated). The separate prescribed-film cavitation prototype has
+   conservative wedge, front-refinement, and inlet-starvation regressions;
+   independent experimental validation and elastic/load-controlled
+   cavitation remain planned.
 5. Prescribed-offset weak Reynolds-elasticity fixed-point convergence and
    zero-compliance limit (validated only for the documented low-pressure
    numerical benchmark); the weak signed mathematical load-control cases

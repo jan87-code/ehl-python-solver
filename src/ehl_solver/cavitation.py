@@ -33,6 +33,7 @@ class CavitatingReynoldsSolution:
     east_boundary_flux: float
     south_boundary_flux: float
     north_boundary_flux: float
+    inlet_fractional_film_content: float
 
     @property
     def net_boundary_flux(self) -> float:
@@ -54,6 +55,7 @@ def solve_cavitating_reynolds(
     pressure_tolerance: float = 1e-10,
     saturation_tolerance: float = 1e-10,
     max_active_set_iterations: int = 100,
+    inlet_fractional_film_content: float = 1.0,
 ) -> CavitatingReynoldsSolution:
     """Solve stationary incompressible JFO Reynolds flow for a prescribed film.
 
@@ -65,12 +67,14 @@ def solve_cavitating_reynolds(
 
     Saturation is upwinded in the positive x direction while H retains the
     validated arithmetic face average. Consequently, theta=1 reproduces the
-    existing full-film Reynolds stencil exactly. The west inlet is fully
-    supplied (theta=1); the east is an outflow, and there is no transverse
-    advective saturation flux. This is a stationary, isothermal,
+    existing full-film Reynolds stencil exactly. The west inlet has uniform
+    prescribed ``inlet_fractional_film_content`` in [0, 1], defaulting to a
+    fully supplied value of 1; values below 1 provide a simple
+    inlet-starvation boundary condition. The east is an outflow, and there
+    is no transverse advective saturation flux. This is a stationary, isothermal,
     incompressible JFO/Elrod-Adams mass balance with a fixed cavitation
     pressure of zero gauge. It does not model dissolved gas, transient squeeze
-    flow, starvation at the inlet, or elastic/load coupling.
+    flow, lateral inlet variation, or elastic/load coupling.
 
     An active-set method solves the linear mass balances and pressure/
     saturation constraints as one sparse system per active set. Invalid
@@ -99,6 +103,11 @@ def solve_cavitating_reynolds(
         or max_active_set_iterations < 1
     ):
         raise ValueError("max_active_set_iterations must be a positive integer")
+    if (
+        not math.isfinite(inlet_fractional_film_content)
+        or not 0.0 <= inlet_fractional_film_content <= 1.0
+    ):
+        raise ValueError("inlet_fractional_film_content must be finite and in [0, 1]")
 
     full_matrix, _ = assemble_reynolds_system(h, dx, dy, reynolds_parameter)
     ny, nx = h.shape
@@ -118,7 +127,12 @@ def solve_cavitating_reynolds(
             columns.append(row)
             values.append(reynolds_parameter * h_east / dx)
             if i == 1:
-                known_inlet_flux[row] = -reynolds_parameter * h_west / dx
+                known_inlet_flux[row] = (
+                    -reynolds_parameter
+                    * h_west
+                    * inlet_fractional_film_content
+                    / dx
+                )
             else:
                 west = (j - 1) * interior_nx + i - 2
                 rows.append(row)
@@ -175,7 +189,7 @@ def solve_cavitating_reynolds(
         saturation = np.ones(h.shape, dtype=np.float64)
         pressure[1:-1, 1:-1] = pressure_interior.reshape(interior_ny, interior_nx)
         saturation[1:-1, 1:-1] = saturation_interior.reshape(interior_ny, interior_nx)
-        saturation[1:-1, 0] = 1.0
+        saturation[1:-1, 0] = inlet_fractional_film_content
         saturation[1:-1, -1] = saturation[1:-1, -2]
         saturation[0, :] = saturation[1, :]
         saturation[-1, :] = saturation[-2, :]
@@ -194,6 +208,7 @@ def solve_cavitating_reynolds(
             east_boundary_flux=fluxes[1],
             south_boundary_flux=fluxes[2],
             north_boundary_flux=fluxes[3],
+            inlet_fractional_film_content=inlet_fractional_film_content,
         )
 
     raise RuntimeError(

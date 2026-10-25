@@ -9,10 +9,13 @@
 - [x] Prescribed-film full-film Reynolds solver, parabolic point-contact verification, domain/grid sensitivity, and sparse-solver diagnostics
 - [x] Prescribed-h0 weak Reynolds-elasticity coupling with compliance continuation and zero-compliance regression
 - [x] Coupled pressure/film visualization, interpolated cross sections, convergence histories, and optional accepted-iteration PNG snapshots
-- [ ] Cavitation with explicit model and mass conservation verification
-  - A prescribed-film JFO active-set prototype and discrete wedge/conservation
-    regressions exist in `src/ehl_solver/cavitation.py`; physical benchmark,
-    front-continuity, starvation, and coupled verification remain incomplete.
+- [x] Prescribed-film JFO cavitation prototype with wedge mass-conservation,
+  front-refinement and uniform inlet-starvation verification
+  - Regressions cover local/global flux balance, the full-film limit, repeated
+    rupture/reformation fronts on refined smooth wedges, and reduced inlet
+    supply. This is numerical verification of a fixed-film model, not
+    experimental validation; arbitrary front behavior, feed geometry, and
+    elastic/load-controlled cavitation remain planned.
 - [ ] Coupling of Reynolds + elasticity + film thickness + physical load control
   - A signed full-film h0 root finder and bordered Newton-Krylov solver with
     an analytic matrix-free discrete JVP, Schur correction, verified sparse

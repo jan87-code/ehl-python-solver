@@ -62,6 +62,7 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `convolution.py`: zero-padded full linear convolution with same-shape centered output
 - `hertz.py`: independent analytical formulas using *effective plane-strain contact modulus* `E_star` (Pa)
 - `reynolds.py`: dimensionless conservative residual and prescribed-film full-film solve, with parabolic verification, physical diagnostics, and sparse direct/iterative comparison; no cavitation model
+- `cavitating_coupled.py`: SI prescribed-offset JFO/elasticity CPU reference; convergence checked on exact coupled film; no prescribed-load control
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with local/global mass-conservation, front-refinement, complementarity and uniform inlet-starvation diagnostics; not experimentally validated or coupled to elasticity/load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
 - `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only

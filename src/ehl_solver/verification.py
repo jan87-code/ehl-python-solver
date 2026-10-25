@@ -121,3 +121,69 @@ def audit_full_film_solution(
         net_boundary_flux=float(net_flux),
         summed_local_flux_balance=float(np.sum(local_balances)),
     )
+
+
+@dataclass(frozen=True)
+class CavitatingStateAudit:
+    """Independent supplied-field checks; balances use dimensionless JFO flux."""
+
+    mass_rms: float
+    mass_maximum: float
+    maximum_complementarity: float
+    minimum_pressure_pa: float
+    minimum_saturation: float
+    maximum_saturation: float
+    pressure_boundary_max_pa: float
+    inlet_saturation_error: float
+    net_boundary_flux: float
+    summed_volume_balance: float
+    film_coupling_max_error_m: float
+    displacement_max_error_m: float
+    minimum_film_m: float
+    load_n: float
+    load_metadata_error_n: float
+
+
+def audit_cavitating_solution(problem, solution, *, maximum_grid_points=1024):
+    """Audit SI fields with direct elasticity and the fixed-film JFO stencil.
+
+    Does not call problem.fields, problem.metrics, or the coupled residual.
+    The explicit opposing-face reference balances are independent of the
+    coupled implementation's whole-face arrays and np.diff operations.
+    """
+    from ehl_solver.cavitation import _mass_balance
+
+    if (not isinstance(maximum_grid_points, int) or isinstance(maximum_grid_points, bool)
+            or maximum_grid_points < 1 or np.prod(problem.shape) > maximum_grid_points):
+        raise ValueError("direct audit grid exceeds maximum_grid_points")
+    fields = [np.asarray(values, dtype=np.float64) for values in
+              (solution.pressure_pa, solution.fractional_film_content,
+               solution.film_thickness_m, solution.elastic_displacement_m)]
+    if any(values.shape != problem.shape or not np.all(np.isfinite(values)) for values in fields):
+        raise ValueError("audit fields must be finite with shape (ny,nx)")
+    p_pa, theta, film, displacement = fields
+    if np.any(film <= problem.film_floor_m):
+        raise ValueError("audit film must exceed film_floor_m")
+    if (not math.isfinite(solution.compliance_factor) or not 0 <= solution.compliance_factor <= 1
+            or not math.isfinite(solution.central_film_offset_m)):
+        raise ValueError("audit compliance/offset is invalid")
+    p = p_pa / problem.pressure_scale_pa
+    mass, fluxes = _mass_balance(film / problem.film_scale_m, p, theta,
+                                problem.dx, problem.dy, problem.reynolds_parameter)
+    direct_w = convolve2d(p_pa, problem.elastic_kernel, mode="same")
+    xx, yy = np.meshgrid(problem.x_m, problem.y_m, indexing="xy")
+    exact_film = (solution.central_film_offset_m + xx**2 / (2*problem.radius_x_m)
+                  + yy**2 / (2*problem.radius_y_m) + solution.compliance_factor * direct_w)
+    edges = np.r_[p_pa[0], p_pa[-1], p_pa[1:-1, 0], p_pa[1:-1, -1]]
+    load = float(trapezoid(trapezoid(p_pa, problem.x_m, axis=1), problem.y_m))
+    return CavitatingStateAudit(
+        float(np.sqrt(np.mean(mass**2))), float(np.max(np.abs(mass))),
+        float(np.max(np.abs(p[1:-1, 1:-1] * (1-theta[1:-1, 1:-1])))),
+        float(p_pa.min()), float(theta.min()), float(theta.max()),
+        float(np.max(np.abs(edges))),
+        float(np.max(np.abs(theta[1:-1, 0] - problem.inlet_fractional_film_content))),
+        float(sum(fluxes)), float(np.sum(mass) * problem.dx * problem.dy),
+        float(np.max(np.abs(film - exact_film))),
+        float(np.max(np.abs(displacement - direct_w))), float(film.min()), load,
+        load - solution.load_n,
+    )

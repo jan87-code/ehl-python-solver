@@ -91,9 +91,9 @@ fully flooded, and lower values prescribe a starved supply. The east edge is
 outflow, and no transverse advective saturation flux exists. This assumes
 constant lubricant density, zero-gauge cavitation pressure, steady flow, a
 uniform inlet, and no transient squeeze term. The starvation boundary is
-simplified; it is not a feed-groove or inlet-meniscus model. The formulation
-is a fixed-film numerical prototype, not yet integrated with elasticity,
-load control, or the coupled outer iteration.
+simplified; it is not a feed-groove or inlet-meniscus model. This fixed-film function remains a numerical prototype. The separate
+prescribed-offset JFO/elasticity reference is described below; prescribed
+load control and broad physical validation remain unfinished.
 
 The active-set solve rejects negative saturation, active-set cycling and
 linear-system failures rather than clipping state variables. It reports
@@ -990,3 +990,69 @@ zero-curvature and zero-transversality counterexamples, nullity two,
 incorrect supplied Jacobians, infeasible perturbations, and a coupled saved
 root replay. Nondegeneracy checks do not close the physical load/cavitation
 or full-compliance roadmap milestones.
+
+### Prescribed-offset JFO/elasticity CPU reference
+
+`cavitating_coupled.py` now couples the existing fixed-film active-set JFO
+solver with the cell-integrated elastic operator, as a reference algorithm
+at **prescribed h0**. `CavitatingElasticityProblem` accepts SI coordinates,
+radii, offset, modulus, reference lengths and pressure. Array order is
+`(ny,nx)` and x follows positive entrainment. Internal quantities remain
+`P=p/p_ref`, `H=h/h_ref`, `dx=dx_m/L`, `dy=dy_m/L` and
+`Lambda=12*eta*Ue*L/(h_ref**2*p_ref)`. It preserves zero boundary gauge
+pressure, uniform west inlet saturation, and the fixed-film upwind
+saturation/arithmetic-H face flux. No density/viscosity variation is added.
+
+The reference iterates on film, solves pressure and saturation together,
+and constructs `h_exact=h0+geometry+gamma*w(p)`. It relaxes only the film
+iterate, avoiding pressure/saturation mixing that can break complementarity.
+Both update/film defects and mass/admissibility checks are required. Mass
+RMS, maximum divergence and maximum relative local integrated imbalance
+must be <=1e-8 on **h_exact**, not the previous inner-solve film. Pressure
+and saturation feasibility and `max|P*(1-theta)|` use tolerance 1e-10.
+Pressure and saturation are never clipped. Returned film coupling is exact
+to FFT rounding. Nonconvergence carries full history and the last candidate
+in an exception, without reporting that candidate as a converged root.
+This reference does not replace the experimental monolithic architecture.
+
+`audit_cavitating_solution` independently checks SI fields using direct
+spatial convolution and the existing opposing-face JFO balance stencil,
+while the coupled implementation uses whole-face arrays and `np.diff`.
+It verifies elasticity/film coupling, boundary/inlet conditions, mass,
+complementarity, bounds, and trapezoidal positive pressure force. Numerical
+checks cover the zero-compliance fixed-film identity, full-film stencil
+identity, 100/10/1 MPa small cases, relaxation independence, inlet starvation,
+invalid film rejection, active-set failure and false convergence from tiny
+film steps. Prescribed load is not yet solved.
+
+The reproducible benchmark uses `h0=h_ref=20 um`, radii 10/20 mm,
+`E*=10 MPa`, `L=0.5 mm`, `p_ref=21250 Pa`, `Lambda=12`,
+`x=[-0.5,0.75] mm`, `y=[-0.5,0.5] mm`, compliance stages
+0/0.25/0.5/0.75/1, film relaxation 0.5 and at most 100 outer iterations per
+stage. Measured results at full compliance are:
+
+| `(ny,nx)` | Inlet theta | Force [N] | Minimum film [um] | Minimum theta | Independent max mass residual |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| (9,13) | 1 | 0.002210200631 | 20.3253 | 0.492227 | 9.48e-9 |
+| (17,25) | 1 | 0.002342149561 | 20.3441 | 0.470920 | 5.38e-9 |
+| (25,37) | 1 | 0.002357024095 | 20.3450 | 0.464569 | 5.44e-9 |
+| (17,25) | 0.99 | 0.002320457963 | 20.3417 | 0.470752 | 5.35e-9 |
+
+Same-domain force changes decrease under refinement; this is a numerical
+convergence observation, not experimental validation or domain independence.
+Reducing inlet supply reduces force and conserves mass. Each field has
+nonnegative pressure within the stated tolerance and complementary reduced
+saturation downstream. These small positive-load prescribed-offset cases
+are substantially different from the earlier negative signed-load branch.
+They do not establish prescribed-load equilibrium, a bearing-steel EHL
+film-height reference, strong-coupling robustness, or a full EHL solution.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python examples/run_cavitating_elasticity.py --plots \
+  --output-directory results/cavitating_elasticity_new
+```
+
+The new output directory holds SI fields, saturation, full convergence
+history, independent audits and pressure/film sections, deformation,
+saturation and convergence plots. Existing output directories are refused.

@@ -213,3 +213,30 @@ elasticity benchmark, beginning with zero-compliance and weak-compliance
 limits, independently checked mass/complementarity/film residuals, and
 feasibility. Retain the signed Newton, nested and Picard references; integrate
 load control only after that coupled cavitation benchmark is verified.
+
+## Positive-load prescribed-offset JFO/elasticity reference (2026-10-25)
+
+Implemented and benchmarked a separate CPU reference coupling the existing
+JFO active-set solver and half-space elasticity at prescribed h0. Only the
+film iterate is relaxed; final pressure/saturation pairs retain
+complementarity. Acceptance includes mass conservation on the exact
+pressure-coupled film, feasibility, complementarity and update defects.
+Independent direct-convolution and opposing-face flux audits pass. Failure
+exceptions retain history and last candidates without claiming convergence.
+
+Zero compliance matches the fixed-film JFO solver exactly. Small cases at
+100, 10 and 1 MPa pass; the 10 MPa benchmark has positive force ranging from
+0.00221020 N to 0.00235702 N on 9x13 through 25x37 grids, decreasing force
+changes under refinement, and positive film with downstream reduced content.
+The 0.99-inlet case reduces force and preserves mass. See PHYSICS.md for
+settings, measured residuals, source limitations and reproduction.
+Verification: `ruff check .` clean; `pytest -q` 195 passed, 4 optional
+GPU skips; all four benchmark cases and plots completed under single-thread
+CPU limits.
+
+Next: retain this reference while implementing and independently verifying
+an analytic monolithic pressure/saturation Jacobian, fixed-film sparse
+preconditioning and strict globalized Newton iteration. Add simultaneous
+positive-load/h0 control only after that pressure/saturation solve agrees
+with the reference. Physical-load equilibrium and full EHL validation are
+still unchecked.

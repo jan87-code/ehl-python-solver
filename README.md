@@ -65,6 +65,7 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `cavitating_continuation.py`: bounded positive-force stepping with verified warm starts, retries and retained failed candidates
 - `cavitating_newton.py`: experimental monolithic JFO pressure/content/elasticity and positive-load/h0 Newton solve, analytic JVP, verified Schur/GMRES, feasibility and Armijo safeguards; numerical verification only
 - `cavitating_coupled.py`: SI prescribed-offset JFO/elasticity CPU reference; convergence checked on exact coupled film; no prescribed-load control
+- `parabolic_reference.py`: independent SI rigid infinite-width parabolic cavitation reference with finite inlet, smooth rupture and conserved flux; not a point-contact EHL solution
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with local/global mass-conservation, front-refinement, complementarity and uniform inlet-starvation diagnostics; not experimentally validated or coupled to elasticity/load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
 - `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only

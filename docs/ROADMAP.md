@@ -362,3 +362,31 @@ complete evidence and the reproducible validation command.
 Continue the CPU inlet/far-field roadmap check. GPU optimization cannot
 resolve the already observed domain dependence; any future cached-plan or
 device-resident work needs separate numerical/performance verification.
+
+## Independent rigid parabolic inlet/rupture benchmark (2026-10-25)
+
+Following the desktop GPU audit (including the unusable PyTorch probe),
+continued the CPU roadmap with an analytical finite-inlet, infinite-width
+parabolic JFO reference. It returns SI pressure/film, mean-speed flux and
+force per transverse width, with a smooth p=dp/dx=0 rupture. Independent
+quadrature checks pressure, rupture and force; regressions also cover flux,
+complementarity, admissibility, inlet sensitivity and invalid inputs.
+
+The wide rigid 2-D JFO centerline approaches this independent limit on
+17x33/65/129 grids: pressure errors fall from 3.174% to 0.642% to 0.163%,
+and force-per-width errors from 3.341% to 0.646% to 0.165%. Local mass
+residuals remain below 8.59e-13 and content error decreases under refinement.
+The exact reference itself shows strong finite-inlet load sensitivity;
+PHYSICS.md documents formulas, units, measurements, sources and reproduction.
+
+This verifies the finite-inlet/smooth-rupture treatment in a distinct rigid
+limit. It does not close the elastic point-contact domain problem. Next:
+separate inlet/outlet/transverse extent studies at matched force/material
+and interior resolution, using flow budgets and the new reference to guide
+boundary verification. Do not transfer infinite-width boundary formulas to
+point contacts without independent justification. Physical film-height
+validation, pressure-dependent properties and resident-device GPU iteration
+remain open.
+Verification: `ruff check .` clean; `pytest -q` 233 passed, 4 optional
+GPU skips. The analytical quadrature checks, three wide JFO grids and plotted
+reference/inlet study completed with single-thread CPU settings.

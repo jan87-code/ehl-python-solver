@@ -1342,3 +1342,87 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
 Run with host GPU access. The new directory records device/binary hash,
 checks, separated timings, memory observations and SI solver fields.
 The original staged sources and develop's CPU reference remain preserved.
+
+### Analytical rigid parabolic inlet/rupture reference
+
+`parabolic_reference.parabolic_jfo_reference` supplies an independent
+infinite-width, rigid, steady incompressible/isoviscous reference, with a
+finite fully flooded zero-pressure inlet and one smooth rupture. It is not
+an elastic or two-dimensional point-contact solution. Public inputs are
+SI x, minimum gap, radius, viscosity and **mean** entrainment speed Ue;
+outputs are p [Pa], h [m], content, dp/dx [Pa/m], volume flux per transverse
+width [m²/s] and force per width [N/m]. The latter is not a point-contact
+force in N. No negative-pressure clipping is used.
+
+For `h=h_min+x²/(2R)`, choose `L=sqrt(2R*h_min)`, `X=x/L`, `H=1+X²`,
+and `p_ref=12*eta*Ue*L/h_min²`; the dimensionless speed parameter is one.
+With primitives
+`I2(X)=(atan(X)+X/(1+X²))/2` and
+`I3(X)=X/(4*(1+X²)²)+3*I2(X)/4`, determine the positive rupture coordinate
+Xc from
+`I2(Xc)-I2(Xin)=(1+Xc²)*(I3(Xc)-I3(Xin))`.
+This is the zero-inlet/zero-rupture pressure condition. Full-film pressure is
+`P=I2(X)-I2(Xin)-(1+Xc²)*(I3(X)-I3(Xin))`; downstream p=0 and
+`theta=(1+Xc²)/H`. Both sides carry `q=Ue*h_min*(1+Xc²)` and the smooth
+rupture has p=dp/dx=0. Integration by parts gives the analytical force per
+width `p_ref*L*(Hin-Hc)²/(4*Hc*Hin²)` where Hin=1+Xin² and Hc=1+Xc².
+The formulas are derived from the stated flux; pressure, rupture and force
+are independently checked against adaptive quadrature in the regressions.
+
+Boundary conditions and inlet flow are coupled in analytical lubrication
+limits; see [On boundary conditions in lubrication with one dimensional
+analytical solutions](https://doi.org/10.1016/j.triboint.2011.11.021) for
+related boundary-condition analysis. The parabolic formulas and numerical
+values here are independently derived/verified for this repository's stated
+smooth rigid geometry, not attributed to that paper or transferred directly
+to the elastic point-contact model.
+
+The wide 2-D JFO comparison sets h independent of y, uses x=[-3L,3L] and
+y=[-8L,8L], and compares centerline fields to the infinite-width reference.
+Here h_min=20 um, R=10 mm, eta=0.04 Pa s, Ue=0.425 m/s,
+L=0.632455532 mm and p_ref=322552.321 Pa. The transverse grid has 17 nodes;
+it is a wide-domain approximation with zero side pressure, not an exact
+one-dimensional discrete boundary condition.
+
+| Grid `(ny,nx)` | Relative pressure L2 error | Relative force-per-width error | Max content error | Maximum local mass residual |
+| --- | ---: | ---: | ---: | ---: |
+| (17,33) | 0.0317444 | 0.0334057 | 0.0721956 | 5.20e-14 |
+| (17,65) | 0.00641594 | 0.00645935 | 0.0370292 | 2.19e-13 |
+| (17,129) | 0.00163204 | 0.00165019 | 0.0185179 | 8.59e-13 |
+
+The analytical rupture is x=0.293551858 mm and force per width is
+32.380268794 N/m. The last grid locates its first reduced-content node at
+0.296463531 mm and integrates centerline pressure to 32.326835053 N/m.
+Complementarity is zero at printed precision and absolute net integrated
+flux is below 1.09e-12. Tests require decreasing pressure/force errors,
+last-grid errors below 2%, bounded rupture-location error and conservation.
+The content error decreases more slowly, consistent with its upwind flux.
+These measurements do not prove an asymptotic order or full 2-D independence.
+
+An analytical inlet-location study at the same physical parameters shows
+that load can depend strongly on a nearby inlet even with exact mass balance:
+
+| Xin | Xc | Force per width [N/m] |
+| ---: | ---: | ---: |
+| -0.5 | 0.225494 | 1.231921 |
+| -1 | 0.357869 | 8.592849 |
+| -2 | 0.444700 | 24.622984 |
+| -4 | 0.470121 | 35.984054 |
+| -8 | 0.474451 | 40.074694 |
+| -16 | 0.475043 | 41.214090 |
+
+This verifies a rigid finite-inlet/rupture limit and demonstrates a plausible
+boundary-sensitivity mechanism. It does not identify the entire cause of the
+elastic point-contact study's sensitivity or make its film heights validated.
+The next study should vary inlet, outlet and transverse extents separately,
+keeping material/load and inner resolution matched, and monitor flow budgets.
+No physical boundary condition is changed solely to force domain convergence.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_parabolic_cavitation_reference --plots \
+  --output-directory results/parabolic_reference_new
+```
+
+Fresh output directories preserve SI grid/fields, analytical reference,
+centerline comparisons, rupture/conservation metrics and inlet-study data.

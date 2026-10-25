@@ -659,3 +659,97 @@ def test_failed_load_continuation_preserves_reference_and_failure_diagnostics(
     assert failure.value.diagnostics["reynolds_residual_scaled"] == pytest.approx(
         2e-3
     )
+
+
+def test_compliance_continuation_matches_direct_moderate_solution_and_retries(monkeypatch):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    target = _load(pressure, x, y)
+    problem = _problem(target, e_star=1e7, compliance_factor=0.0)
+    initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    original = monolithic.solve_monolithic_full_film_load
+    starts = []
+
+    def reject_once(problem, pressure, h0, **options):
+        starts.append((pressure.copy(), h0))
+        if len(starts) == 1:
+            raise MonolithicNewtonError("controlled failure", (), {"test_failure": True})
+        return original(problem, pressure, h0, **options)
+
+    monkeypatch.setattr(monolithic, "solve_monolithic_full_film_load", reject_once)
+    result = monolithic.continue_monolithic_compliance(problem, initial)
+    assert not result.steps[0].accepted
+    assert result.steps[0].failure_diagnostics == (("test_failure", True),)
+    np.testing.assert_array_equal(starts[0][0], starts[1][0])
+    assert starts[0][1] == starts[1][1]
+    assert problem.compliance_factor == 1.0
+    solution = result.solution
+    direct = original(_problem(target, e_star=1e7), pressure, 20e-6)
+    np.testing.assert_allclose(solution.pressure_pa, direct.pressure_pa, rtol=1e-6, atol=1e-4)
+    residual = monolithic.reynolds_residual(
+        solution.pressure_dimensionless, solution.film_thickness_m / FILM_SCALE_M,
+        (x[1]-x[0])/LENGTH_SCALE_M, (y[1]-y[0])/LENGTH_SCALE_M, REYNOLDS_PARAMETER,
+    )
+    assert np.linalg.norm(residual) / np.sqrt(residual.size) / 100 < 1e-8
+    assert abs(_load(solution.pressure_dimensionless, x, y) - target) < abs(target)*1e-6
+    assert np.min(solution.film_thickness_m) > problem.film_floor_m
+
+
+def test_compliance_failure_retains_attempts_and_restores_accepted_problem(monkeypatch):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), compliance_factor=0.0)
+    initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+
+    def fail(*args, **kwargs):
+        raise MonolithicNewtonError("controlled failure", (), {"failed_residual": 0.1})
+
+    monkeypatch.setattr(monolithic, "solve_monolithic_full_film_load", fail)
+    with pytest.raises(MonolithicNewtonError) as failure:
+        monolithic.continue_monolithic_compliance(
+            problem, initial, maximum_retries_per_step=1
+        )
+    diagnostics = failure.value.diagnostics
+    assert len(diagnostics["compliance_steps"]) == 2
+    assert diagnostics["last_accepted_solution"] is initial
+    assert diagnostics["failed_residual"] == 0.1
+    assert problem.compliance_factor == 0.0
+
+
+def test_compliance_continuation_rejects_inconsistent_start_and_offset_repair():
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), compliance_factor=0.0)
+    initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    with pytest.raises(ValueError, match="strict"):
+        monolithic.continue_monolithic_compliance(
+            problem, initial, newton_options={"initial_film_strategy": "raise_h0"}
+        )
+    problem.compliance_factor = 1.0
+    with pytest.raises(ValueError, match="inconsistent|not converged"):
+        monolithic.continue_monolithic_compliance(problem, initial)
+
+
+@pytest.mark.parametrize("target", [-1.0, 1.1, np.nan, np.inf])
+def test_compliance_continuation_rejects_invalid_target(target):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), compliance_factor=0.0)
+    initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    with pytest.raises(ValueError, match="target compliance"):
+        monolithic.continue_monolithic_compliance(problem, initial, target)
+    assert problem.compliance_factor == 0.0
+
+
+def test_compliance_continuation_verifies_returned_candidate(monkeypatch):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), compliance_factor=0.0)
+    initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    # A purported success from a different compliance must not be accepted.
+    monkeypatch.setattr(monolithic, "solve_monolithic_full_film_load", lambda *a, **k: initial)
+    with pytest.raises(MonolithicNewtonError):
+        monolithic.continue_monolithic_compliance(
+            problem, initial, maximum_retries_per_step=0
+        )
+    assert problem.compliance_factor == 0.0

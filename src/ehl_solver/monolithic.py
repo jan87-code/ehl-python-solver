@@ -1615,3 +1615,107 @@ def continue_monolithic_load(
 
     problem.target_load_n = target_load_n
     return MonolithicLoadContinuation(accepted_solution, tuple(records))
+
+
+@dataclass(frozen=True)
+class ComplianceContinuationStep:
+    """A fixed-load compliance trial, including rejected-state diagnostics."""
+
+    compliance_factor: float
+    accepted: bool
+    newton_iterations: int
+    reason: str
+    failure_diagnostics: tuple[tuple[str, object], ...] = ()
+
+
+@dataclass(frozen=True)
+class MonolithicComplianceContinuation:
+    solution: MonolithicLoadSolution
+    steps: tuple[ComplianceContinuationStep, ...]
+
+
+def continue_monolithic_compliance(
+    problem: BorderedReynoldsElasticityProblem,
+    initial_solution: MonolithicLoadSolution,
+    target_compliance_factor: float = 1.0,
+    *,
+    initial_step: float = 0.1,
+    minimum_step: float = 1e-4,
+    maximum_step: float = 0.25,
+    maximum_retries_per_step: int = 8,
+    newton_options: dict[str, float | int] | None = None,
+) -> MonolithicComplianceContinuation:
+    """Continue compliance at fixed signed load using converged warm starts.
+
+    Steps are absolute dimensionless compliance increments. Each trial uses
+    the unchanged dual Newton line search. Infeasible warm starts are rejected,
+    never shifted or clipped. On failure the problem is restored to its last
+    accepted compliance and the exception retains all trial records and that
+    converged solution. This is branch following, not evidence of existence
+    of a solution at the requested compliance.
+    """
+    if not math.isfinite(target_compliance_factor) or not 0 <= target_compliance_factor <= 1:
+        raise ValueError("target compliance must be finite and in [0, 1]")
+    if not (0 < minimum_step <= initial_step <= maximum_step) or not math.isfinite(maximum_step):
+        raise ValueError("compliance steps must satisfy 0 < min <= initial <= max < infinity")
+    if (not isinstance(maximum_retries_per_step, int)
+            or isinstance(maximum_retries_per_step, bool) or maximum_retries_per_step < 0):
+        raise ValueError("maximum_retries_per_step must be nonnegative")
+    options = dict(newton_options or {})
+    if options.get("initial_film_strategy", "strict") != "strict":
+        raise ValueError("compliance continuation requires strict film feasibility")
+    # The zero-load-change path independently verifies residuals and film
+    # consistency using exactly the same validation as load continuation.
+    continue_monolithic_load(
+        problem, initial_solution, problem.target_load_n, newton_options=options
+    )
+    accepted_factor = problem.compliance_factor
+    accepted_solution = initial_solution
+    step = initial_step
+    retries = 0
+    records: list[ComplianceContinuationStep] = []
+    while accepted_factor != target_compliance_factor:
+        increment = min(step, abs(target_compliance_factor - accepted_factor))
+        proposed = accepted_factor + math.copysign(
+            increment, target_compliance_factor - accepted_factor
+        )
+        if increment == abs(target_compliance_factor - accepted_factor):
+            proposed = target_compliance_factor
+        if proposed == accepted_factor:
+            raise ValueError("compliance increment is below floating-point resolution")
+        problem.compliance_factor = proposed
+        try:
+            candidate = solve_monolithic_full_film_load(
+                problem, accepted_solution.pressure_dimensionless,
+                accepted_solution.central_film_offset_m, **options,
+            )
+            # Recompute convergence and film consistency before accepting.
+            continue_monolithic_load(
+                problem, candidate, problem.target_load_n, newton_options=options
+            )
+        except (RuntimeError, ValueError) as error:
+            problem.compliance_factor = accepted_factor
+            diagnostics = error.diagnostics if isinstance(error, MonolithicNewtonError) else {}
+            history = error.history if isinstance(error, MonolithicNewtonError) else ()
+            records.append(ComplianceContinuationStep(
+                proposed, False, len(history), str(error), tuple(diagnostics.items())
+            ))
+            retries += 1
+            step *= 0.5
+            if retries > maximum_retries_per_step or step < minimum_step:
+                raise MonolithicNewtonError(
+                    "compliance continuation cannot reach target; "
+                    f"last accepted factor={accepted_factor:.9e}", history,
+                    {**diagnostics, "compliance_steps": tuple(records),
+                     "last_accepted_solution": accepted_solution,
+                     "last_accepted_compliance_factor": accepted_factor},
+                ) from error
+            continue
+        records.append(ComplianceContinuationStep(
+            proposed, True, len(candidate.history), "converged"
+        ))
+        accepted_factor = proposed
+        accepted_solution = candidate
+        retries = 0
+        step = min(maximum_step, 1.5 * step)
+    return MonolithicComplianceContinuation(accepted_solution, tuple(records))

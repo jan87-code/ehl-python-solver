@@ -37,3 +37,11 @@
 - [ ] Optional CUDA / ROCm benchmarks, parity tests and profiling
 
 Do not check off a box without reproducible evidence (tests or documented benchmark output).
+
+Strong-coupling follow-up: fixed-load adaptive compliance continuation now
+retains rejected trials and the last converged state, with independent
+acceptance checks and a reproducible `run_compliance_continuation.py` probe.
+The 10 MPa case reaches full compliance; the 1 MPa branch stalls near
+compliance factor 0.179175. Branch/turning-point diagnosis and possible
+pseudo-arclength continuation remain open; neither strong coupling nor
+physical load control is checked off by this increment.

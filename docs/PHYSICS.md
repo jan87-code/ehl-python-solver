@@ -526,3 +526,28 @@ does not constitute a coupled EHL solver.
 
 ## Computational strategy
 GPU: use PyTorch tensors for both NVIDIA CUDA and AMD ROCm. On ROCm, PyTorch also reports GPUs via `torch.cuda`. A single environment generally uses one GPU-enabled build (CUDA **or** ROCm), not both at once.
+
+### Fixed-load adaptive compliance continuation
+`continue_monolithic_compliance` follows the signed-load branch by varying
+only the dimensionless compliance multiplier in `[0,1]`. It independently
+checks the supplied starting state and each accepted candidate, retains the
+same feasibility/Armijo searches, halves rejected increments, and grows
+accepted increments by 1.5 up to the configured maximum. Warm starts always
+come from the last converged state; infeasible trials are rejected without
+an offset repair. Exhaustion restores the last accepted multiplier and
+raises with all attempts, failed diagnostics and the last converged solution.
+The problem's load and residual scales stay fixed along this path.
+
+Run `python examples/run_compliance_continuation.py` for a reproducible CPU
+probe on `(ny,nx)=13x17`, with the documented rigid `h0=20 um` reference
+signed load and default increments `0.1`, minimum `1e-4`, maximum `0.25`.
+At `E*=10 MPa`, six accepted attempts reach gamma=1: independently
+recomputed scaled Reynolds RMS `3.04e-10`, load error below `1e-17 N`,
+minimum film `18.506 um`. At `E*=1 MPa`, 17 attempts include 13 rejections;
+the last accepted gamma is `0.179174805`, Reynolds RMS `6.13e-9`, load
+error `1.08e-10 N`, minimum film `15.013 um`. The requested full-compliance
+state is **not** reached. Compliance continuation alone therefore does not
+resolve strong coupling. A branch/turning-point investigation, potentially
+with pseudo-arclength continuation, remains necessary before interpreting
+stagnation as absence of a solution. These results remain signed full-film
+mathematical checks, with no physical-load or cavitation validation.

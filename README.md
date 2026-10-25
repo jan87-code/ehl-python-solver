@@ -65,8 +65,8 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with local/global mass-conservation, front-refinement, complementarity and uniform inlet-starvation diagnostics; not experimentally validated or coupled to elasticity/load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
 - `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only
-- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve with an analytic discrete JVP, Schur/GMRES, frozen-film ILU/Jacobi/identity preconditioners, dual line search and adaptive signed-load continuation; mathematical verification only
-- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/continuation histories, Krylov/preconditioner comparisons, coupling-ratio diagnostics and accepted-iteration snapshots
+- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve with an analytic discrete JVP, Schur/GMRES, frozen-film ILU/Jacobi/identity preconditioners, dual line search with tighter-Krylov recovery, and adaptive signed-load/compliance continuation; mathematical verification only
+- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/continuation histories (including inexact-Newton forcing), Krylov/preconditioner comparisons, coupling-ratio diagnostics and accepted-iteration snapshots
 
 Run the weakly coupled benchmark and save report figures under
 `results/weak_coupling_demo/`:
@@ -81,6 +81,16 @@ run adaptive load continuation, and generate Newton/load-history PNGs with:
 ```bash
 python examples/run_monolithic_load_control_demo.py
 ```
+
+Run the non-plotting compliance stress probe for weak, moderate, 1 MPa, and
+bounded 100 kPa cases:
+
+```bash
+python -m examples.run_compliance_continuation
+```
+
+It reports independently recomputed residuals, Krylov work, line-search
+rejections, film/pressure extrema, deformation and continuation-stage status.
 
 Reproduce the prescribed-film cavitation wedge, front-refinement, and inlet
 starvation verification with:

@@ -19,13 +19,14 @@
 - [ ] Coupling of Reynolds + elasticity + film thickness + physical load control
   - A signed full-film h0 root finder and bordered Newton-Krylov solver with
     an analytic matrix-free discrete JVP, Schur correction, verified sparse
-    preconditioners, directional-derivative Armijo line search, and adaptive
-    load stepping converge on weak and one moderate numerical benchmark.
-    The 1 MPa stress case still stalls with a substantial Reynolds residual,
-    and the 100 kPa initial state requires an explicit offset adjustment just
-    to become feasible. This is mathematical verification only: strong
-    coupling, arbitrary load branches, cavitation, and physical load
-    validation remain incomplete.
+    preconditioners, directional-derivative Armijo line search with bounded
+    tighter-Krylov retries, and adaptive load stepping converge on the weak
+    and moderate numerical benchmarks. The 1 MPa stress case still stalls at
+    compliance 0.179175; a bounded 100 kPa probe cannot accept even
+    compliance 0.05 from the rigid reference, while making the full-compliance
+    initial film feasible requires a large explicit h0 raise. This remains a
+    mathematical verification model: strong coupling, arbitrary load
+    branches, cavitation, and physical load validation are incomplete.
 - [ ] Stable continuation/load stepping and convergence / energy diagnostics
   - Adaptive Newton load steps, retry records, and Newton/continuation plots
     are implemented and verified over short weak/moderate signed-load cases;
@@ -41,7 +42,11 @@ Do not check off a box without reproducible evidence (tests or documented benchm
 Strong-coupling follow-up: fixed-load adaptive compliance continuation now
 retains rejected trials and the last converged state, with independent
 acceptance checks and a reproducible `run_compliance_continuation.py` probe.
-The 10 MPa case reaches full compliance; the 1 MPa branch stalls near
-compliance factor 0.179175. Branch/turning-point diagnosis and possible
+The probe records per-stage nonlinear, load, Krylov, line-search, and
+bordered-correction diagnostics. Armijo failure retries a correction only
+when its independently measured true linear residual exceeds the configured
+accuracy target. The 100 MPa and 10 MPa cases reach full compliance; the
+1 MPa branch remains stalled near factor 0.179175 and the bounded 100 kPa
+probe fails before factor 0.1. Branch/turning-point diagnosis and possible
 pseudo-arclength continuation remain open; neither strong coupling nor
 physical load control is checked off by this increment.

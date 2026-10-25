@@ -303,15 +303,23 @@ the `h0` correction. Armijo backtracking then reduces the combined,
 dimensionlessly scaled merit `M=0.5*(||R_p||_2^2/N + R_Q^2)` using the true
 directional Armijo condition `M_trial <= M + c*alpha*(dM/dalpha)`. The
 direction must have a negative derivative; up to two tighter-Krylov retries
-are attempted before a non-descent failure is raised. A small step alone is
-never accepted as convergence. Accepted-iteration history records both
-residuals, pressure extrema, film minimum, feasible and accepted step lengths,
-rejected trials, Krylov iterations and residual histories, Schur diagnostics,
-and the bordered correction accuracy. `MonolithicNewtonError` retains
-accepted history, current-state extrema, deformation-to-rigid-gap ratio,
-line-search merit data and failed Krylov records. Configure `log_every` for
-periodic standard Python logger output; the history and return values remain
-the authoritative machine-readable diagnostics.
+are attempted before a non-descent failure is raised. A rejected Armijo
+search retries the bordered correction up to twice with tighter Krylov
+tolerances only when the independently checked linear residual exceeds
+`max(1e-7, 2*krylov_rtol)`. This avoids oversolving an already accurate
+correction when the failure is nonlinear rather than linear. Each retry
+recomputes strict film feasibility and Armijo from the unchanged nonlinear
+state; accepted steps still use one shared pressure/offset step length. The
+iteration record aggregates true Krylov diagnostics and rejected trials
+across retries and reports the termination reason. A small step alone is
+never accepted as convergence. Accepted-iteration history records both residuals, pressure
+extrema, film minimum, feasible and accepted step lengths, rejected trials,
+Krylov iterations and residual histories, Schur diagnostics, and the bordered
+correction accuracy. `MonolithicNewtonError` retains accepted history,
+current-state extrema, deformation-to-rigid-gap ratio, line-search merit data
+and failed Krylov records. Configure `log_every` for periodic standard Python
+logger output; the history and return values remain the authoritative
+machine-readable diagnostics.
 
 `continue_monolithic_load` verifies its supplied converged starting solution
 against the same problem, then warm-starts from the last accepted solution.
@@ -384,11 +392,12 @@ final independently recomputed Reynolds RMS and load closure, preconditioner
 comparisons, normalized deformation strengths, and adaptive continuation
 attempt history. The Newton visualization module plots Reynolds and load
 residuals, feasible/accepted step lengths, Krylov iteration counts and
-preconditioned residual histories (with true-residual markers), Schur
-indicators, minimum film, both pressure extrema, and coupling-strength
-comparisons. Continuation plots distinguish rejected load attempts from the
-accepted `h0` and minimum-film branches. Exceptions preserve accepted
-history and failed-state diagnostics for post-run inspection.
+inexact-Newton forcing tolerances, preconditioned residual histories (with
+true-residual markers), Schur indicators, minimum film, both pressure
+extrema, and coupling-strength comparisons. Continuation plots distinguish
+rejected load attempts from the accepted `h0` and minimum-film branches.
+Exceptions preserve accepted history and failed-state diagnostics for
+post-run inspection.
 
 ## Coupled visualization
 `src/ehl_solver/visualization.py` is independent of the numerical iteration
@@ -538,16 +547,43 @@ an offset repair. Exhaustion restores the last accepted multiplier and
 raises with all attempts, failed diagnostics and the last converged solution.
 The problem's load and residual scales stay fixed along this path.
 
-Run `python examples/run_compliance_continuation.py` for a reproducible CPU
-probe on `(ny,nx)=13x17`, with the documented rigid `h0=20 um` reference
-signed load and default increments `0.1`, minimum `1e-4`, maximum `0.25`.
-At `E*=10 MPa`, six accepted attempts reach gamma=1: independently
-recomputed scaled Reynolds RMS `3.04e-10`, load error below `1e-17 N`,
-minimum film `18.506 um`. At `E*=1 MPa`, 17 attempts include 13 rejections;
-the last accepted gamma is `0.179174805`, Reynolds RMS `6.13e-9`, load
-error `1.08e-10 N`, minimum film `15.013 um`. The requested full-compliance
-state is **not** reached. Compliance continuation alone therefore does not
-resolve strong coupling. A branch/turning-point investigation, potentially
-with pseudo-arclength continuation, remains necessary before interpreting
+Run `python -m examples.run_compliance_continuation` for a reproducible CPU
+probe on `(ny,nx)=13x17`, with the rigid `h0=20 um` reference signed load.
+The zero-compliance starting residual is `3.44e-14` scaled RMS/combined
+norm. The full-compliance `E*=100 MPa` weak reference reaches gamma=1 in six
+accepted stages (12 Newton, 57 Krylov iterations, zero line-search rejects),
+with independently recomputed scaled Reynolds RMS `4.31e-10`, minimum film
+`19.934 um`, and maximum displacement `71.18 nm`; measured continuation time
+was `0.688 s`. The moderate `E*=10 MPa` case also reaches gamma=1 in six
+accepted stages, with 16 total Newton iterations, 87 Krylov iterations, no
+rejected line-search trials, independently recomputed scaled Reynolds RMS
+`3.04e-10`, zero load error at printed precision, minimum film `18.506 um`,
+and maximum displacement `0.786 um`; measured time was `0.665 s`. Timings
+are hardware- and load-dependent.
+
+For `E*=1 MPa`, the baseline recorded in the earlier audit already stalled
+at gamma `0.179174805` after 17 attempts, 13 rejected stages. The refined
+solver still reaches the same last accepted gamma: 90 aggregate Newton
+iterations over accepted parts of attempted stages, 23,629 Krylov iterations
+and 1,249 rejected Armijo trial evaluations including the final failed
+corrections, and 78.319 s for the compliance probe. One failed bordered GMRES
+fallback reached its 300 restart-cycle limit with true relative residual
+`4.35e-8`. Its accepted state has independently
+recomputed scaled Reynolds RMS `6.13e-9`, signed load error
+`1.08e-10 N`, minimum film `15.013 um`, and maximum deformation `10.562 um`.
+Thus tighter-Krylov recovery is now attempted only when the true linear
+residual warrants it, and its work is reported, but it does **not** advance
+the strong-coupling branch. Most rejected compliance stages terminate on
+Armijo failure; one fails the bordered GMRES residual check.
+
+For `E*=100 kPa`, a bounded continuation probe targeting gamma `0.2` rejects
+gamma `0.1` and `0.05` from the rigid reference with Armijo failures (5 and 4
+accepted Newton corrections, 155 and 105 Krylov iterations respectively);
+the last accepted state remains gamma=0. The probe takes `1.043 s`. The separate
+initialization-only test requires raising `h0` by `46.588 um` to move the
+minimum film from `-46.568 um` to `20.001 nm`.
+That adjustment demonstrates strict feasibility only, not convergence or a
+physical branch. A branch/turning-point investigation, potentially with
+pseudo-arclength continuation, remains necessary before interpreting
 stagnation as absence of a solution. These results remain signed full-film
 mathematical checks, with no physical-load or cavitation validation.

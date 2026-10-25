@@ -26,6 +26,7 @@ def _history_entry(iteration=1):
         minimum_film_thickness_m=19e-6,
         minimum_pressure_pa=-2e4,
         maximum_pressure_pa=5e4,
+        forcing_tolerance=1e-3,
     )
 
 
@@ -70,6 +71,9 @@ def test_monolithic_plots_include_required_diagnostics_and_units(tmp_path):
     newton_figure, newton_axes = plot_monolithic_newton_history(history)
     assert "Newton" in newton_figure._suptitle.get_text()
     assert newton_axes[0].get_ylabel() == "Scaled residual"
+    assert "Inexact Newton forcing tolerance" in {
+        line.get_label() for line in newton_axes[0].lines
+    }
     assert newton_axes[4].get_ylabel() == "Preconditioned GMRES residual"
     assert len(newton_axes[1].lines) == 2
     failed_figure, failed_axes = plot_monolithic_newton_history(

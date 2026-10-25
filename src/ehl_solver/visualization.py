@@ -435,6 +435,12 @@ def plot_monolithic_newton_history(
         "s-",
         label="Scaled load residual",
     )
+    axes[0].semilogy(
+        iterations,
+        [max(entry.forcing_tolerance, np.finfo(float).tiny) for entry in history],
+        "d--",
+        label="Inexact Newton forcing tolerance",
+    )
     axes[0].set_ylabel("Scaled residual")
     axes[0].legend()
     axes[0].grid(True, which="both", alpha=0.25)

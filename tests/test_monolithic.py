@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -561,6 +562,62 @@ def test_dual_line_search_rejects_infeasible_steps_and_keeps_diagnostics():
     )
 
 
+def test_armijo_failure_retries_with_tighter_krylov_solve(monkeypatch):
+    x, y = _grid()
+    target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
+    problem = _problem(target)
+    original_line_search = monolithic._armijo_line_search
+    original_correction = monolithic.solve_bordered_correction
+    line_search_calls = 0
+    requested_tolerances = []
+
+    def fail_first_line_search(*args, **kwargs):
+        nonlocal line_search_calls
+        result = original_line_search(*args, **kwargs)
+        line_search_calls += 1
+        if line_search_calls == 1:
+            return replace(
+                result,
+                accepted_state=None,
+                accepted_step_length=0.0,
+                rejected_trials=result.rejected_trials + 1,
+                termination_reason="backtracking_exhausted",
+            )
+        return result
+
+    def record_correction_tolerance(*args, **kwargs):
+        requested_tolerances.append(kwargs["krylov_rtol"])
+        correction = original_correction(*args, **kwargs)
+        if len(requested_tolerances) == 1:
+            return replace(
+                correction,
+                bordered_residual_relative=1e-2,
+                krylov_diagnostics=tuple(
+                    replace(record, true_relative_residual=1e-2)
+                    for record in correction.krylov_diagnostics
+                ),
+            )
+        return correction
+
+    monkeypatch.setattr(monolithic, "_armijo_line_search", fail_first_line_search)
+    monkeypatch.setattr(
+        monolithic, "solve_bordered_correction", record_correction_tolerance
+    )
+    solution = solve_monolithic_full_film_load(
+        problem, _pressure_at_h0(x, y, 18e-6), 18e-6
+    )
+
+    assert line_search_calls == len(solution.history) + 1
+    assert requested_tolerances[1] < requested_tolerances[0]
+    assert solution.history[0].linear_refinement_attempts == 1
+    assert solution.history[0].line_search_termination_reason == "armijo_satisfied"
+    assert solution.history[0].rejected_line_search_trials >= 1
+    assert all(
+        record.true_relative_residual <= max(record.effective_rtol * 1.25, 1e-12)
+        for record in solution.history[0].krylov_diagnostics
+    )
+
+
 def test_newton_reports_nonconvergence_instead_of_accepting_small_steps():
     x, y = _grid()
     target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
@@ -693,6 +750,13 @@ def test_compliance_continuation_matches_direct_moderate_solution_and_retries(mo
     assert np.linalg.norm(residual) / np.sqrt(residual.size) / 100 < 1e-8
     assert abs(_load(solution.pressure_dimensionless, x, y) - target) < abs(target)*1e-6
     assert np.min(solution.film_thickness_m) > problem.film_floor_m
+    accepted_steps = [step for step in result.steps if step.accepted]
+    assert sum(step.krylov_iterations for step in accepted_steps) > 0
+    assert max(step.maximum_true_linear_residual for step in accepted_steps) > 0.0
+    assert all(
+        step.maximum_bordered_correction_residual <= 1e-2
+        for step in accepted_steps
+    )
 
 
 def test_compliance_failure_retains_attempts_and_restores_accepted_problem(monkeypatch):
@@ -700,9 +764,29 @@ def test_compliance_failure_retains_attempts_and_restores_accepted_problem(monke
     pressure = _pressure_at_h0(x, y, 20e-6)
     problem = _problem(_load(pressure, x, y), compliance_factor=0.0)
     initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    failed_krylov = monolithic.KrylovSolveDiagnostic(
+        label="full_bordered_fallback",
+        preconditioner="ilu",
+        requested_rtol=1e-4,
+        effective_rtol=1e-4,
+        iterations=7,
+        info=1,
+        true_relative_residual=2e-4,
+        preconditioned_residual_history=(0.5, 2e-4),
+        termination_reason="iteration limit",
+    )
 
     def fail(*args, **kwargs):
-        raise MonolithicNewtonError("controlled failure", (), {"failed_residual": 0.1})
+        raise MonolithicNewtonError(
+            "controlled failure",
+            (),
+            {
+                "failed_residual": 0.1,
+                "krylov_diagnostics": (failed_krylov,),
+                "rejected_line_search_trials": 3,
+                "bordered_residual_relative": 3e-4,
+            },
+        )
 
     monkeypatch.setattr(monolithic, "solve_monolithic_full_film_load", fail)
     with pytest.raises(MonolithicNewtonError) as failure:
@@ -713,6 +797,11 @@ def test_compliance_failure_retains_attempts_and_restores_accepted_problem(monke
     assert len(diagnostics["compliance_steps"]) == 2
     assert diagnostics["last_accepted_solution"] is initial
     assert diagnostics["failed_residual"] == 0.1
+    failed_step = diagnostics["compliance_steps"][0]
+    assert failed_step.krylov_iterations == 7
+    assert failed_step.rejected_line_search_trials == 3
+    assert failed_step.maximum_true_linear_residual == pytest.approx(2e-4)
+    assert failed_step.maximum_bordered_correction_residual == pytest.approx(3e-4)
     assert problem.compliance_factor == 0.0
 
 

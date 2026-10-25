@@ -100,6 +100,8 @@ class MonolithicIteration:
     bordered_residual_relative: float
     forcing_tolerance: float
     krylov_diagnostics: tuple[KrylovSolveDiagnostic, ...]
+    linear_refinement_attempts: int = 0
+    line_search_termination_reason: str = "armijo_satisfied"
 
 
 @dataclass(frozen=True)
@@ -1020,6 +1022,97 @@ def _merit_directional_derivative(
     )
 
 
+@dataclass(frozen=True)
+class _ArmijoLineSearchResult:
+    accepted_state: NDArray[np.float64] | None
+    feasible_step_limit: float
+    accepted_step_length: float
+    rejected_trials: int
+    last_trial_step_length: float
+    last_trial_merit: float
+    termination_reason: str
+
+
+def _armijo_line_search(
+    problem: BorderedReynoldsElasticityProblem,
+    state: NDArray[np.float64],
+    direction: NDArray[np.float64],
+    current_merit: float,
+    merit_slope: float,
+    *,
+    fraction_to_boundary: float,
+    armijo_constant: float,
+    maximum_backtracks: int,
+) -> _ArmijoLineSearchResult:
+    """Find a strictly feasible common step satisfying the scaled Armijo test."""
+    _, film_change, _ = problem.state_fields(
+        state[:-1] + direction[:-1], float(state[-1] + direction[-1])
+    )
+    _, film_current, _ = problem.state_fields(state[:-1], float(state[-1]))
+    delta_film = film_change - film_current
+    negative = delta_film < 0.0
+    feasible_limit = 1.0
+    if np.any(negative):
+        feasible_limit = min(
+            1.0,
+            fraction_to_boundary
+            * float(
+                np.min(
+                    (film_current[negative] - problem.film_floor_m)
+                    / -delta_film[negative]
+                )
+            ),
+        )
+    if not math.isfinite(feasible_limit) or feasible_limit <= 0.0:
+        return _ArmijoLineSearchResult(
+            None, feasible_limit, 0.0, 0, 0.0, math.inf,
+            "no_positive_feasible_step",
+        )
+
+    step_length = feasible_limit
+    rejected = 0
+    last_trial_merit = math.inf
+    last_trial_step_length = step_length
+    for _ in range(maximum_backtracks + 1):
+        last_trial_step_length = step_length
+        trial_state = state + step_length * direction
+        try:
+            trial_residual = problem.residual(trial_state)
+            trial_reynolds = float(
+                np.linalg.norm(trial_residual[:-1]) / math.sqrt(problem.pressure_size)
+            )
+            trial_load = float(trial_residual[-1])
+            trial_merit = 0.5 * (trial_reynolds**2 + trial_load**2)
+        except ValueError:
+            trial_merit = math.inf
+        last_trial_merit = trial_merit
+        if (
+            math.isfinite(trial_merit)
+            and trial_merit
+            <= current_merit + armijo_constant * step_length * merit_slope
+        ):
+            return _ArmijoLineSearchResult(
+                trial_state,
+                feasible_limit,
+                step_length,
+                rejected,
+                last_trial_step_length,
+                last_trial_merit,
+                "armijo_satisfied",
+            )
+        rejected += 1
+        step_length *= 0.5
+    return _ArmijoLineSearchResult(
+        None,
+        feasible_limit,
+        0.0,
+        rejected,
+        last_trial_step_length,
+        last_trial_merit,
+        "backtracking_exhausted",
+    )
+
+
 def solve_monolithic_full_film_load(
     problem: BorderedReynoldsElasticityProblem,
     initial_pressure_dimensionless: ArrayLike,
@@ -1179,22 +1272,27 @@ def solve_monolithic_full_film_load(
                 initial_h0_adjustment_m=h0_adjustment_m,
             )
 
-        try:
-            correction = solve_bordered_correction(
-                problem,
-                state,
-                krylov_rtol=forcing_tolerance,
-            )
-        except (ArithmeticError, RuntimeError) as error:
-            if isinstance(error, BorderedLinearSolveError):
-                failure_diagnostics["krylov_diagnostics"] = error.krylov_diagnostics
-            failure_diagnostics["linear_solver_error"] = str(error)
-            raise MonolithicNewtonError(
-                f"bordered Newton correction failed: {error}",
-                tuple(history),
-                failure_diagnostics,
-            ) from error
-        for recovery in range(3):
+        linear_diagnostics: list[KrylovSolveDiagnostic] = []
+        linear_refinement_attempts = 0
+        total_rejected_trials = 0
+        while True:
+            try:
+                correction = solve_bordered_correction(
+                    problem,
+                    state,
+                    krylov_rtol=forcing_tolerance,
+                )
+            except (ArithmeticError, RuntimeError) as error:
+                if isinstance(error, BorderedLinearSolveError):
+                    linear_diagnostics.extend(error.krylov_diagnostics)
+                failure_diagnostics["krylov_diagnostics"] = tuple(linear_diagnostics)
+                failure_diagnostics["linear_solver_error"] = str(error)
+                raise MonolithicNewtonError(
+                    f"bordered Newton correction failed: {error}",
+                    tuple(history),
+                    failure_diagnostics,
+                ) from error
+            linear_diagnostics.extend(correction.krylov_diagnostics)
             direction = np.concatenate(
                 (
                     correction.pressure_correction.ravel(),
@@ -1204,116 +1302,116 @@ def solve_monolithic_full_film_load(
             merit_slope = _merit_directional_derivative(
                 problem, state, residual, direction
             )
-            if math.isfinite(merit_slope) and merit_slope < 0.0:
-                break
-            if recovery == 2:
-                recovery_diagnostics = {
-                    **failure_diagnostics,
-                    "merit_directional_derivative": merit_slope,
-                    "current_merit": merit,
-                    "krylov_diagnostics": correction.krylov_diagnostics,
-                }
+            for recovery in range(2):
+                if math.isfinite(merit_slope) and merit_slope < 0.0:
+                    break
+                try:
+                    recovery_tolerance = max(
+                        10.0 * np.finfo(np.float64).eps,
+                        min(
+                            forcing_tolerance * 0.1 ** (recovery + 1),
+                            problem.krylov_rtol * 0.1**recovery,
+                        ),
+                    )
+                    correction = solve_bordered_correction(
+                        problem,
+                        state,
+                        krylov_rtol=recovery_tolerance,
+                    )
+                except (ArithmeticError, RuntimeError) as error:
+                    if isinstance(error, BorderedLinearSolveError):
+                        linear_diagnostics.extend(error.krylov_diagnostics)
+                    failure_diagnostics["krylov_diagnostics"] = tuple(
+                        linear_diagnostics
+                    )
+                    failure_diagnostics["linear_solver_error"] = str(error)
+                    raise MonolithicNewtonError(
+                        f"tighter Krylov recovery failed: {error}",
+                        tuple(history),
+                        failure_diagnostics,
+                    ) from error
+                linear_diagnostics.extend(correction.krylov_diagnostics)
+                direction = np.concatenate(
+                    (
+                        correction.pressure_correction.ravel(),
+                        [correction.h0_correction_m / problem.film_scale_m],
+                    )
+                )
+                merit_slope = _merit_directional_derivative(
+                    problem, state, residual, direction
+                )
+            if not math.isfinite(merit_slope) or merit_slope >= 0.0:
+                failure_diagnostics.update(
+                    {
+                        "merit_directional_derivative": merit_slope,
+                        "current_merit": merit,
+                        "krylov_diagnostics": tuple(linear_diagnostics),
+                    }
+                )
                 raise MonolithicNewtonError(
                     "Newton correction remained non-descent after tighter Krylov "
                     "recovery",
                     tuple(history),
-                    recovery_diagnostics,
-                )
-            try:
-                correction = solve_bordered_correction(
-                    problem,
-                    state,
-                    krylov_rtol=max(
-                        1e-6,
-                        min(forcing_tolerance, problem.krylov_rtol * 0.1 ** (recovery + 1)),
-                    ),
-                )
-            except (ArithmeticError, RuntimeError) as error:
-                if isinstance(error, BorderedLinearSolveError):
-                    failure_diagnostics["krylov_diagnostics"] = (
-                        error.krylov_diagnostics
-                    )
-                failure_diagnostics["linear_solver_error"] = str(error)
-                raise MonolithicNewtonError(
-                    f"tighter Krylov recovery failed: {error}",
-                    tuple(history),
                     failure_diagnostics,
-                ) from error
-        delta_pressure = np.zeros_like(pressure)
-        delta_pressure[1:-1, 1:-1] = correction.pressure_correction
-        delta_h0 = correction.h0_correction_m
-        _, film_change, _ = problem.state_fields(
-            state[:-1] + delta_pressure[1:-1, 1:-1].ravel(),
-            float(state[-1]) + delta_h0 / problem.film_scale_m,
-        )
-        _, film_current, _ = problem.state_fields(state[:-1], float(state[-1]))
-        delta_film = film_change - film_current
-        negative = delta_film < 0.0
-        feasible_limit = 1.0
-        if np.any(negative):
-            feasible_limit = min(
-                1.0,
-                fraction_to_boundary
-                * float(
-                    np.min(
-                        (film_current[negative] - problem.film_floor_m)
-                        / -delta_film[negative]
-                    )
+                )
+
+            line_search = _armijo_line_search(
+                problem,
+                state,
+                direction,
+                merit,
+                merit_slope,
+                fraction_to_boundary=fraction_to_boundary,
+                armijo_constant=armijo_constant,
+                maximum_backtracks=maximum_backtracks,
+            )
+            total_rejected_trials += line_search.rejected_trials
+            if line_search.accepted_state is not None:
+                state = line_search.accepted_state
+                break
+            achieved_linear_error = max(
+                correction.bordered_residual_relative,
+                max(
+                    (
+                        diagnostic.true_relative_residual
+                        for diagnostic in correction.krylov_diagnostics
+                    ),
+                    default=math.inf,
                 ),
             )
-        if not math.isfinite(feasible_limit) or feasible_limit <= 0.0:
-            raise MonolithicNewtonError(
-                "Newton correction has no positive feasible step",
-                tuple(history),
-                failure_diagnostics,
+            refinement_accuracy_limit = max(
+                1e-7, 2.0 * problem.krylov_rtol
             )
-
-        step_length = feasible_limit
-        accepted = False
-        rejected = 0
-        current_merit = merit
-        last_trial_merit = math.inf
-        last_trial_step_length = step_length
-        for _ in range(maximum_backtracks + 1):
-            last_trial_step_length = step_length
-            trial_state = state + step_length * direction
-            try:
-                trial_residual = problem.residual(trial_state)
-                trial_rp = float(
-                    np.linalg.norm(trial_residual[:-1])
-                    / math.sqrt(problem.pressure_size)
-                )
-                trial_rq = float(trial_residual[-1])
-                trial_merit = 0.5 * (trial_rp**2 + trial_rq**2)
-            except ValueError:
-                trial_merit = math.inf
-            last_trial_merit = trial_merit
             if (
-                math.isfinite(trial_merit)
-                and trial_merit
-                <= current_merit + armijo_constant * step_length * merit_slope
+                linear_refinement_attempts < 2
+                and achieved_linear_error > refinement_accuracy_limit
             ):
-                state = trial_state
-                accepted = True
-                break
-            rejected += 1
-            step_length *= 0.5
-        if not accepted:
+                linear_refinement_attempts += 1
+                forcing_tolerance = max(
+                    10.0 * np.finfo(np.float64).eps,
+                    min(forcing_tolerance * 0.1, problem.krylov_rtol),
+                )
+                continue
+
             failure_diagnostics.update(
                 {
-                    "feasible_step_limit": feasible_limit,
-                    "last_trial_step_length": last_trial_step_length,
-                    "rejected_line_search_trials": rejected,
+                    "feasible_step_limit": line_search.feasible_step_limit,
+                    "last_trial_step_length": line_search.last_trial_step_length,
+                    "rejected_line_search_trials": total_rejected_trials,
+                    "line_search_termination_reason": line_search.termination_reason,
+                    "linear_refinement_attempts": linear_refinement_attempts,
                     "merit_directional_derivative": merit_slope,
-                    "current_merit": current_merit,
-                    "last_trial_merit": last_trial_merit,
+                    "current_merit": merit,
+                    "last_trial_merit": line_search.last_trial_merit,
+                    "achieved_linear_error": achieved_linear_error,
+                    "refinement_accuracy_limit": refinement_accuracy_limit,
                     "armijo_merit_limit": (
-                        current_merit
+                        merit
                         + armijo_constant
-                        * last_trial_step_length
+                        * line_search.last_trial_step_length
                         * merit_slope
                     ),
-                    "krylov_diagnostics": correction.krylov_diagnostics,
+                    "krylov_diagnostics": tuple(linear_diagnostics),
                     "schur_denominator": correction.schur_denominator,
                     "schur_condition_indicator": correction.schur_condition_indicator,
                     "bordered_residual_relative": correction.bordered_residual_relative,
@@ -1322,13 +1420,11 @@ def solve_monolithic_full_film_load(
             raise MonolithicNewtonError(
                 "dual line search could not find an Armijo-decreasing feasible step",
                 tuple(history),
-                {
-                    **failure_diagnostics,
-                    "feasible_step_limit": feasible_limit,
-                    "last_trial_step_length": last_trial_step_length,
-                    "rejected_line_search_trials": rejected,
-                },
+                failure_diagnostics,
             )
+        feasible_limit = line_search.feasible_step_limit
+        step_length = line_search.accepted_step_length
+        rejected = total_rejected_trials
         accepted_pressure, accepted_film, _ = problem.state_fields(
             state[:-1], float(state[-1])
         )
@@ -1346,7 +1442,7 @@ def solve_monolithic_full_film_load(
                     )
                 ),
                 h0_correction_relative=abs(
-                    step_length * delta_h0
+                    step_length * correction.h0_correction_m
                     / max(abs(float(state[-1]) * problem.film_scale_m), problem.film_floor_m)
                 ),
                 minimum_film_thickness_m=float(np.min(accepted_film)),
@@ -1356,13 +1452,17 @@ def solve_monolithic_full_film_load(
                 accepted_step_length=step_length,
                 merit_directional_derivative=merit_slope,
                 rejected_line_search_trials=rejected,
-                krylov_iterations=correction.pressure_krylov_iterations,
-                krylov_residual_relative=correction.pressure_krylov_residual_relative,
+                krylov_iterations=sum(record.iterations for record in linear_diagnostics),
+                krylov_residual_relative=max(
+                    record.true_relative_residual for record in linear_diagnostics
+                ),
                 schur_denominator=correction.schur_denominator,
                 schur_condition_indicator=correction.schur_condition_indicator,
                 bordered_residual_relative=correction.bordered_residual_relative,
                 forcing_tolerance=forcing_tolerance,
-                krylov_diagnostics=correction.krylov_diagnostics,
+                linear_refinement_attempts=linear_refinement_attempts,
+                line_search_termination_reason=line_search.termination_reason,
+                krylov_diagnostics=tuple(linear_diagnostics),
             )
         )
         previous_nonlinear_norm = nonlinear_norm
@@ -1378,8 +1478,11 @@ def solve_monolithic_full_film_load(
                 feasible_limit,
                 step_length,
                 rejected,
-                correction.pressure_krylov_iterations,
-                correction.pressure_krylov_residual_relative,
+                sum(record.iterations for record in linear_diagnostics),
+                max(
+                    record.true_relative_residual
+                    for record in linear_diagnostics
+                ),
                 correction.schur_condition_indicator,
                 float(np.min(accepted_film)),
             )
@@ -1626,6 +1729,10 @@ class ComplianceContinuationStep:
     newton_iterations: int
     reason: str
     failure_diagnostics: tuple[tuple[str, object], ...] = ()
+    krylov_iterations: int = 0
+    rejected_line_search_trials: int = 0
+    maximum_true_linear_residual: float = 0.0
+    maximum_bordered_correction_residual: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1697,8 +1804,44 @@ def continue_monolithic_compliance(
             problem.compliance_factor = accepted_factor
             diagnostics = error.diagnostics if isinstance(error, MonolithicNewtonError) else {}
             history = error.history if isinstance(error, MonolithicNewtonError) else ()
+            failed_krylov = tuple(diagnostics.get("krylov_diagnostics", ()))
+            failed_line_search_rejections = int(
+                diagnostics.get("rejected_line_search_trials", 0)
+            )
+            failed_bordered_residual = float(
+                diagnostics.get("bordered_residual_relative", 0.0)
+            )
             records.append(ComplianceContinuationStep(
-                proposed, False, len(history), str(error), tuple(diagnostics.items())
+                proposed,
+                False,
+                len(history),
+                str(error),
+                tuple(diagnostics.items()),
+                sum(entry.krylov_iterations for entry in history)
+                + sum(record.iterations for record in failed_krylov),
+                sum(entry.rejected_line_search_trials for entry in history)
+                + failed_line_search_rejections,
+                max(
+                    (
+                        *(
+                        diagnostic.true_relative_residual
+                        for entry in history
+                        for diagnostic in entry.krylov_diagnostics
+                        ),
+                        *(
+                            diagnostic.true_relative_residual
+                            for diagnostic in failed_krylov
+                        ),
+                    ),
+                    default=0.0,
+                ),
+                max(
+                    (
+                        failed_bordered_residual,
+                        *(entry.bordered_residual_relative for entry in history),
+                    ),
+                    default=0.0,
+                ),
             ))
             retries += 1
             step *= 0.5
@@ -1712,7 +1855,31 @@ def continue_monolithic_compliance(
                 ) from error
             continue
         records.append(ComplianceContinuationStep(
-            proposed, True, len(candidate.history), "converged"
+            proposed,
+            True,
+            len(candidate.history),
+            "converged",
+            krylov_iterations=sum(
+                entry.krylov_iterations for entry in candidate.history
+            ),
+            rejected_line_search_trials=sum(
+                entry.rejected_line_search_trials for entry in candidate.history
+            ),
+            maximum_true_linear_residual=max(
+                (
+                    diagnostic.true_relative_residual
+                    for entry in candidate.history
+                    for diagnostic in entry.krylov_diagnostics
+                ),
+                default=0.0,
+            ),
+            maximum_bordered_correction_residual=max(
+                (
+                    entry.bordered_residual_relative
+                    for entry in candidate.history
+                ),
+                default=0.0,
+            ),
         ))
         accepted_factor = proposed
         accepted_solution = candidate

@@ -142,6 +142,10 @@ class CavitatingStateAudit:
     minimum_film_m: float
     load_n: float
     load_metadata_error_n: float
+    west_boundary_flux: float
+    east_boundary_flux: float
+    south_boundary_flux: float
+    north_boundary_flux: float
 
 
 def audit_cavitating_solution(problem, solution, *, maximum_grid_points=1024):
@@ -186,4 +190,5 @@ def audit_cavitating_solution(problem, solution, *, maximum_grid_points=1024):
         float(np.max(np.abs(film - exact_film))),
         float(np.max(np.abs(displacement - direct_w))), float(film.min()), load,
         load - solution.load_n,
+        *(float(value) for value in fluxes),
     )

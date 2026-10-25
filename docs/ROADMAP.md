@@ -304,3 +304,32 @@ mesh/material ranges and independently sourced film-height references.
 Pressure-dependent viscosity/density need separate constitutive benchmarks
 before integration. Full EHL validation and GPU work remain open; the existing
 signed reference implementations and original staged HIP work are preserved.
+
+## Positive-force domain sensitivity and recovery (2026-10-25)
+
+Added a fixed-force domain study with constant baseline spacing and matched
+physical inputs. Direct cold starts on larger domains exhausted the existing
+Newton cap; verified coupled reference roots plus adaptive force continuation
+reach Q=0.002 N on 13x17, 21x25 and 29x33 without raising iteration limits.
+All 20 accepted load roots pass independent state audits. Three real rejected
+29x33 trials retain their candidates and diagnostics; smaller warm-started
+steps recover and reach the target.
+
+Offsets change substantially with the domain: 21.3005, 46.3684 and 76.9021 um.
+Individual boundary flux budgets are now reported, making the changing
+inlet/outlet/lateral flows visible alongside their small net imbalance.
+The largest direct-audited grid has 957 nodes. PHYSICS.md records extents,
+flow budgets, residuals, failure/recovery evidence and reproduction; no result
+baseline was overwritten.
+Verification: `ruff check .` clean; `pytest -q` 225 passed, 4 optional
+GPU skips. All three domain cases reached the target with independent audits
+and plots, using the existing bounded solver and single-thread CPU settings.
+
+**Current physical limitation:** the coupled positive-load model is not
+domain-independent on these extents. Same-domain grid convergence and exact
+force closure must not be presented as validated physical film heights.
+Next: independently audit inlet/far-field consistency using an analytical
+rigid parabolic cavitation limit, then use controlled domain expansion or
+appropriate verified far-field conditions before material/film comparisons.
+Pressure-dependent properties need their own benchmarks and must not be used
+to conceal this boundary/domain sensitivity. GPU work remains deferred.

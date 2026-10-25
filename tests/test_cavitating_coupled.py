@@ -83,6 +83,13 @@ def test_coupled_positive_load_mass_complementarity_and_direct_elasticity(modulu
     assert audit.pressure_boundary_max_pa == 0
     assert audit.inlet_saturation_error == 0
     assert audit.load_metadata_error_n == 0
+    assert audit.net_boundary_flux == pytest.approx(
+        audit.west_boundary_flux
+        + audit.east_boundary_flux
+        + audit.south_boundary_flux
+        + audit.north_boundary_flux,
+        abs=1e-12,
+    )
 
 
 def test_relaxation_changes_work_not_the_converged_state():

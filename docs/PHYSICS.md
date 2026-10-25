@@ -1203,3 +1203,58 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=sr
 The fresh directory retains accepted/rejected trial metadata, SI candidate
 arrays, all Newton/Krylov diagnostics, independent audits and field/branch
 plots. `strong_reference.json` records the independent final reference.
+
+### Fixed-positive-force domain sensitivity and warm-start recovery
+
+`examples.run_cavitating_domain` holds Q=0.002 N, E*=10 MPa, all physical
+scales/radii and inlet theta=1 fixed while adding boundary nodes at constant
+spacing `dx=78.125 um`, `dy=83.333333 um`. Each domain first obtains a
+verified prescribed-h0 coupled reference at h0=20 um, then uses adaptive
+monolithic force continuation to the common target. This prevents changing
+force between domains or interpreting an unconverged cold start as a root.
+
+A bounded cold-start probe reached the base domain but exhausted the existing
+30-correction Newton cap on 21x25 and 29x33, with remaining maximum mass
+residuals about 1.95 and 7.97. The warm-start study does not raise that cap.
+All three domains subsequently reach the target:
+
+| `(ny,nx)` | x interval [mm] | y interval [mm] | Final h0 [um] | Peak pressure [Pa] | Minimum film [um] | Accepted / rejected load trials |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| (13,17) | [-0.5,0.75] | [-0.5,0.5] | 21.300524 | 8029.09 | 21.661017 | 6 / 0 |
+| (21,25) | [-0.8125,1.0625] | [-0.833333,0.833333] | 46.368401 | 3065.96 | 46.606636 | 6 / 0 |
+| (29,33) | [-1.125,1.375] | [-1.166667,1.166667] | 76.902079 | 1617.33 | 77.086215 | 8 / 3 |
+
+All 20 accepted load roots pass direct elasticity, film, force, mass,
+complementarity, boundary and inlet audits. Maximum independent mass
+residual across those roots is below 8.76e-9 and maximum absolute integrated
+net flux below 1.12e-8. Final force errors are below 8.68e-19 N. Three actual
+29x33 trial failures exhaust the same 30-correction cap with maximum mass
+residuals 0.3694, 0.2862 and 3.84e-7. They are rejected; reduced steps from
+the preceding converged roots subsequently reach the requested force.
+Accepted/rejected trial states and full Newton/Krylov histories are retained.
+
+The domain effect is substantial and not converged. Prior same-domain mesh
+refinement and load closure do **not** establish a physical film prediction.
+Moving a fully supplied inlet also changes local inlet geometry and the
+resulting supply/backflow budget. Individual outward dimensionless fluxes
+are now recorded by `audit_cavitating_solution`, rather than reporting only
+their near-zero sum. At the three final roots, west/east/south/north fluxes
+are approximately `(-30.653,27.095,1.779,1.779)`,
+`(-121.247,104.326,8.461,8.461)`, and
+`(-298.724,251.779,23.473,23.473)`. Thus flow budgets vary with the domain
+and boundary model even when net balance and force closure pass. These data
+do not isolate one cause or prove a boundary implementation defect; inlet/
+far-field consistency and larger-domain studies remain necessary.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_cavitating_domain --plots \
+  --output-directory results/cavitating_domain_new
+```
+
+The largest grid has 957 nodes, within the 1024-point direct-audit cap.
+Each output directory must be new. Reference roots, all trial candidates,
+SI grid/fields, failure reasons, independent audits and field/path plots are
+preserved. This study supports verified numerical recovery and exposes a
+material limitation; it does not close domain independence, broad physical
+EHL validation, or film-height comparison milestones.

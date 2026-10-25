@@ -107,7 +107,11 @@ def pseudo_arclength_continue(
     The corrector solves the residual and tangent-plane constraint as one
     bordered Newton system. Dense direct solves and explicit Jacobians make
     this an experimental diagnostic for small systems, not a large-grid
-    replacement for the matrix-free production Newton solver.
+    replacement for the matrix-free production Newton solver. A predictor
+    crossing the requested target uses a fixed-parameter Newton corrector
+    there, so target termination returns a residual root at that parameter.
+    The recorded constraint residual then measures parameter error rather
+    than the tangent-plane residual.
     """
     state = np.asarray(initial_state, dtype=np.float64).copy()
     parameter = float(initial_parameter)
@@ -189,6 +193,12 @@ def pseudo_arclength_continue(
         None,
         parameter_direction,
     )
+    if target_parameter is not None and parameter_direction * (parameter - target_parameter) > 0:
+        raise ValueError("target_parameter must lie in parameter_direction from the initial state")
+    if target_parameter == parameter:
+        return PseudoArclengthResult(
+            state.copy(), parameter, tangent.copy(), (), (), "target_parameter_reached"
+        )
     step_size = initial_step
     records: list[PseudoArclengthStep] = []
     termination_reason = "maximum_steps"
@@ -198,6 +208,17 @@ def pseudo_arclength_continue(
         retry_count = 0
         while not accepted and retry_count <= maximum_retries_per_step:
             predictor = np.concatenate((state, [parameter])) + step_size * tangent
+            constraint_row = np.concatenate((weights, [1.0])) * tangent
+            endpoint_corrector = target_parameter is not None and (
+                (parameter - target_parameter) * (predictor[-1] - target_parameter) <= 0.0
+                and predictor[-1] != parameter
+            )
+            if endpoint_corrector:
+                fraction = (target_parameter - parameter) / (predictor[-1] - parameter)
+                predictor = np.concatenate((state, [parameter])) + fraction * step_size * tangent
+                predictor[-1] = target_parameter
+                constraint_row = np.zeros(state.size + 1, dtype=np.float64)
+                constraint_row[-1] = 1.0
             predicted_state = predictor[:-1]
             predicted_parameter = float(predictor[-1])
             if feasible is not None and not feasible(predicted_state, predicted_parameter):
@@ -225,18 +246,30 @@ def pseudo_arclength_continue(
             newton_iterations = 0
             feasible_step_limits: list[float] = []
             accepted_step_lengths: list[float] = []
-            metric = np.concatenate((weights, [1.0]))
 
             for corrector_iteration in range(1, maximum_corrector_iterations + 1):
                 newton_iterations = corrector_iteration
                 values = np.asarray(residual(trial_state, trial_parameter), dtype=np.float64)
                 residual_rms = float(np.linalg.norm(values) / math.sqrt(state.size))
                 displacement = np.concatenate((trial_state, [trial_parameter])) - predictor
-                arc_residual = float(np.dot(metric * tangent, displacement))
+                arc_residual = float(np.dot(constraint_row, displacement))
                 if (
                     residual_rms <= residual_tolerance
                     and abs(arc_residual) <= arclength_tolerance
                 ):
+                    if (
+                        not endpoint_corrector
+                        and target_parameter is not None
+                        and (parameter - target_parameter)
+                        * (trial_parameter - target_parameter) <= 0.0
+                    ):
+                        # Curvature can cross the target even if the tangent
+                        # predictor did not. Re-correct at the exact endpoint.
+                        endpoint_corrector = True
+                        predictor[-1] = target_parameter
+                        constraint_row = np.zeros(state.size + 1, dtype=np.float64)
+                        constraint_row[-1] = 1.0
+                        continue
                     corrector_converged = True
                     reason = "converged"
                     break
@@ -251,7 +284,7 @@ def pseudo_arclength_continue(
                 bordered = np.empty((state.size + 1, state.size + 1), dtype=np.float64)
                 bordered[:-1, :-1] = trial_jacobian
                 bordered[:-1, -1] = trial_parameter_derivative
-                bordered[-1, :] = metric * tangent
+                bordered[-1, :] = constraint_row
                 right_hand_side = np.concatenate((-values, [-arc_residual]))
                 try:
                     correction = np.linalg.solve(bordered, right_hand_side)
@@ -294,7 +327,7 @@ def pseudo_arclength_continue(
                                 - predictor
                             )
                             candidate_arc = float(
-                                np.dot(metric * tangent, candidate_displacement)
+                                np.dot(constraint_row, candidate_displacement)
                             )
                             candidate_merit = 0.5 * (
                                 np.dot(candidate_residual, candidate_residual)
@@ -380,9 +413,7 @@ def pseudo_arclength_continue(
                 parameter = trial_parameter
                 tangent = next_tangent
                 accepted = True
-                if target_parameter is not None and (
-                    parameter_direction * (parameter - target_parameter) >= 0.0
-                ):
+                if endpoint_corrector:
                     termination_reason = "target_parameter_reached"
                     break
                 if newton_iterations <= 3 and rejected_trials == 0:

@@ -660,3 +660,25 @@ minimum just above the film floor: the analytic column remains finite while
 the previous centered parameter difference would sample an infeasible film.
 This verifies discrete derivatives and removes a parameter-differencing
 limitation; it does not demonstrate improved strong-branch convergence.
+
+### Exact pseudo-arclength target correction
+
+A predictor that crosses the requested parameter is shortened to that
+parameter. Its corrector replaces the tangent-plane constraint by
+`gamma - gamma_target = 0`; the original nonlinear residual, feasibility
+checks, and directional Armijo search remain active. If curvature causes an
+otherwise converged tangent-plane corrector to cross the target, it is
+re-corrected with the same endpoint constraint before acceptance. The
+recorded `arclength_residual` for an endpoint step is consequently the
+parameter-constraint residual; `arclength_step` retains the nominal attempted
+step budget, which can exceed the shortened endpoint predictor length. An initial root already at the target returns
+without taking a step; targets behind the initial requested direction raise.
+
+Exact scalar branches test increasing/decreasing bounded parameters and
+corrector-only target crossings. The existing E*=10 MPa rectangular coupled
+regression now covers targets 0.05 and exactly 1, independently recomputes
+Reynolds/load closure and positive film, and compares pressure and offset
+with a separate fixed-compliance matrix-free Newton solve. This establishes
+endpoint correctness for these cases, not strong-compliance robustness or
+physical EHL validation. A fixed-parameter endpoint at a singular fold may
+still fail and must retain failed-corrector diagnostics.

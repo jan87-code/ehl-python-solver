@@ -83,8 +83,21 @@ to AGENTS.md rather than duplicating its requirements. Final checks: `ruff check
 GPU skips, with BLAS/OpenMP threads limited to one. No strong-compliance
 or physical-validation milestone is marked complete.
 
-Next action: audit pseudo-arclength acceptance and termination at compliance
-bounds, then run a bounded small-grid continuation comparison. In particular,
-target crossing currently terminates beyond the requested parameter rather
-than solving exactly at it; gamma=1 is also a feasibility boundary. Preserve
-failed-state diagnostics and distinguish reaching a target from crossing it.
+## Exact continuation endpoint increment (2026-10-25)
+
+Corrected pseudo-arclength termination: predictor crossings now use a
+fixed-parameter endpoint corrector, and corrector-only crossings are
+re-corrected before acceptance. Initial-target roots return without stepping.
+Scalar increasing/decreasing, bounded-domain and curved-branch checks cover
+these paths. The E*=10 MPa coupled regression reaches compliance exactly 1
+and agrees with an independent fixed-compliance Newton solve; this remains
+a signed mathematical benchmark. This fixes the target/boundary limitation
+identified in the previous increment, without resolving the 1 MPa branch.
+Final checks: `ruff check .` clean; `pytest -q` 133 passed, 4 optional
+GPU skips, with BLAS/OpenMP threads limited to one.
+
+Next development action: run a bounded grid/domain sensitivity study of the
+1 MPa turning region using the analytic compliance column and exact endpoint
+semantics. Compare residual roots, film feasibility, conditioning and tangent
+reversal across meshes before drawing physical conclusions or changing
+preconditioners. Continue to preserve the original staged HIP checkout.

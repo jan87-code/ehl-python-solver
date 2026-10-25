@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from ehl_solver.pseudo_arclength import pseudo_arclength_continue
 
@@ -55,3 +56,58 @@ def test_rejected_predictor_retains_attempted_state_for_diagnostics():
     assert rejected.reason == "infeasible_predictor"
     assert rejected.parameter == rejected.state[0]
     assert rejected.parameter > 0.01
+
+
+@pytest.mark.parametrize("direction, initial, target", [(1.0, 0.0, 0.05), (-1.0, 0.1, 0.05)])
+def test_target_corrector_solves_exact_endpoint_inside_feasibility_bounds(
+    direction, initial, target
+):
+    result = pseudo_arclength_continue(
+        lambda state, parameter: np.array([state[0] - parameter**2]),
+        lambda _state, _parameter: np.array([[1.0]]),
+        lambda _state, parameter: np.array([-2.0 * parameter]),
+        np.array([initial**2]),
+        initial,
+        parameter_direction=direction,
+        target_parameter=target,
+        initial_step=0.1,
+        maximum_step=0.1,
+        feasible=lambda _state, parameter: (
+            min(initial, target) <= parameter <= max(initial, target)
+        ),
+    )
+    assert result.termination_reason == "target_parameter_reached"
+    assert result.parameter == target
+    np.testing.assert_allclose(result.state, [target**2], atol=1e-10)
+    assert len(result.steps) == 1
+    assert result.steps[-1].residual_rms <= 1e-8
+    assert result.steps[-1].arclength_residual == 0.0
+
+
+def test_initial_target_returns_verified_root_without_stepping():
+    result = pseudo_arclength_continue(
+        lambda state, parameter: state - parameter,
+        lambda _state, _parameter: np.eye(1),
+        lambda _state, _parameter: -np.ones(1),
+        np.array([0.0]), 0.0, target_parameter=0.0,
+    )
+    assert result.parameter == 0.0
+    assert result.steps == ()
+    assert result.termination_reason == "target_parameter_reached"
+
+
+def test_curved_branch_corrector_crossing_recorrects_at_target():
+    # At x=0, lambda=x+x**2 has a unit slope. The tangent predicts
+    # lambda=0.0707, while the unconstrained corrector crosses 0.072.
+    result = pseudo_arclength_continue(
+        lambda state, parameter: np.array([state[0] + state[0]**2 - parameter]),
+        lambda state, _parameter: np.array([[1.0 + 2.0 * state[0]]]),
+        lambda _state, _parameter: np.array([-1.0]),
+        np.array([0.0]), 0.0, target_parameter=0.072,
+        initial_step=0.1, maximum_step=0.1, maximum_steps=1,
+    )
+    assert result.termination_reason == "target_parameter_reached"
+    assert result.parameter == 0.072
+    np.testing.assert_allclose(
+        result.state + result.state**2, [result.parameter], atol=1e-8
+    )

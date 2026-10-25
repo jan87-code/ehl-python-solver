@@ -845,7 +845,8 @@ def test_compliance_continuation_matches_direct_moderate_solution_and_retries(mo
     )
 
 
-def test_monolithic_pseudo_arclength_compliance_reaches_small_target():
+@pytest.mark.parametrize("target", [0.05, 1.0])
+def test_monolithic_pseudo_arclength_compliance_reaches_exact_target(target):
     x, y = _grid()
     pressure = _pressure_at_h0(x, y, 20e-6)
     problem = _problem(_load(pressure, x, y), e_star=1e7, compliance_factor=0.0)
@@ -853,14 +854,16 @@ def test_monolithic_pseudo_arclength_compliance_reaches_small_target():
     result = continue_monolithic_compliance_pseudo_arclength(
         problem,
         initial,
-        target_compliance_factor=0.05,
-        initial_step=0.03,
-        maximum_step=0.05,
-        maximum_steps=4,
+        target_compliance_factor=target,
+        initial_step=0.1,
+        maximum_step=0.2,
+        maximum_steps=12,
         residual_tolerance=1e-7,
     )
 
     assert result.branch.termination_reason == "target_parameter_reached"
+    assert result.branch.parameter == target
+    assert problem.compliance_factor == target
     assert result.solution.film_thickness_m.min() > problem.film_floor_m
     assert result.solution.load_residual_n == pytest.approx(0.0, abs=1e-8)
     assert all(step.accepted for step in result.branch.steps)
@@ -874,6 +877,16 @@ def test_monolithic_pseudo_arclength_compliance_reaches_small_target():
         np.linalg.norm(problem.residual(final_state)[:-1])
         / np.sqrt(problem.pressure_size)
         < 1e-7
+    )
+
+    reference = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    np.testing.assert_allclose(
+        result.solution.pressure_dimensionless,
+        reference.pressure_dimensionless,
+        rtol=2e-5, atol=2e-8,
+    )
+    assert result.solution.central_film_offset_m == pytest.approx(
+        reference.central_film_offset_m, rel=2e-7
     )
 
 

@@ -277,3 +277,30 @@ Next: adaptive positive-load continuation with independently checked accepted
 states, explicit retries and preservation of the last converged root. Then
 extend the physically admissible benchmark range before adding pressure-
 dependent properties or any GPU work.
+
+## Adaptive admissible positive-load continuation (2026-10-25)
+
+Added bounded force continuation with independently recomputed root checks,
+last-accepted-only warm starts, adaptive step growth/halving, explicit retry
+budgets and full rejected-candidate/Newton/Krylov retention. Rejected shortened
+final steps are genuinely reduced, and numerically identical targets do not
+trigger roundoff-sized continuation. Tests cover both force directions,
+recovery, exhaustion and false-success/corrupted-return rejection.
+
+At 13x17 and E*=10 MPa, paths from 0.002 N reach 0.001, 0.005 and 0.020 N
+in six accepted stages each. All 18 accepted roots pass independent direct
+elasticity and conservation/film/complementarity/force checks. At 0.020 N,
+h0 is 4.62029 um, minimum film 7.81880 um and peak displacement 4.10269 um;
+a separate fixed-point solution matches pressure to 1.46e-12 relative.
+PHYSICS.md records full inputs, iteration counts, residuals, plotting and
+reproduction. Synthetic tests exercise rejection paths even though these
+bounded benchmark paths require no rejected load stages.
+Verification: `ruff check .` clean; `pytest -q` 221 passed, 4 optional
+GPU skips. All three continuation paths and plots completed; the stronger
+final root also passed the independent fixed-point reference comparison.
+
+Next: domain sensitivity at fixed positive force, followed by more demanding
+mesh/material ranges and independently sourced film-height references.
+Pressure-dependent viscosity/density need separate constitutive benchmarks
+before integration. Full EHL validation and GPU work remain open; the existing
+signed reference implementations and original staged HIP work are preserved.

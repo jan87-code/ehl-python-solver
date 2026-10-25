@@ -1141,3 +1141,65 @@ Schur/Krylov diagnostics, nested force evaluations, independent audits and
 field/section/saturation/deformation/convergence plots. No existing baseline
 is overwritten. Broad load/continuation robustness and pressure-dependent
 properties remain unverified.
+
+### Adaptive positive-force continuation
+
+`cavitating_continuation.continue_cavitating_load` advances from a supplied
+converged SI state toward a positive SI force target, holding compliance and
+all other physical inputs fixed. Only the last independently recomputed
+root supplies a warm start. Acceptance checks force, exact elastic film,
+displacement, boundary/inlet data, mass balance, min(P,D), product
+complementarity and primal bounds. A solver success flag is insufficient.
+
+Step fractions refer to the original force span. Defaults begin at 0.1,
+grow accepted steps by 1.5 up to 0.25, halve rejected *actual* force steps,
+and stop below 0.005 or after 30 attempts/6 retries per stage. Shortened
+final steps are reduced on rejection rather than repeatedly attempting the
+same target. A target already within the configured load tolerance returns
+the verified initial root without roundoff-sized steps. Configuration does
+not permit overriding the physical compliance or warm-start/target data via
+solver options. Exhaustion retains every trial, rejected candidate, Newton/
+Krylov failure diagnostics and the last independently accepted root. The
+problem and starting state are not modified.
+
+Regression tests cover increasing/decreasing loads, independent direct-root
+parity, failure/retry warm starts, exhausted budgets, a corrupted returned
+candidate, invalid starts, near-identical targets and shortened-target retry
+behavior. The benchmark additionally uses direct spatial elasticity and the
+separate opposing-face mass stencil for every accepted trial.
+
+On `(ny,nx)=13x17`, E*=10 MPa, the previous geometry/scales and an initial
+0.002 N root, each target below is reached in six accepted load stages with
+no rejected load stages:
+
+| Target force [N] | Solved h0 [um] | Minimum film [um] | Maximum displacement [um] | Minimum theta | Total Newton / Krylov iterations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0.001 | 28.801894 | 29.007154 | 0.201756 | 0.565454 | 25 / 248 |
+| 0.005 | 13.621900 | 14.390149 | 1.043520 | 0.400688 | 23 / 265 |
+| 0.020 | 4.620289 | 7.818798 | 4.102689 | 0.285608 | 29 / 436 |
+
+Across the 18 accepted load stages, maximum independently measured mass
+divergence is below 3.35e-9, product complementarity below 9.51e-23, and
+absolute integrated net flux below 1.15e-10. Final force errors are below
+8.68e-19 N. Tiny Newton step lengths near content switches remain visible
+in history; acceptance still requires final equation residuals. At 0.02 N,
+peak pressure is about 80.775 kPa and displacement is appreciable relative
+to the minimum film. An independent prescribed-offset fixed-point solve at
+that final h0, with mass tolerance 1e-10, converges in 132 aggregate outer
+iterations and agrees in pressure to 1.46e-12 relative L2. Its force is
+0.01999999999999384 N, independently computed from the field.
+
+These tests expand numerical coupling/load coverage; they do not establish
+bearing-steel material validity, domain independence at these loads, an
+experimental film-height comparison, or a pressure-dependent fluid model.
+No broad physical-EHL validation box is closed by continuation alone.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_cavitating_load_continuation --plots \
+  --output-directory results/cavitating_continuation_new
+```
+
+The fresh directory retains accepted/rejected trial metadata, SI candidate
+arrays, all Newton/Krylov diagnostics, independent audits and field/branch
+plots. `strong_reference.json` records the independent final reference.

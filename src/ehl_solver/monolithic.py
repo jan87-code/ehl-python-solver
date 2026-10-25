@@ -382,17 +382,32 @@ class BorderedReynoldsElasticityProblem:
             )
         )
 
-    def jacobian_vector(self, state: ArrayLike, direction: ArrayLike) -> NDArray[np.float64]:
-        """Apply the exact discrete directional derivative without dense storage."""
+    def compliance_derivative(self, state: ArrayLike) -> NDArray[np.float64]:
+        """Differentiate the scaled residual in compliance at fixed pressure/h0.
+
+        This includes mobility and entrainment changes through dH/dgamma =
+        displacement/h_ref. The fixed-state load derivative is exactly zero.
+        No parameter perturbation or mutation is required, including at 0 or 1.
+        """
+        return self.jacobian_vector(
+            state, np.zeros(self.pressure_size + 1), compliance_direction=1.0
+        )
+
+    def jacobian_vector(
+        self, state: ArrayLike, direction: ArrayLike, *, compliance_direction: float = 0.0
+    ) -> NDArray[np.float64]:
+        """Apply the exact discrete state/optional compliance directional derivative."""
         z = np.asarray(state, dtype=np.float64)
         v = np.asarray(direction, dtype=np.float64)
         if z.shape != (self.pressure_size + 1,) or v.shape != z.shape:
             raise ValueError("state and direction must have pressure_size + 1 entries")
-        if not np.all(np.isfinite(v)):
-            raise ValueError("direction must contain only finite values")
-        if not np.any(v):
+        if not np.all(np.isfinite(z)) or not np.all(np.isfinite(v)):
+            raise ValueError("state and direction must contain only finite values")
+        if not math.isfinite(compliance_direction):
+            raise ValueError("compliance_direction must be finite")
+        if not np.any(v) and compliance_direction == 0.0:
             return np.zeros_like(v)
-        pressure, film_m, _ = self.state_fields(z[:-1], float(z[-1]))
+        pressure, film_m, displacement = self.state_fields(z[:-1], float(z[-1]))
         if not np.all(np.isfinite(film_m)) or np.any(film_m <= self.film_floor_m):
             raise ValueError("Jacobian state must have film thickness above the floor")
 
@@ -408,6 +423,7 @@ class BorderedReynoldsElasticityProblem:
         film_direction = (
             v[-1] * self.film_scale_m
             + self.compliance_factor * displacement_direction
+            + compliance_direction * displacement
         ) / self.film_scale_m
 
         h = film_m / self.film_scale_m
@@ -1970,9 +1986,8 @@ def continue_monolithic_compliance_pseudo_arclength(
     systems; it is a branch diagnostic, not a large-grid solver. Pressure
     unknowns are weighted by their RMS norm, while ``h0/h_ref`` and
     compliance each have unit weight. Strict film positivity is checked at
-    every predictor and corrector trial. The compliance derivative is
-    independently differenced because the existing problem API exposes the
-    state Jacobian but not a parameter derivative.
+    every predictor and corrector trial. The compliance derivative is analytic,
+    including both pressure-driven mobility and entrainment film terms.
     """
     if (
         not isinstance(maximum_state_size, int)
@@ -2045,22 +2060,8 @@ def continue_monolithic_compliance_pseudo_arclength(
     def compliance_derivative(
         values: NDArray[np.float64], compliance: float
     ) -> NDArray[np.float64]:
-        step = min(1e-5, compliance, 1.0 - compliance)
-        if step > 0.0:
-            return (
-                residual_at(values, compliance + step)
-                - residual_at(values, compliance - step)
-            ) / (2.0 * step)
-        step = 1e-5
-        if compliance <= 0.0:
-            return (
-                residual_at(values, compliance + step)
-                - residual_at(values, compliance)
-            ) / step
-        return (
-            residual_at(values, compliance)
-            - residual_at(values, compliance - step)
-        ) / step
+        problem.compliance_factor = compliance
+        return problem.compliance_derivative(values)
 
     def feasible(values: NDArray[np.float64], compliance: float) -> bool:
         if not 0.0 <= compliance <= 1.0:

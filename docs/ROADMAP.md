@@ -64,3 +64,27 @@ most effective of the tested frozen-film preconditioners at gamma `0.175`
 These diagnostics do not establish a physical fold or full-compliance
 solution. Neither strong coupling nor physical load control is checked off
 by this increment.
+
+
+## Autonomous development increment (2026-10-25)
+
+Audited `develop` at `0e8a44c` in an isolated worktree because the original
+`feature/hip-backend` checkout contains pre-existing staged changes. Those
+files are preserved. The current priority remains conditioning and robust
+continuation of the signed full-film mathematical branch, before physical
+load/cavitation coupling or GPU work. Baseline CPU verification: 123 passed,
+4 optional GPU tests skipped.
+
+Implemented an analytic compliance column and augmented state/compliance JVP,
+and replaced the pseudo-arclength finite-difference parameter column.
+Independent endpoint/interior residual-difference tests, a joint directional
+check, and a near-film-floor regression pass. Added Copilot guidance pointing
+to AGENTS.md rather than duplicating its requirements. Final checks: `ruff check .` clean; `pytest -q` 128 passed, 4 optional
+GPU skips, with BLAS/OpenMP threads limited to one. No strong-compliance
+or physical-validation milestone is marked complete.
+
+Next action: audit pseudo-arclength acceptance and termination at compliance
+bounds, then run a bounded small-grid continuation comparison. In particular,
+target crossing currently terminates beyond the requested parameter rather
+than solving exactly at it; gamma=1 is also a feasibility boundary. Preserve
+failed-state diagnostics and distinguish reaching a target from crossing it.

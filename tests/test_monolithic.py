@@ -960,3 +960,76 @@ def test_compliance_continuation_verifies_returned_candidate(monkeypatch):
             problem, initial, maximum_retries_per_step=0
         )
     assert problem.compliance_factor == 0.0
+
+
+@pytest.mark.parametrize("gamma", [0.0, 0.175, 1.0])
+def test_analytic_compliance_column_matches_residual_at_bounds_and_interior(gamma):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), e_star=1e7, compliance_factor=gamma)
+    state = np.r_[pressure[1:-1, 1:-1].ravel(), 1.0]
+    original = state.copy()
+    evaluations = problem.operator_evaluations
+    analytic = problem.compliance_derivative(state)
+    assert problem.compliance_factor == gamma
+    assert problem.operator_evaluations == evaluations
+    np.testing.assert_array_equal(state, original)
+    assert analytic[-1] == 0.0
+
+    def at(parameter):
+        problem.compliance_factor = parameter
+        return problem.residual(state)
+
+    errors = []
+    for step in (1e-3, 1e-4, 1e-5):
+        if gamma == 0.0:
+            difference = (-3 * at(gamma) + 4 * at(gamma + step)
+                          - at(gamma + 2 * step)) / (2 * step)
+        elif gamma == 1.0:
+            difference = (3 * at(gamma) - 4 * at(gamma - step)
+                          + at(gamma - 2 * step)) / (2 * step)
+        else:
+            difference = (at(gamma + step) - at(gamma - step)) / (2 * step)
+        errors.append(np.linalg.norm(analytic - difference) / np.linalg.norm(analytic))
+    problem.compliance_factor = gamma
+    assert max(errors) < 1e-7
+    assert errors[-1] < 1e-8
+
+
+def test_augmented_state_compliance_jvp_matches_joint_residual_difference():
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), e_star=1e7, compliance_factor=0.175)
+    state = np.r_[pressure[1:-1, 1:-1].ravel(), 1.0]
+    direction = np.random.default_rng(340).normal(size=state.size)
+    direction /= np.linalg.norm(direction)
+    gamma_direction = 0.7
+    analytic = problem.jacobian_vector(
+        state, direction, compliance_direction=gamma_direction
+    )
+    np.testing.assert_allclose(
+        analytic,
+        problem.jacobian_vector(state, direction)
+        + gamma_direction * problem.compliance_derivative(state),
+        rtol=1e-12, atol=1e-12,
+    )
+    step = 1e-5
+    problem.compliance_factor = 0.175 + step * gamma_direction
+    plus = problem.residual(state + step * direction)
+    problem.compliance_factor = 0.175 - step * gamma_direction
+    minus = problem.residual(state - step * direction)
+    np.testing.assert_allclose(analytic, (plus - minus) / (2 * step), rtol=1e-6, atol=1e-7)
+
+
+def test_compliance_derivative_needs_no_feasible_parameter_perturbation():
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), e_star=1e6, compliance_factor=0.175)
+    state = np.r_[pressure[1:-1, 1:-1].ravel(), 1.0]
+    _, film, displacement = problem.state_fields(state[:-1], state[-1])
+    state[-1] += (problem.film_floor_m * 1.001 - film.min()) / FILM_SCALE_M
+    _, film, _ = problem.state_fields(state[:-1], state[-1])
+    assert film.min() > problem.film_floor_m
+    # The previous centered difference would leave the feasible film domain.
+    assert np.any(film + 1e-5 * displacement <= problem.film_floor_m)
+    assert np.all(np.isfinite(problem.compliance_derivative(state)))

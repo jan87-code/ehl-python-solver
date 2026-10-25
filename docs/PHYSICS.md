@@ -613,8 +613,8 @@ run). Its last accepted state has independently recomputed scaled Reynolds
 RMS `6.13e-9`, load error `1.08e-10 N`, and minimum film `15.013 um`.
 
 The experimental pseudo-arclength corrector uses compliance gamma as a
-continuation parameter, analytic state-JVP columns, a finite-difference gamma
-derivative, RMS-scaled pressure variables, strict positive-film feasibility,
+continuation parameter, analytic state-JVP columns, an analytic gamma
+derivative (since the compliance-derivative verification increment), RMS-scaled pressure variables, strict positive-film feasibility,
 and dense bordered Newton solves. It is limited to small state dimensions.
 On the same grid it crossed a tangent sign reversal near a shallow maximum at
 gamma `0.179191378` (condition estimate `6.59e4`, smallest singular value
@@ -640,3 +640,23 @@ now detects and follows a local turning point, it does not establish
 continuation to full compliance, nor explain the 100 kPa failure. These
 results remain signed full-film mathematical checks, with no physical-load
 or cavitation validation.
+
+### Analytic compliance derivative verification
+
+At fixed dimensionless pressure and offset, `dH/dgamma = w/h_ref`.
+The residual derivative differentiates the arithmetic face averages of `H**3`
+using `3*H**2*dH/dgamma`, and the centered entrainment term using the same
+film direction. Its load row is zero because load depends only on pressure.
+`compliance_derivative(state)` and the optional `compliance_direction` in
+`jacobian_vector` apply this derivative without perturbing the parameter or
+changing the problem. Pseudo-arclength now uses this analytic column.
+
+CPU regressions compare the column against independent second-order residual
+differences at gamma 0, 0.175 and 1 on a rectangular grid at E*=10 MPa,
+with relative errors below 1e-7 over steps 1e-3 through 1e-5 and below 1e-8
+at the smallest step. Joint state/parameter perturbations independently check
+the complete augmented derivative. An E*=1 MPa positive-film test places the
+minimum just above the film floor: the analytic column remains finite while
+the previous centered parameter difference would sample an infeasible film.
+This verifies discrete derivatives and removes a parameter-differencing
+limitation; it does not demonstrate improved strong-branch convergence.

@@ -1046,3 +1046,50 @@ def test_compliance_derivative_needs_no_feasible_parameter_perturbation():
     # The previous centered difference would leave the feasible film domain.
     assert np.any(film + 1e-5 * displacement <= problem.film_floor_m)
     assert np.all(np.isfinite(problem.compliance_derivative(state)))
+
+
+@pytest.mark.parametrize("e_star, gamma", [(1e5, 0.01), (5e6, 0.5), (1e7, 1.0)])
+def test_fixed_state_residual_and_jvp_depend_on_gamma_over_modulus(e_star, gamma):
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    target = _load(pressure, x, y)
+    reference = _problem(target, e_star=1e6, compliance_factor=0.1)
+    equivalent = _problem(target, e_star=e_star, compliance_factor=gamma)
+    state = np.r_[pressure[1:-1, 1:-1].ravel(), 1.0]
+    direction = np.random.default_rng(810).normal(size=state.size)
+    reference_pressure, reference_film, reference_w = reference.state_fields(state[:-1], state[-1])
+    observed_pressure, observed_film, observed_w = equivalent.state_fields(state[:-1], state[-1])
+    np.testing.assert_array_equal(reference_pressure, observed_pressure)
+    np.testing.assert_allclose(reference_film, observed_film, rtol=2e-14, atol=1e-20)
+    np.testing.assert_allclose(0.1 * reference_w, gamma * observed_w, rtol=2e-12, atol=1e-20)
+    np.testing.assert_allclose(reference.residual(state), equivalent.residual(state),
+                               rtol=2e-12, atol=1e-12)
+    np.testing.assert_allclose(reference.jacobian_vector(state, direction),
+                               equivalent.jacobian_vector(state, direction),
+                               rtol=2e-12, atol=1e-10)
+    # dR/dgamma carries the inverse-modulus factor, unlike the state JVP.
+    np.testing.assert_allclose(
+        reference.compliance_derivative(state) * reference.e_star_pa,
+        equivalent.compliance_derivative(state) * equivalent.e_star_pa,
+        rtol=2e-12, atol=1e-6,
+    )
+
+
+def test_equivalent_modulus_compliance_solutions_and_bordered_corrections_agree():
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    target = _load(pressure, x, y)
+    reference = _problem(target, e_star=1e6, compliance_factor=0.175)
+    equivalent = _problem(target, e_star=1e5, compliance_factor=0.0175)
+    state = np.r_[pressure[1:-1, 1:-1].ravel(), 1.0]
+    first = solve_bordered_correction(reference, state, krylov_rtol=1e-9)
+    second = solve_bordered_correction(equivalent, state, krylov_rtol=1e-9)
+    np.testing.assert_allclose(
+        first.pressure_correction, second.pressure_correction, rtol=2e-10, atol=1e-11
+    )
+    assert first.h0_correction_m == pytest.approx(second.h0_correction_m, rel=2e-10)
+    a = solve_monolithic_full_film_load(reference, pressure, 20e-6)
+    b = solve_monolithic_full_film_load(equivalent, pressure, 20e-6)
+    np.testing.assert_allclose(a.pressure_pa, b.pressure_pa, rtol=1e-9, atol=1e-7)
+    np.testing.assert_allclose(a.film_thickness_m, b.film_thickness_m, rtol=1e-10, atol=1e-15)
+    assert a.central_film_offset_m == pytest.approx(b.central_film_offset_m, rel=1e-10)

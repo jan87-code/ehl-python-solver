@@ -1978,6 +1978,7 @@ def continue_monolithic_compliance_pseudo_arclength(
     residual_tolerance: float = 1e-8,
     load_tolerance: float = 1e-6,
     maximum_state_size: int = 256,
+    compliance_reference_modulus_pa: float | None = None,
 ) -> MonolithicPseudoArclengthContinuation:
     """Experimental dense predictor-corrector continuation in compliance.
 
@@ -1985,10 +1986,26 @@ def continue_monolithic_compliance_pseudo_arclength(
     and solved directly. This intentionally limits the method to small
     systems; it is a branch diagnostic, not a large-grid solver. Pressure
     unknowns are weighted by their RMS norm, while ``h0/h_ref`` and
-    compliance each have unit weight. Strict film positivity is checked at
+    compliance each have unit weight by default. Strict film positivity is checked at
     every predictor and corrector trial. The compliance derivative is analytic,
     including both pressure-driven mobility and entrainment film terms.
+    Optional compliance_reference_modulus_pa [Pa] weights parameter motion
+    by (E_ref/E_star)**2, i.e. arclength in c=gamma*E_ref/E_star. This
+    matches steps for equivalent gamma/E_star problems at fixed geometry,
+    scales and load. Returned parameters/tangents still use actual gamma;
+    the default metric retains unit gamma weight.
     """
+    parameter_weight = 1.0
+    if compliance_reference_modulus_pa is not None:
+        if (
+            not math.isfinite(compliance_reference_modulus_pa)
+            or compliance_reference_modulus_pa <= 0.0
+        ):
+            raise ValueError("compliance_reference_modulus_pa must be finite and positive [Pa]")
+        modulus_ratio = compliance_reference_modulus_pa / problem.e_star_pa
+        parameter_weight = modulus_ratio * modulus_ratio
+        if not math.isfinite(parameter_weight) or parameter_weight <= 0.0:
+            raise ValueError("normalized compliance metric is outside the float64 range")
     if (
         not isinstance(maximum_state_size, int)
         or isinstance(maximum_state_size, bool)
@@ -2085,6 +2102,7 @@ def continue_monolithic_compliance_pseudo_arclength(
         state,
         problem.compliance_factor,
         state_weights=weights,
+        parameter_weight=parameter_weight,
         feasible=feasible,
         target_parameter=target_compliance_factor,
         initial_step=initial_step,

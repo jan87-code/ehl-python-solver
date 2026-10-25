@@ -758,3 +758,73 @@ correctors have no Krylov history. Output data and plots are not tracked.
 Negative pressures and the negative signed target remain mathematical model
 features, not cavitation-corrected physical loads. This audit does not close
 strong-compliance or physical EHL validation.
+
+### Modulus/compliance equivalence and continuation scaling
+
+For fixed geometry, load, discretization, lubricant parameters and reference
+scales, the present linear elastic operator satisfies `w_E[p] = K[p]/E*`.
+The coupled film is consequently `h=h_rigid+(gamma/E*)*K[p]`.
+The actual compliance coefficient is `C=gamma/E*` [Pa^-1], or equivalently
+`E_effective=E*/gamma` [Pa] for gamma>0. Gamma zero is the rigid limit.
+Moduli with equal gamma/E* therefore define identical residual roots, state
+Jacobians and bordered corrections in this model. This equivalence does not
+apply if other physical inputs or the reference scales are changed along
+with the modulus. Unscaled displacement w differs with modulus; gamma*w is
+the film contribution that must be compared.
+
+New regressions check this equivalence for `(E*,gamma)` of `(1 MPa,0.1)`,
+`(100 kPa,0.01)`, `(5 MPa,0.5)` and `(10 MPa,1)`, including the analytic
+parameter derivative's inverse-modulus factor. Separate fixed-compliance
+Newton solutions and Schur/GMRES corrections agree for `(1 MPa,0.175)` and
+`(100 kPa,0.0175)`. Thus the earlier failed 100 kPa gamma=0.05 trial probes
+`C=5e-7 Pa^-1`, well beyond the observed baseline turning region near
+`1.79e-7 Pa^-1`; it is not evidence that the rigid branch cannot be followed
+at smaller compliance. Neither this observation nor a local turning point
+rules out other branches.
+
+`pseudo_arclength_continue(parameter_weight=...)` now supports the metric
+`sum(state_weights*dz**2)+parameter_weight*dgamma**2`. With the optional
+monolithic `compliance_reference_modulus_pa=E_ref` [Pa], the weight is
+`(E_ref/E*)**2`, giving arclength in the dimensionless normalized compliance
+`c=gamma*E_ref/E*`. Tangent normalization/orientation, the corrector plane,
+and its Armijo merit use that metric consistently. A fixed endpoint uses
+`sqrt(parameter_weight)*(gamma-gamma_target)` as its constraint residual.
+Returned parameters and parameter-tangent components still refer to gamma;
+recorded arclength step sizes refer to the chosen weighted metric. Omitting
+the option preserves the existing unit-gamma metric. Invalid, underflowed
+and overflowed weights raise rather than being clamped.
+
+Exact scalar-fold and coupled small-grid regressions verify invariance of
+accepted states and tangent reversals under a linear change of parameter,
+including exact target endpoints. This improves parameter scaling, not the
+state-Jacobian conditioning or the existence of roots beyond a turning point.
+
+The modulus study uses the baseline 13x17 grid, the same negative signed
+target load, and the previous 12-step resource limits. With the default
+metric the 100 kPa run detects a reversal and samples gamma=0.017900999,
+with maximum independently audited Reynolds RMS 1.22e-11. With
+`E_ref=1 MPa`, the 1 MPa and 100 kPa runs instead take matching steps: their
+largest sampled gammas are 0.179202821579 and 0.017920282158. Their full
+accepted dimensionless `(P, h0/h_ref)` vectors differ by at most 6.67e-16, and normalized
+gammas differ by at most 1.95e-16. Both peak states have minimum film
+14.84055 um, effective modulus about 5.58027 MPa, and scaled state-Jacobian
+condition about 8.04e4. The 100 kPa branch audit has maximum scaled Reynolds
+RMS 8.87e-12, absolute signed load error below 8.68e-19 N, and absolute net
+flux below 6.43e-10. Both runs stop at the 12-step budget after a reversal,
+without reaching their requested full compliance. Observed continuation plus
+audit wall times were 6.78 and 6.61 s, excluding plotting.
+
+Reproduce the normalized comparison with a new output directory:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python examples/run_branch_sensitivity.py --study modulus --plots \
+  --compliance-reference-modulus-pa 1000000 \
+  --output-directory results/modulus_scaling_new
+```
+
+Omit the reference-modulus option to compare the original parameter metric.
+The report records the selected metric, per-case modulus, normalized
+compliance and effective modulus at each sampled maximum. These are signed
+mathematical branch checks, not physical bearing-material validation, a
+localized fold, or full-compliance success at 100 kPa.

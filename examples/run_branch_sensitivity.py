@@ -1,4 +1,4 @@
-"""Bounded CPU grid/domain sensitivity of the signed 1 MPa branch.
+"""Bounded CPU grid/domain and modulus sensitivity of a signed branch.
 
 Run with OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src.
 All cases share the baseline rigid-reference signed load; no results are
@@ -38,6 +38,7 @@ class Case:
     nx: int
     x_limits_m: tuple[float, float] = (-0.5e-3, 0.75e-3)
     y_limits_m: tuple[float, float] = (-0.5e-3, 0.5e-3)
+    e_star_pa: float = 1e6
 
 
 CASES = (
@@ -47,6 +48,9 @@ CASES = (
     # Two extra nodes at each edge preserve the baseline dx and dy.
     Case("expanded", 17, 21, (-0.65625e-3, 0.90625e-3), (-2e-3 / 3, 2e-3 / 3)),
 )
+
+
+MODULUS_CASES = (CASES[0], Case("soft_100kPa", 13, 17, e_star_pa=1e5))
 
 
 def make_case(case: Case, target_load_n: float | None = None):
@@ -63,7 +67,7 @@ def make_case(case: Case, target_load_n: float | None = None):
     if target_load_n is None:
         target_load_n = float(trapezoid(trapezoid(pressure * pressure_scale_pa, x, axis=1), y))
     problem = BorderedReynoldsElasticityProblem(
-        x, y, 0.01, 0.02, 1e6, length_scale_m, film_scale_m, pressure_scale_pa,
+        x, y, 0.01, 0.02, case.e_star_pa, length_scale_m, film_scale_m, pressure_scale_pa,
         12.0, target_load_n, compliance_factor=0.0, reynolds_residual_scale=100.0,
         krylov_max_iterations=50,
     )
@@ -114,12 +118,16 @@ def _require_verified(audit, problem):
         raise RuntimeError(f"independent branch-state audit failed: {audit}")
 
 
-def run_case(case, problem, initial, directory, *, maximum_steps=12, plots=False):
+def run_case(
+    case, problem, initial, directory, *, maximum_steps=12, plots=False,
+    compliance_reference_modulus_pa=None,
+):
     started = time.perf_counter()
     result = continue_monolithic_compliance_pseudo_arclength(
         problem, initial, initial_step=0.03, maximum_step=0.05,
         maximum_steps=maximum_steps, maximum_retries_per_step=3,
         maximum_state_size=512, residual_tolerance=1e-8,
+        compliance_reference_modulus_pa=compliance_reference_modulus_pa,
     )
     # Save all attempted states before checking acceptance independently.
     np.savez_compressed(
@@ -151,6 +159,8 @@ def run_case(case, problem, initial, directory, *, maximum_steps=12, plots=False
         "initial_h0_m": initial.central_film_offset_m,
         "termination_reason": result.branch.termination_reason,
         "maximum_sampled_compliance": peak.parameter,
+        "maximum_sampled_compliance_per_pa": peak.parameter / problem.e_star_pa,
+        "effective_modulus_at_sampled_peak_pa": problem.e_star_pa / peak.parameter,
         "peak_state_audit": asdict(audits[peak_index]),
         "peak_jacobian_condition_number": peak.jacobian_condition_number,
         "peak_smallest_jacobian_singular_value": peak.smallest_jacobian_singular_value,
@@ -237,10 +247,16 @@ def _json_finite(value):
     return value
 
 
-def main(output_directory: Path, *, maximum_steps=12, plots=False):
+def main(
+    output_directory: Path, *, maximum_steps=12, plots=False, study="mesh",
+    compliance_reference_modulus_pa=None,
+):
+    cases = CASES if study == "mesh" else MODULUS_CASES
     output_directory.mkdir(parents=True, exist_ok=False)
     report = {
         "model": "signed full-film mathematical branch; no coupled cavitation",
+        "study": study,
+        "compliance_reference_modulus_pa": compliance_reference_modulus_pa,
         "axis_order": "(ny, nx); x is entrainment",
         "runtime": {"python": platform.python_version(), "numpy": np.__version__,
                     "scipy": scipy.__version__,
@@ -249,20 +265,21 @@ def main(output_directory: Path, *, maximum_steps=12, plots=False):
         "settings": {"maximum_steps": maximum_steps, "initial_step": 0.03,
                      "maximum_step": 0.05, "maximum_retries_per_step": 3,
                      "maximum_state_size": 512, "residual_tolerance": 1e-8,
-                     "E_star_pa": 1e6, "length_scale_m": 5e-4,
+                     "length_scale_m": 5e-4,
                      "film_scale_m": 20e-6, "pressure_scale_pa": 21250.0,
                      "reynolds_parameter": 12.0, "reynolds_residual_scale": 100.0},
         "cases": [],
     }
     baseline_problem, baseline_initial = make_case(CASES[0])
     target_load_n = baseline_problem.target_load_n
-    for case in CASES:
+    for case in cases:
         problem, initial = (
             (baseline_problem, baseline_initial) if case is CASES[0]
             else make_case(case, target_load_n)
         )
         summary = run_case(
-            case, problem, initial, output_directory, maximum_steps=maximum_steps, plots=plots
+            case, problem, initial, output_directory, maximum_steps=maximum_steps, plots=plots,
+            compliance_reference_modulus_pa=compliance_reference_modulus_pa,
         )
         report["cases"].append(summary)
         (output_directory / "summary.json").write_text(
@@ -279,6 +296,10 @@ if __name__ == "__main__":
     parser.add_argument("--output-directory", type=Path, default=Path("results/branch_sensitivity"))
     parser.add_argument("--maximum-steps", type=int, default=12, choices=range(1, 41))
     parser.add_argument("--plots", action="store_true")
+    parser.add_argument("--study", choices=("mesh", "modulus"), default="mesh")
+    parser.add_argument("--compliance-reference-modulus-pa", type=float)
     options = parser.parse_args()
     logging.basicConfig(level=logging.WARNING)
-    main(options.output_directory, maximum_steps=options.maximum_steps, plots=options.plots)
+    main(options.output_directory, maximum_steps=options.maximum_steps,
+         plots=options.plots, study=options.study,
+         compliance_reference_modulus_pa=options.compliance_reference_modulus_pa)

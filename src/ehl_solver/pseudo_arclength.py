@@ -56,6 +56,7 @@ def _tangent(
     weights: NDArray[np.float64],
     previous: NDArray[np.float64] | None,
     parameter_direction: float,
+    parameter_weight: float,
 ) -> NDArray[np.float64]:
     augmented = np.column_stack((jacobian, parameter_derivative))
     _, singular_values, right = np.linalg.svd(augmented, full_matrices=True)
@@ -67,7 +68,7 @@ def _tangent(
     ):
         raise np.linalg.LinAlgError("continuation tangent system is rank deficient")
     vector = right[-1].copy()
-    metric = np.concatenate((weights, [1.0]))
+    metric = np.concatenate((weights, [parameter_weight]))
     norm = _weighted_norm(vector, metric)
     if not math.isfinite(norm) or norm == 0.0:
         raise np.linalg.LinAlgError("continuation tangent has invalid weighted norm")
@@ -88,6 +89,7 @@ def pseudo_arclength_continue(
     initial_parameter: float,
     *,
     state_weights: NDArray[np.float64] | None = None,
+    parameter_weight: float = 1.0,
     feasible: FeasibilityFunction | None = None,
     parameter_direction: float = 1.0,
     target_parameter: float | None = None,
@@ -111,7 +113,10 @@ def pseudo_arclength_continue(
     crossing the requested target uses a fixed-parameter Newton corrector
     there, so target termination returns a residual root at that parameter.
     The recorded constraint residual then measures parameter error rather
-    than the tangent-plane residual.
+    than the tangent-plane residual. The arclength metric is
+    sum(state_weights*dz**2) + parameter_weight*dparameter**2; a finite
+    positive parameter_weight can make continuation invariant to a linear
+    reparameterization. It does not change the residual equations.
     """
     state = np.asarray(initial_state, dtype=np.float64).copy()
     parameter = float(initial_parameter)
@@ -121,6 +126,8 @@ def pseudo_arclength_continue(
         raise ValueError("initial_parameter must be finite")
     if not math.isfinite(parameter_direction) or parameter_direction == 0.0:
         raise ValueError("parameter_direction must be finite and nonzero")
+    if not math.isfinite(parameter_weight) or parameter_weight <= 0.0:
+        raise ValueError("parameter_weight must be finite and positive")
     if target_parameter is not None and not math.isfinite(target_parameter):
         raise ValueError("target_parameter must be finite")
     if not (
@@ -192,6 +199,7 @@ def pseudo_arclength_continue(
         weights,
         None,
         parameter_direction,
+        parameter_weight,
     )
     if target_parameter is not None and parameter_direction * (parameter - target_parameter) > 0:
         raise ValueError("target_parameter must lie in parameter_direction from the initial state")
@@ -208,7 +216,7 @@ def pseudo_arclength_continue(
         retry_count = 0
         while not accepted and retry_count <= maximum_retries_per_step:
             predictor = np.concatenate((state, [parameter])) + step_size * tangent
-            constraint_row = np.concatenate((weights, [1.0])) * tangent
+            constraint_row = np.concatenate((weights, [parameter_weight])) * tangent
             endpoint_corrector = target_parameter is not None and (
                 (parameter - target_parameter) * (predictor[-1] - target_parameter) <= 0.0
                 and predictor[-1] != parameter
@@ -218,7 +226,7 @@ def pseudo_arclength_continue(
                 predictor = np.concatenate((state, [parameter])) + fraction * step_size * tangent
                 predictor[-1] = target_parameter
                 constraint_row = np.zeros(state.size + 1, dtype=np.float64)
-                constraint_row[-1] = 1.0
+                constraint_row[-1] = math.sqrt(parameter_weight)
             predicted_state = predictor[:-1]
             predicted_parameter = float(predictor[-1])
             if feasible is not None and not feasible(predicted_state, predicted_parameter):
@@ -268,7 +276,7 @@ def pseudo_arclength_continue(
                         endpoint_corrector = True
                         predictor[-1] = target_parameter
                         constraint_row = np.zeros(state.size + 1, dtype=np.float64)
-                        constraint_row[-1] = 1.0
+                        constraint_row[-1] = math.sqrt(parameter_weight)
                         continue
                     corrector_converged = True
                     reason = "converged"
@@ -370,6 +378,7 @@ def pseudo_arclength_continue(
                         weights,
                         tangent,
                         parameter_direction,
+                        parameter_weight,
                     )
                 except np.linalg.LinAlgError:
                     reason = "rank_deficient_updated_tangent"

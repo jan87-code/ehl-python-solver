@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 
+from ehl_solver.monolithic import continue_monolithic_compliance_pseudo_arclength
 from ehl_solver.verification import audit_full_film_solution
-from examples.run_branch_sensitivity import CASES, make_case
+from examples.run_branch_sensitivity import CASES, Case, make_case
 
 
 def test_mesh_and_domain_cases_share_load_without_retargeting_the_rigid_gap():
@@ -20,3 +21,46 @@ def test_mesh_and_domain_cases_share_load_without_retargeting_the_rigid_gap():
             assert problem.dy_m == pytest.approx(baseline.dy_m)
             np.testing.assert_allclose(problem.x[2:-2], baseline.x, atol=1e-18)
             np.testing.assert_allclose(problem.y[2:-2], baseline.y, atol=1e-18)
+
+
+
+@pytest.mark.parametrize("target", [1.0, 0.1])
+def test_normalized_compliance_metric_matches_modulus_branches_and_keeps_gamma_units(target):
+    reference, initial = make_case(CASES[1])
+    soft, soft_initial = make_case(Case("soft", 7, 9, e_star_pa=1e5), reference.target_load_n)
+    branches = []
+    for problem, root in ((reference, initial), (soft, soft_initial)):
+        result = continue_monolithic_compliance_pseudo_arclength(
+            problem, root, initial_step=0.03, maximum_step=0.05,
+            maximum_steps=12, residual_tolerance=1e-8,
+            compliance_reference_modulus_pa=1e6,
+            target_compliance_factor=target * problem.e_star_pa / reference.e_star_pa,
+        )
+        audit = audit_full_film_solution(problem, result.solution)
+        assert audit.reynolds_rms_scaled < 1.01e-8
+        assert abs(audit.load_residual_scaled) < 1e-6
+        branches.append(result.branch)
+    a, b = branches
+    assert a.turning_point_attempts == b.turning_point_attempts
+    if target == 1.0:
+        assert a.turning_point_attempts
+        assert a.termination_reason == b.termination_reason == "maximum_steps"
+    else:
+        assert a.termination_reason == b.termination_reason == "target_parameter_reached"
+        assert a.parameter == target
+        assert b.parameter == target * soft.e_star_pa / reference.e_star_pa
+    np.testing.assert_allclose([step.state for step in a.steps], [step.state for step in b.steps],
+                               rtol=1e-10, atol=1e-12)
+    np.testing.assert_allclose([step.parameter for step in a.steps],
+                               [10 * step.parameter for step in b.steps], rtol=1e-10)
+    assert reference.compliance_factor == a.parameter
+    assert soft.compliance_factor == b.parameter
+
+
+@pytest.mark.parametrize("modulus", [0.0, -1.0, float("nan"), float("inf"), 1e308, 1e-308])
+def test_normalized_compliance_metric_rejects_invalid_or_unrepresentable_values(modulus):
+    problem, root = make_case(CASES[1])
+    with pytest.raises(ValueError, match="compliance.*(modulus|metric)"):
+        continue_monolithic_compliance_pseudo_arclength(
+            problem, root, compliance_reference_modulus_pa=modulus
+        )

@@ -111,3 +111,39 @@ def test_curved_branch_corrector_crossing_recorrects_at_target():
     np.testing.assert_allclose(
         result.state + result.state**2, [result.parameter], atol=1e-8
     )
+
+
+@pytest.mark.parametrize("target", [1.01, 0.5])
+def test_weighted_parameter_metric_preserves_branch_under_linear_reparameterization(target):
+    def follow(parameter_scale):
+        return pseudo_arclength_continue(
+            lambda state, parameter: state**2 + parameter_scale * parameter - 1,
+            lambda state, _parameter: np.array([[2 * state[0]]]),
+            lambda _state, _parameter: np.array([parameter_scale]),
+            np.array([-1.0]), 0.0, target_parameter=target / parameter_scale,
+            parameter_weight=parameter_scale**2,
+            initial_step=0.08, maximum_step=0.1, maximum_steps=32,
+        )
+    reference, scaled = follow(1.0), follow(10.0)
+    assert reference.turning_point_attempts == scaled.turning_point_attempts
+    assert reference.termination_reason == scaled.termination_reason
+    np.testing.assert_allclose(
+        [step.state for step in reference.steps], [step.state for step in scaled.steps], atol=1e-12
+    )
+    np.testing.assert_allclose(
+        [step.parameter for step in reference.steps],
+        [10 * step.parameter for step in scaled.steps], atol=1e-12,
+    )
+    assert np.dot(scaled.tangent[:-1], scaled.tangent[:-1]) + 100 * scaled.tangent[-1]**2 \
+        == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("weight", [0.0, -1.0, float("nan"), float("inf")])
+def test_parameter_metric_rejects_invalid_weights(weight):
+    with pytest.raises(ValueError, match="parameter_weight"):
+        pseudo_arclength_continue(
+            lambda state, parameter: state - parameter,
+            lambda _state, _parameter: np.eye(1),
+            lambda _state, _parameter: -np.ones(1),
+            np.array([0.0]), 0.0, parameter_weight=weight,
+        )

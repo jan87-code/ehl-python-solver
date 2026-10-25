@@ -123,3 +123,31 @@ compliance scaling before treating the 100 kPa case as a distinct failure;
 then localize tangent reversals and extend the grid/domain study with a
 common dimensional load. Strong coupling, physical load closure, and coupled
 cavitation remain unfinished.
+
+## Modulus-invariant compliance scaling increment (2026-10-25)
+
+Verified the exact gamma/E* dependence of the current linear-elastic
+full-film equations at fixed load and scales, including state fields,
+residuals, state/parameter derivatives, bordered corrections and separately
+converged Newton solutions. The 100 kPa small-grid branch can be followed
+through a tangent reversal near gamma=0.0179; earlier rejected 0.05/0.1
+trials were beyond the corresponding 1 MPa turning region.
+
+Added an optional normalized-compliance arclength metric with SI reference
+modulus, preserving default behavior and actual gamma in returned states.
+Exact-fold and coupled regressions cover branch tracking, tangent orientation,
+strict feasibility, exact endpoints and invalid weights. With E_ref=1 MPa,
+the 13x17 1 MPa and 100 kPa runs match all 12 accepted state vectors to
+6.67e-16 and normalized gammas to 1.95e-16. Independent state audits pass;
+maximum sampled gammas are 0.179202822 and 0.017920282. Neither run reaches
+its requested full compliance. See PHYSICS.md for reproduction and limits.
+Verification: `ruff check .` clean; `pytest -q` 158 passed, 4 optional
+GPU skips. Both default-metric and normalized modulus studies completed with
+independent audits and plots; single-thread resource limits were retained.
+
+Next action: localize the tangent reversal using the normalized parameter,
+then quantify grid/domain changes with a fixed signed load and a tighter
+sampling/localization error. Distinguish discretization dependence from
+branch-conditioning and globalization failures before changing the primary
+Newton preconditioner. Physical cavitation/load coupling and independent
+film-height validation remain unimplemented.

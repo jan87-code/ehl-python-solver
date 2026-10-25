@@ -1056,3 +1056,88 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=sr
 The new output directory holds SI fields, saturation, full convergence
 history, independent audits and pressure/film sections, deformation,
 saturation and convergence plots. Existing output directories are refused.
+
+### Monolithic positive-load JFO/elasticity Newton verification
+
+`cavitating_newton.py` adds a separate experimental monolithic system for
+interior `P=p/p_ref` and deficit `D=1-theta`, with optional simultaneous
+`h0/h_ref`. All geometry, material, solution fields and target force inputs
+are SI; arrays remain `(ny,nx)`, x entrainment. Residual rows are
+`div(q)/100`, `min(P,D)`, and (when a positive target is supplied)
+`(integral(p)-Q_target)/Q_target`. The film is reconstructed exactly as
+`h0+geometry+gamma*w(p)` on every residual call. Zero boundary gauge pressure,
+uniform inlet saturation and the existing conservative upwind JFO flux
+are preserved. This is a numerical isoviscous/incompressible model, not a
+validated full EHL solver or replacement for the retained signed references.
+
+The analytic matrix-free generalized JVP differentiates pressure gradients,
+`H**3` face mobility, pressure-driven elastic film, convective film/content,
+the optional offset, and the exact force row. Complementarity uses dD in
+full-film cells (`P>=D`) and dP otherwise. Away from switches, complete
+Jacobian columns and directional products pass centered residual-difference
+checks at zero/full compliance, with/without the load border. At exact ties,
+the merit slope uses the true one-sided `min(dP,dD)` directional derivative.
+
+A sparse frozen-film active-set LU is the pressure/content preconditioner.
+For prescribed force, two pressure/content GMRES solves and an explicit h0
+Schur correction reconstruct the bordered Newton step. Its complete true
+linear residual is checked. Failed block solves, an unsafe Schur indicator,
+or an inaccurate reconstruction recover through full bordered GMRES; tests
+force both Schur and fallback paths and compare to a complete dense
+linearization. Every GMRES result is independently checked using the actual
+JVP rather than trusting its status or preconditioned norm. Default rtol is
+1e-9, with true-residual ceiling 5*rtol, restart 80 and at most 20 cycles.
+The state-dependent film Jacobian is not included in the frozen-film block.
+
+A fraction-to-boundary safeguard for P/D bounds precedes a directional
+Armijo search with strict film feasibility. The stated dimensionless bound
+tolerance is 1e-10; tiny negative roundoff is reported, never clipped.
+Acceptance requires max mass divergence and relative local imbalance <=1e-8,
+min-residual and complementarity <=1e-10, admissibility, and scaled force
+error <=1e-8 where applicable. Small updates do not imply convergence.
+Defaults cap Newton corrections at 30 and backtracks at 20. Exceptions
+retain the last candidate/history and failed true-Krylov diagnostics.
+Accepted history records pre/post merits, slope, step, active cells, post-step
+film/offset/primal extrema, Schur/fallback indicators and complete
+preconditioned/true Krylov histories.
+
+At prescribed h0 on the 9x13 reference grid, cold-start Newton converges in
+2/10/20 corrections for E*=100/10/1 MPa and agrees with the independent
+fixed-point reference to below 1e-9 relative pressure difference. Known
+positive-force roots from those reference states are also recovered by
+simultaneously solving offset after starting from 22 um instead of 20 um.
+These are discrete numerical parity tests, not physical material validation.
+
+A separate prescribed-force benchmark holds **Q=0.002 N** and E*=10 MPa
+fixed, using the previous parabolic domain, scales and inlet. Cold-start
+results at full compliance are:
+
+| `(ny,nx)` | Solved h0 [um] | Minimum film [um] | Peak pressure [Pa] | Minimum theta | Max independent mass residual | Newton / Krylov iterations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| (9,13) | 20.935777690 | 21.231098 | 8263.721 | 0.502535 | 1.33e-11 | 11 / 110 |
+| (17,25) | 21.489860487 | 21.785007 | 7912.916 | 0.487266 | 3.83e-10 | 7 / 70 |
+| (25,37) | 21.550575804 | 21.844698 | 7929.420 | 0.481504 | 2.45e-13 | 19 / 190 |
+
+Force error is zero at printed float64 precision, complementarity is below
+3.57e-23, and net boundary flux below 4.29e-11 in dimensionless integrated
+units. Minimum Schur indicators range from 0.549 to 0.574; these runs need no
+bordered fallback. Maximum complete true linear residual is below 5.38e-10.
+An independent nested scalar h0 root on the coarse grid uses nine converged
+fixed-point force evaluations; its h0 differs by 4.13e-17 m and pressure by
+8.25e-13 relative L2. Each nested solve tightens mass tolerance to 1e-10.
+Decreasing offset changes under same-domain refinement do not establish
+domain independence, asymptotic order, or independent EHL film-height
+validation. The low-pressure cases and artificial low moduli must not be
+presented as validated bearing-steel results.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_cavitating_newton --plots \
+  --output-directory results/cavitating_newton_new
+```
+
+New directories preserve raw SI fields, content, convergence/globalization,
+Schur/Krylov diagnostics, nested force evaluations, independent audits and
+field/section/saturation/deformation/convergence plots. No existing baseline
+is overwritten. Broad load/continuation robustness and pressure-dependent
+properties remain unverified.

@@ -15,8 +15,12 @@
     rupture/reformation fronts on refined smooth wedges, and reduced inlet
     supply. This is numerical verification of a fixed-film model, not
     experimental validation; arbitrary front behavior, feed geometry, and
-    elastic/load-controlled cavitation remain planned.
+    experimental comparison remain planned. Separate coupled JFO/elasticity
+    and positive-load numerical benchmarks are now recorded below.
 - [ ] Coupling of Reynolds + elasticity + film thickness + physical load control
+  - Separate monolithic JFO pressure/content/offset coupling now closes positive
+    force on limited isoviscous numerical benchmarks. Independent physical
+    film-height validation and broad domain/material robustness remain open.
   - A signed full-film h0 root finder and bordered Newton-Krylov solver with
     an analytic matrix-free discrete JVP, Schur correction, verified sparse
     preconditioners, directional-derivative Armijo line search with bounded
@@ -240,3 +244,36 @@ preconditioning and strict globalized Newton iteration. Add simultaneous
 positive-load/h0 control only after that pressure/saturation solve agrees
 with the reference. Physical-load equilibrium and full EHL validation are
 still unchecked.
+
+## Monolithic cavitation and positive-load closure (2026-10-25)
+
+Added analytic pressure/content/elasticity JVPs and a semismooth min(P,1-theta)
+constraint, with optional simultaneous SI force/h0 closure. Frozen-film
+active-set sparse LU preconditions matrix-free GMRES. Force mode uses an
+explicit Schur correction, complete reconstructed-residual checks and full
+bordered recovery. Fraction-to-boundary/Armijo globalization preserves stated
+primal tolerances and positive film without clipping. Failed candidates,
+true linear residuals, histories and Krylov traces remain inspectable.
+
+Complete finite-difference Jacobians include load and h0; dense bordered
+comparison and forced Schur/Krylov recovery regressions pass. Prescribed-h0
+Newton agrees with the independent reference at 100/10/1 MPa. At a fixed
+positive 0.002 N on 9x13/17x25/25x37 grids, h0 converges to approximately
+20.9358/21.4899/21.5506 um, with independent mass/complementarity, direct
+elasticity, film, boundary, inlet and force checks passing. An independent
+nested fixed-point h0 root matches the coarse pressure to 8.25e-13 relative.
+See PHYSICS.md for caps, parameter conventions, measured data and limitations.
+
+This implements numerical positive-load closure for the documented low-load
+cases. The broad physical-load/EHL validation box remains open: domain
+sensitivity, independent film-height references, material/rheology range,
+and general nonlinear/continuation robustness are unfinished. The earlier
+signed full-film solvers are retained unchanged.
+Verification: `ruff check .` clean; `pytest -q` 213 passed, 4 optional
+GPU skips. Three fixed-force grid benchmarks, the nested reference comparison
+and plots completed; raw Krylov trace recording was also exercised.
+
+Next: adaptive positive-load continuation with independently checked accepted
+states, explicit retries and preservation of the last converged root. Then
+extend the physically admissible benchmark range before adding pressure-
+dependent properties or any GPU work.

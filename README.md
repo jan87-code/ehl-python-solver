@@ -1,15 +1,15 @@
 # Python EHL Solver — research starter
 
-**Status: research foundation, NOT a complete EHL solver.** It includes
-analytical Hertz formulas, tested linear convolution and elasticity, a
-prescribed-film Reynolds solver, an independent prescribed-film
-mass-conserving cavitation prototype, and an experimentally scoped weak
-full-film Reynolds-elasticity coupling. Strongly coupled cavitation, load
-physical equilibrium, and a fully validated EHL calculation remain future
-work. A nested root finder and a matrix-free bordered Newton solver exist for
-signed full-film load closure, but these are mathematical verification
-tools: the formulation can include negative-pressure tensile contributions
-and is not a physically validated load-controlled EHL model.
+**Status: research foundation, NOT a complete validated EHL solver.** It includes
+Hertz references, tested convolution/elasticity, prescribed-film Reynolds/JFO
+solvers, and experimental monolithic cavitation/elasticity with positive-load
+closure on documented small isoviscous benchmarks. Independent film-height
+validation, broad grid/domain/material coverage and pressure-dependent
+properties remain unfinished.
+
+The signed full-film Picard, nested load and bordered Newton solvers remain
+mathematical references. Their negative-pressure tensile contributions must
+not be interpreted as physical cavitation-corrected EHL loads.
 
 ## Quick start (Linux Mint / Ubuntu)
 
@@ -62,6 +62,7 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `convolution.py`: zero-padded full linear convolution with same-shape centered output
 - `hertz.py`: independent analytical formulas using *effective plane-strain contact modulus* `E_star` (Pa)
 - `reynolds.py`: dimensionless conservative residual and prescribed-film full-film solve, with parabolic verification, physical diagnostics, and sparse direct/iterative comparison; no cavitation model
+- `cavitating_newton.py`: experimental monolithic JFO pressure/content/elasticity and positive-load/h0 Newton solve, analytic JVP, verified Schur/GMRES, feasibility and Armijo safeguards; numerical verification only
 - `cavitating_coupled.py`: SI prescribed-offset JFO/elasticity CPU reference; convergence checked on exact coupled film; no prescribed-load control
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with local/global mass-conservation, front-refinement, complementarity and uniform inlet-starvation diagnostics; not experimentally validated or coupled to elasticity/load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller

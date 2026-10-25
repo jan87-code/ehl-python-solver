@@ -47,24 +47,27 @@ def save_plots(directory, name, problem, result):
         figure.colorbar(artist, ax=axis, label=units)
         axis.set(xlabel="x [mm] (entrainment)", ylabel="y [mm]", title=label)
         figures[label] = figure
-    figure, axes = plt.subplots(3, 1, constrained_layout=True, figsize=(8, 9))
-    axes[0].semilogy(
-        [r.metrics.mass_maximum for r in result.history], label="Maximum mass residual"
-    )
-    axes[0].semilogy([r.film_defect_relative for r in result.history], label="Relative film defect")
-    axes[0].semilogy(
-        [r.pressure_update_relative for r in result.history], label="Relative p update"
-    )
-    axes[0].legend()
-    axes[1].plot([r.load_n for r in result.history])
-    axes[1].set_ylabel("Pressure force [N]; prescribed h0")
-    axes[2].plot([r.compliance_factor for r in result.history], label="Compliance gamma")
-    axes[2].plot(
-        [r.active_set_iterations for r in result.history], label="Inner active-set iterations"
-    )
-    axes[2].set_xlabel("Outer iteration")
-    axes[2].legend()
-    figures["convergence"] = figure
+    if result.history:
+        figure, axes = plt.subplots(3, 1, constrained_layout=True, figsize=(8, 9))
+        axes[0].semilogy(
+            [r.metrics.mass_maximum for r in result.history], label="Maximum mass residual"
+        )
+        axes[0].semilogy(
+            [r.film_defect_relative for r in result.history], label="Relative film defect"
+        )
+        axes[0].semilogy(
+            [r.pressure_update_relative for r in result.history], label="Relative p update"
+        )
+        axes[0].legend()
+        axes[1].plot([r.load_n for r in result.history])
+        axes[1].set_ylabel("Pressure force [N]; prescribed h0")
+        axes[2].plot([r.compliance_factor for r in result.history], label="Compliance gamma")
+        axes[2].plot(
+            [r.active_set_iterations for r in result.history], label="Inner active-set iterations"
+        )
+        axes[2].set_xlabel("Outer iteration")
+        axes[2].legend()
+        figures["convergence"] = figure
     for label, figure in figures.items():
         figure.savefig(directory / f"{name}_{label}.png", dpi=120)
         plt.close(figure)

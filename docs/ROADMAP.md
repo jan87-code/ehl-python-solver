@@ -417,3 +417,23 @@ The CPU reference, signed mathematical solvers and staged HIP sources are
 preserved. GPU audit findings above remain applicable.
 Verification: `ruff check .` clean; `pytest -q` 244 passed, 4 optional
 PyTorch skips. All seven independent CPU runs and comparison plots completed.
+
+## Rigid far-field linear accuracy repair (2026-10-25)
+
+The next bounded rigid-domain probe exposed poorly scaled active-set sparse
+systems: H cubed grows far from the minimum gap while constraints have unit
+coefficients. Original unscaled local mass residuals reach 1.41e-6 on a
+257x153 grid. Added positive row/column equilibration with exact recovery of
+the original pressure/content coordinates. The unscaled direct path remains
+available explicitly; diagnostics always evaluate original mass fluxes.
+No stencil, physical boundary, clipping or regularization change is made.
+
+The same largest probe now has max mass residual 4.70e-11 with integrated
+pressure unchanged to 3.4e-14 relative. Independent dense-system and
+whole-face divergence regressions cover recovery and original equations;
+bad scales/invalid options raise. PHYSICS.md records formulas and measured
+scaled/unscaled comparisons. Next: complete the controlled rigid extent /
+resolution / dimensional-similarity study using this accurate linear path.
+Verification: `ruff check .` clean; `pytest -q` 249 passed, 4 optional
+PyTorch skips. Bounded single-thread rigid probes complete through 39,321
+nodes; the regression also checks the independently recomputed mass stencil.

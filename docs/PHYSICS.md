@@ -1502,3 +1502,41 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=sr
 New directories contain unique names even for equal-shaped inlet/outlet
 grids, all reference/Newton histories, SI states, trial audits, flux budgets,
 pressure-overlap changes and a comparison plot. Prior results are preserved.
+
+### Active-set linear equilibration on rigid far-field grids
+
+Expanding a rigid parabolic point domain exposes a separate numerical issue:
+H cubed gives very large pressure-mass matrix entries far from the minimum
+gap, while pressure/content constraints retain unit coefficients. The
+original sparse direct solve can have an unacceptable **unscaled** local
+mass residual even though integrated pressure has stabilized numerically.
+
+The fixed-film JFO solver now defaults to positive diagonal row/column
+equilibration. For the original active-set system A z=b, define
+Rii=1/max_j(abs(Aij)), then Cjj=1/max_i(abs((R A)ij)). Solve
+`(R A C) u=R b` and recover `z=C u`. Zero/nonfinite rows/columns or
+nonfinite scales raise. This changes linear coordinates only: the stencil,
+active-set decisions, tolerances, pressure/content variables and boundary
+conditions are unchanged. Nothing is clipped or regularized. Public option
+`equilibrate_linear_system=False` retains the original direct reference.
+All returned mass diagnostics use original face fluxes, not the scaled
+linear-system residual. No device backend or monolithic Jacobian changes.
+
+A normalized rigid probe uses H=1+X²+Y²/2, Lambda=1,
+X=[-A,3], Y=[-sqrt(2) A,sqrt(2) A], with dY=sqrt(2) dX.
+Dimensionless integrated pressure is W=integral(P dX dY).
+
+| A | dX | Grid `(ny,nx)` | W, equilibrated | Original max mass residual | Equilibrated max mass residual |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 0.25 | (65,45) | 0.498109443073311 | 3.39e-9 | 9.24e-13 |
+| 16 | 0.25 | (129,77) | 0.562361207496827 | 4.93e-8 | 9.56e-12 |
+| 8 | 0.125 | (129,89) | 0.507565861780342 | 4.03e-8 | 4.95e-12 |
+| 16 | 0.125 | (257,153) | 0.571843278633597 | 1.41e-6 | 4.70e-11 |
+
+The final W changes by only 3.4e-14 relative between linear paths. These
+are observed float64 results, not universal error bounds across sparse
+libraries/platforms. An independent whole-face divergence regression checks
+the original equation on the 129x89 case; a separate dense solve verifies
+the complete recovered linear vector. Existing full-film, front, starvation,
+elasticity and positive-load tests remain in force. Domain dependence is a
+physical/boundary question distinct from this now-improved algebraic accuracy.

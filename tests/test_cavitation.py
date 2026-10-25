@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
 from scipy.integrate import trapezoid
+from scipy.sparse import csr_matrix
 
-from ehl_solver.cavitation import solve_cavitating_reynolds
+from ehl_solver.cavitating_coupled import CavitatingElasticityProblem
+from ehl_solver.cavitation import _solve_active_system, solve_cavitating_reynolds
 from ehl_solver.reynolds import solve_reynolds_pressure
 
 
@@ -182,6 +184,7 @@ def test_reduced_inlet_supply_reduces_pressure_and_preserves_mass_balance():
         ("inlet_fractional_film_content", -0.01),
         ("inlet_fractional_film_content", 1.01),
         ("inlet_fractional_film_content", float("nan")),
+        ("equilibrate_linear_system", "false"),
     ],
 )
 def test_cavitation_rejects_invalid_numerical_inputs(field, value):
@@ -194,3 +197,51 @@ def test_cavitation_rejects_invalid_numerical_inputs(field, value):
     arguments[field] = value
     with pytest.raises(ValueError):
         solve_cavitating_reynolds(film, **arguments)
+
+
+def test_equilibrated_linear_solution_recovers_original_coordinates_and_dense_root():
+    # Unequal mass/constraint units and pressure/content magnitudes.
+    matrix = np.array([[2e12, -3e11, 2e4], [0, 1, 0], [5e7, 1e3, 8]])
+    rhs = np.array([5e4, 0.8, 1.7])
+    expected = np.linalg.solve(matrix, rhs)
+    actual = _solve_active_system(csr_matrix(matrix), rhs, True)
+    np.testing.assert_allclose(actual, expected, rtol=1e-12)
+    scale = np.abs(matrix) @ np.abs(actual) + np.abs(rhs)
+    assert np.max(np.abs(matrix @ actual - rhs) / scale) < 1e-14
+
+
+@pytest.mark.parametrize("matrix", [np.zeros((2, 2)), [[1, 0], [2, 0]]])
+def test_equilibration_rejects_unusable_rows_or_columns(matrix):
+    with pytest.raises(RuntimeError, match="zero or nonfinite"):
+        _solve_active_system(csr_matrix(matrix, dtype=float), np.ones(2), True)
+
+
+def test_rigid_farfield_equilibration_preserves_root_and_original_mass_equation():
+    h0, rx, ry, eta, speed = 1e-7, 0.01, 0.02, 0.04, 0.001
+    length = np.sqrt(2 * rx * h0)
+    pressure_scale = 12 * eta * speed * length / h0**2
+    x = np.arange(-64, 25) * 0.125 * length
+    y = np.arange(-64, 65) * 0.125 * np.sqrt(2) * length
+    problem = CavitatingElasticityProblem(
+        x, y, h0, rx, ry, 1e11, length, h0, pressure_scale, 1
+    )
+    film = h0 + problem.rigid_geometry_m
+    scaled = solve_cavitating_reynolds(film / h0, problem.dx, problem.dy, 1)
+    original = solve_cavitating_reynolds(
+        film / h0, problem.dx, problem.dy, 1, equilibrate_linear_system=False
+    )
+    np.testing.assert_allclose(scaled.pressure, original.pressure, rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(
+        scaled.fractional_film_content, original.fractional_film_content, atol=1e-9
+    )
+    # The coupled implementation independently differences complete face arrays.
+    independent = problem.mass_residual(
+        scaled.pressure * pressure_scale, scaled.fractional_film_content, film
+    )
+    assert np.max(np.abs(independent)) < 2e-10
+    assert scaled.maximum_mass_balance_residual < 2e-10
+    assert scaled.maximum_complementarity_violation < 1e-12
+    assert scaled.pressure.min() >= -1e-10
+    assert scaled.fractional_film_content.min() >= 0
+    assert scaled.fractional_film_content.max() <= 1 + 1e-10
+    assert abs(scaled.net_boundary_flux) < 1e-8

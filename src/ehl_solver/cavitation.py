@@ -56,6 +56,7 @@ def solve_cavitating_reynolds(
     saturation_tolerance: float = 1e-10,
     max_active_set_iterations: int = 100,
     inlet_fractional_film_content: float = 1.0,
+    equilibrate_linear_system: bool = True,
 ) -> CavitatingReynoldsSolution:
     """Solve stationary incompressible JFO Reynolds flow for a prescribed film.
 
@@ -80,8 +81,16 @@ def solve_cavitating_reynolds(
     saturation constraints as one sparse system per active set. Invalid
     saturation or a cycling/nonconvergent active set raises ``RuntimeError``;
     pressure and saturation are never clipped.
+
+    By default, positive diagonal row/column equilibration balances the
+    sparse mass/constraint system before direct solution. This changes only
+    linear algebra coordinates, not the stencil, active-set tolerances or
+    returned physical variables. False retains the unscaled reference path.
+    Reported mass residuals always use the original unscaled face fluxes.
     """
     h = np.asarray(film, dtype=np.float64)
+    if not isinstance(equilibrate_linear_system, bool):
+        raise ValueError("equilibrate_linear_system must be a boolean")
     if h.ndim != 2 or min(h.shape) < 3:
         raise ValueError("film must be a 2-D array with at least 3 points per axis")
     if not np.all(np.isfinite(h)) or np.any(h <= 0.0):
@@ -163,9 +172,11 @@ def solve_cavitating_reynolds(
         with warnings.catch_warnings():
             warnings.simplefilter("error", MatrixRankWarning)
             try:
-                state = np.asarray(spsolve(system, rhs), dtype=np.float64)
+                state = _solve_active_system(system, rhs, equilibrate_linear_system)
             except (MatrixRankWarning, RuntimeError) as error:
-                raise RuntimeError("cavitation active-set linear system is singular") from error
+                raise RuntimeError(
+                    "cavitation active-set linear system is singular or unusable"
+                ) from error
         if state.shape != (2 * count,) or not np.all(np.isfinite(state)):
             raise RuntimeError("cavitation active-set solve returned a non-finite state")
 
@@ -215,6 +226,30 @@ def solve_cavitating_reynolds(
         "cavitation active set failed to converge within "
         f"{max_active_set_iterations} iterations"
     )
+
+
+def _solve_active_system(system, rhs, equilibrate):
+    """Solve A z=b using R A C u=R b, then recover z=C u in float64.
+
+    R normalizes absolute row maxima; C then normalizes column maxima of
+    R A. Both diagonals are strictly positive and finite. No perturbation,
+    regularization, clipping or silent unscaled fallback is applied.
+    """
+    if not equilibrate:
+        return np.asarray(spsolve(system, rhs), dtype=np.float64)
+    row_maximum = abs(system).max(axis=1).toarray().ravel()
+    if np.any(row_maximum <= 0) or not np.all(np.isfinite(row_maximum)):
+        raise RuntimeError("active-set matrix has a zero or nonfinite row")
+    row_scale = 1.0 / row_maximum
+    scaled = diags(row_scale) @ system
+    column_maximum = abs(scaled).max(axis=0).toarray().ravel()
+    if np.any(column_maximum <= 0) or not np.all(np.isfinite(column_maximum)):
+        raise RuntimeError("active-set matrix has a zero or nonfinite column")
+    column_scale = 1.0 / column_maximum
+    if not np.all(np.isfinite(row_scale)) or not np.all(np.isfinite(column_scale)):
+        raise RuntimeError("active-set equilibration scales are nonfinite")
+    state = spsolve(scaled @ diags(column_scale), row_scale * rhs)
+    return np.asarray(column_scale * state, dtype=np.float64)
 
 
 def _mass_balance(

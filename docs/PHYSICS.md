@@ -922,3 +922,71 @@ claim, or physical instability. Gamma=1 remains unreached by these branches.
 The negative target cannot serve as a nonnegative-pressure physical EHL
 load benchmark; future coupled cavitation verification needs an admissible
 positive-load case.
+
+#### Discrete nondegeneracy checks at saved turns
+
+`audit_turning_point_conditions` checks additional evidence at an approximate
+root of `F(z,c)=0`. For an exact turn with a one-dimensional Jacobian kernel,
+let phi/psi be right/left null directions. Nonzero
+`a=psi.T*F_c` and `b=psi.T*F_zz[phi,phi]` provide transversality and quadratic
+nondegeneracy tests. These are standard folded-manifold conditions; see
+[Zhang et al., equation (6)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3520151/).
+For SVD-based continuation conditioning, see
+[Dickson et al. (2007)](https://doi.org/10.1137/060654384).
+These mathematical tests do not validate EHL physics.
+
+The diagnostic normalizes phi with the supplied state metric, psi with the
+Euclidean residual norm, and uses `c=sqrt(parameter_weight)*gamma`.
+It orients psi so that a is nonnegative. At an exact turn, differentiating
+the residual twice along unit weighted arclength gives the local parameter
+curvature `c''=-b/a`. This curvature does not determine dynamic stability.
+A centered full residual-difference Jacobian independently checks the
+analytic matrix; centered second residual differences at fixed gamma check
+b for steps 1e-2, 3e-3 and 1e-3. Every perturbed state must be feasible.
+The state dimension remains capped at 512. No residual, pressure or film
+clipping is used. Zero transversality gives undefined curvature (NaN),
+multiple null directions give no isolated singular gap, and zero quadratic
+curvature is preserved rather than labeled nondegenerate.
+
+`python -m examples.audit_localized_turns` replays retained roots, validates
+their model settings and independent SI state audits, and writes a new JSON
+report without rerunning continuation. The numerical evidence flags require:
+analytic/FD Jacobian relative error <2e-8; smallest/next singular ratio <1e-4;
+next/largest ratio >1e-8; normalized transversality and curvature projections
+>1e-4; relative variation of b against the smallest-step estimate <1e-3;
+and negative predicted parameter curvature for every step. These explicit
+thresholds classify numerical evidence, not exact rank or a rigorous fold.
+The CLI returns a failure status if any case does not satisfy those checks.
+
+For the four saved localized 1 MPa cases (`E_ref=1 MPa`), the measured checks
+all pass:
+
+| Case | sigma_min / sigma_next | Normalized transversality | Predicted c'' at step 1e-3 | Relative b step variation | Analytic / FD Jacobian relative error |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Coarse | 6.06e-8 | 0.3469 | -1.078094 | 1.31e-5 | 1.39e-11 |
+| Baseline | 1.30e-7 | 0.3152 | -1.191400 | 1.53e-5 | 9.37e-12 |
+| Fine | 1.09e-7 | 0.3075 | -1.226672 | 1.60e-5 | 8.99e-12 |
+| Expanded | 5.03e-8 | 0.3073 | -1.285089 | 1.72e-5 | 6.01e-12 |
+
+The next-smallest singular values range from 0.0937 to 0.1454, versus
+smallest values from 5.68e-9 to 1.36e-8. Normalized curvature projections
+are between 0.103 and 0.145, separated from zero. These measurements support
+a nondegenerate local maximum in each *discrete signed branch*, while the
+localization and residual errors preclude an exact singularity proof. They
+also do not supply a continuum limit or an exclusion of other branches.
+
+Reproduce the diagnostics directly from an existing localized study:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
+  python -m examples.audit_localized_turns \
+  --source-directory results/turn_localization_new \
+  --output-directory results/turn_conditions_new
+```
+
+The source roots remain unchanged. Regression tests include exact analytic
+coefficients, parameter scaling, a transverse state with nonuniform metric,
+zero-curvature and zero-transversality counterexamples, nullity two,
+incorrect supplied Jacobians, infeasible perturbations, and a coupled saved
+root replay. Nondegeneracy checks do not close the physical load/cavitation
+or full-compliance roadmap milestones.

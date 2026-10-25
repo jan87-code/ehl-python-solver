@@ -185,3 +185,31 @@ expensive failed continuation. Then prioritize a positive-load prescribed-film
 cavitation/elasticity benchmark; the negative signed-load stress branch cannot
 validate nonnegative-pressure physical EHL. Preserve the original staged HIP
 checkout and keep CPU verification ahead of GPU work.
+
+## Discrete turn nondegeneracy audit increment (2026-10-25)
+
+Added a saved-root diagnostic for singular-value isolation, parameter
+transversality and quadratic branch curvature. It checks the complete
+analytic Jacobian against residual finite differences and tests second
+residual differences at three step sizes. Scalar and multi-state analytical
+regressions include degenerate counterexamples and failed feasibility.
+The coupled integration test replays a saved root without repeating
+continuation. Existing callback construction is shared with the benchmark.
+
+All four localized 1 MPa roots pass the documented numerical evidence
+thresholds: smallest/next singular ratios 5.03e-8 to 1.30e-7, normalized
+transversality 0.307 to 0.347, stable predicted normalized parameter
+curvatures -1.078 to -1.285, and analytic/FD Jacobian relative errors below
+1.40e-11. These support nondegenerate discrete local maxima, not a continuum
+fold proof or a physical EHL instability. Root/field audit tolerances remain
+explicit, and full-compliance/physical-load milestones stay open.
+Verification: `ruff check .` clean; `pytest -q` 176 passed, 4 optional
+GPU skips. All four saved-root condition audits completed successfully using
+single-thread CPU execution.
+
+Next development action: stop treating the signed negative-load branch as a
+physical target. Establish a positive-load prescribed-offset cavitation /
+elasticity benchmark, beginning with zero-compliance and weak-compliance
+limits, independently checked mass/complementarity/film residuals, and
+feasibility. Retain the signed Newton, nested and Picard references; integrate
+load control only after that coupled cavitation benchmark is verified.

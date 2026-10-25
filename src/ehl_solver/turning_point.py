@@ -166,3 +166,138 @@ def localize_parameter_turn(
     return TurningPointResult(
         left, right, best, tuple(probes), width, tuple(widths), normalized_tangent, reason
     )
+
+
+@dataclass(frozen=True)
+class TurningPointConditions:
+    """Numerical nondegeneracy evidence at an approximate stationary root.
+
+    phi has unit weighted state norm; psi has unit Euclidean residual norm.
+    The normalized parameter is c=sqrt(parameter_weight)*parameter.
+    Coefficients a=psi.T F_c and b=psi.T F_zz[phi,phi] predict c''=-b/a
+    at an exact simple turn. Approximate singular values and finite differences
+    do not constitute a rigorous rank/nondegeneracy or continuum proof.
+    """
+
+    residual_rms: float
+    singular_values: tuple[float, ...]
+    smallest_to_next_singular_ratio: float
+    finite_difference_jacobian_relative_error: float
+    right_null_direction: tuple[float, ...]
+    transversality_coefficient: float
+    normalized_transversality: float
+    curvature_steps: tuple[float, ...]
+    curvature_coefficients: tuple[float, ...]
+    normalized_curvature_projections: tuple[float, ...]
+    predicted_parameter_curvatures: tuple[float, ...]
+    relative_curvature_step_variation: float
+
+
+def audit_turning_point_conditions(
+    residual: ResidualFunction,
+    jacobian: JacobianFunction,
+    parameter_derivative: ParameterDerivativeFunction,
+    state: NDArray[np.float64],
+    parameter: float,
+    *,
+    state_weights: NDArray[np.float64] | None = None,
+    parameter_weight: float = 1.0,
+    feasible: FeasibilityFunction | None = None,
+    curvature_steps: tuple[float, ...] = (1e-2, 3e-3, 1e-3),
+    jacobian_difference_step: float = 1e-5,
+    residual_tolerance: float = 1e-9,
+    maximum_state_size: int = 512,
+) -> TurningPointConditions:
+    """Check a near-null direction, transversality and residual curvature.
+
+    An independently differenced full residual Jacobian checks the supplied
+    analytic matrix. Curvature comes from centered *residual* differences
+    along the weighted-normalized right singular vector at fixed parameter.
+    All perturbed states must be feasible; no step repair or clipping occurs.
+    Residual/parameter conventions are the caller's explicit nondimensional
+    ones, as in localize_parameter_turn. Scalar systems report a NaN
+    smallest-to-next ratio because no second singular value exists.
+    """
+    values = np.asarray(state, dtype=np.float64)
+    if (
+        not isinstance(maximum_state_size, int) or isinstance(maximum_state_size, bool)
+        or values.ndim != 1 or not 0 < values.size <= maximum_state_size
+        or not np.all(np.isfinite(values)) or not math.isfinite(parameter)
+    ):
+        raise ValueError("condition-audit state is invalid or exceeds the dense limit")
+    if (
+        not math.isfinite(parameter_weight) or parameter_weight <= 0
+        or not math.isfinite(jacobian_difference_step) or jacobian_difference_step <= 0
+        or not math.isfinite(residual_tolerance) or residual_tolerance <= 0
+        or not curvature_steps
+        or not all(math.isfinite(step) and step > 0 for step in curvature_steps)
+    ):
+        raise ValueError("condition-audit weights, steps and tolerances must be positive")
+    weights = (
+        np.full(values.size, 1 / values.size) if state_weights is None
+        else np.asarray(state_weights, dtype=np.float64)
+    )
+    if weights.shape != values.shape or not np.all(np.isfinite(weights)) or np.any(weights <= 0):
+        raise ValueError("state_weights must be finite, positive and match the state")
+
+    def evaluate(point):
+        if feasible is not None and not feasible(point, parameter):
+            raise ValueError("condition-audit perturbation is infeasible")
+        result = np.asarray(residual(point, parameter), dtype=np.float64)
+        if result.shape != values.shape or not np.all(np.isfinite(result)):
+            raise ValueError("condition-audit residual must be a finite vector matching state")
+        return result
+
+    root_residual = evaluate(values)
+    rms = float(np.sqrt(np.mean(root_residual**2)))
+    if rms > residual_tolerance:
+        raise ValueError("condition-audit state is not a converged residual root")
+    matrix = np.asarray(jacobian(values, parameter), dtype=np.float64)
+    parameter_column = np.asarray(parameter_derivative(values, parameter), dtype=np.float64)
+    if (
+        matrix.shape != (values.size, values.size) or not np.all(np.isfinite(matrix))
+        or parameter_column.shape != values.shape or not np.all(np.isfinite(parameter_column))
+    ):
+        raise ValueError("condition-audit derivatives have invalid shapes or values")
+    left, singular_values, right = np.linalg.svd(matrix)
+    phi = right[-1] / np.sqrt(np.dot(weights, right[-1]**2))
+    normalized_column = parameter_column / math.sqrt(parameter_weight)
+    psi = left[:, -1]
+    if np.dot(psi, normalized_column) < 0:
+        psi = -psi
+    a = float(np.dot(psi, normalized_column))
+    column_norm = float(np.linalg.norm(normalized_column))
+    transversality = a / column_norm if column_norm > 0 else 0.0
+    difference_matrix = np.empty_like(matrix)
+    for index in range(values.size):
+        step = jacobian_difference_step * max(1.0, abs(values[index]))
+        direction = np.zeros(values.size)
+        direction[index] = step
+        difference_matrix[:, index] = (
+            evaluate(values + direction) - evaluate(values - direction)
+        ) / (2 * step)
+    difference_norm = float(np.linalg.norm(difference_matrix))
+    matrix_error = float(np.linalg.norm(matrix - difference_matrix))
+    relative_error = (matrix_error / difference_norm if difference_norm > 0
+                      else 0.0 if matrix_error == 0 else math.inf)
+    coefficients, projections = [], []
+    for step in curvature_steps:
+        second = (evaluate(values + step * phi) - 2 * root_residual
+                  + evaluate(values - step * phi)) / step**2
+        b = float(np.dot(psi, second))
+        norm = float(np.linalg.norm(second))
+        coefficients.append(b)
+        projections.append(abs(b) / norm if norm > 0 else 0.0)
+    coefficient_scale = max(abs(b) for b in coefficients)
+    # Compare to the smallest-step estimate irrespective of input ordering.
+    smallest_step_b = coefficients[int(np.argmin(curvature_steps))]
+    variation = (max(abs(b - smallest_step_b) for b in coefficients) / coefficient_scale
+                 if coefficient_scale > 0 else 0.0)
+    ratio = (float(singular_values[-1] / singular_values[-2]) if values.size > 1
+             and singular_values[-2] > 0 else math.inf if values.size > 1 else math.nan)
+    return TurningPointConditions(
+        rms, tuple(float(value) for value in singular_values), ratio, relative_error,
+        tuple(float(value) for value in phi), a, transversality,
+        tuple(curvature_steps), tuple(coefficients), tuple(projections),
+        tuple(-b / a if a != 0 else math.nan for b in coefficients), variation,
+    )

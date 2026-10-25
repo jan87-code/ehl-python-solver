@@ -1,8 +1,11 @@
+import json
+
 import numpy as np
 import pytest
 
 from ehl_solver.monolithic import continue_monolithic_compliance_pseudo_arclength
 from ehl_solver.verification import audit_full_film_solution
+from examples.audit_localized_turns import main as audit_saved_turns
 from examples.run_branch_sensitivity import CASES, Case, make_case, run_case
 
 
@@ -84,3 +87,15 @@ def test_localized_coupled_turn_passes_independent_audit_and_restores_problem(tm
     with np.load(tmp_path / f"{case.name}_states.npz") as archive:
         assert problem.compliance_factor == archive["parameters"][-1]
     assert (tmp_path / f"{case.name}_turning_point.json").is_file()
+
+    # The second diagnostic replays the saved root rather than continuing again.
+    source = {
+        "compliance_reference_modulus_pa": 1e6,
+        "settings": {key: getattr(problem, key) for key in
+                     ("length_scale_m", "film_scale_m", "pressure_scale_pa",
+                      "reynolds_parameter", "reynolds_residual_scale")},
+        "cases": [report],
+    }
+    (tmp_path / "summary.json").write_text(json.dumps(source))
+    audit_report = audit_saved_turns(tmp_path, tmp_path / "condition_audit")
+    assert audit_report["cases"][0]["supports_discrete_simple_maximum"]

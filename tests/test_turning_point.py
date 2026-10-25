@@ -104,3 +104,91 @@ def test_noncontracting_probe_keeps_the_previous_bracket(monkeypatch):
 def test_invalid_localization_controls_are_rejected(options):
     with pytest.raises(ValueError):
         _quadratic_fold(**options)
+
+
+def test_fold_conditions_match_exact_quadratic_fold_and_parameter_scaling():
+    from ehl_solver.turning_point import audit_turning_point_conditions
+
+    diagnostics = []
+    for scale in (1.0, 10.0):
+        diagnostics.append(audit_turning_point_conditions(
+            lambda state, parameter, scale=scale: state**2 + scale*parameter - 1,
+            lambda state, _parameter: np.array([[2*state[0]]]),
+            lambda _state, _parameter, scale=scale: np.array([scale]),
+            np.array([0.0]), 1 / scale, parameter_weight=scale**2,
+        ))
+    for result in diagnostics:
+        assert result.singular_values == (0.0,)
+        assert result.transversality_coefficient == pytest.approx(1.0)
+        assert result.normalized_transversality == pytest.approx(1.0)
+        np.testing.assert_allclose(result.curvature_coefficients, 2.0, atol=1e-9)
+        np.testing.assert_allclose(result.predicted_parameter_curvatures, -2.0, atol=1e-9)
+
+
+def test_fold_conditions_distinguish_curvature_and_parameter_degeneracy():
+    from ehl_solver.turning_point import audit_turning_point_conditions
+
+    cubic = audit_turning_point_conditions(
+        lambda state, parameter: state**3 + parameter,
+        lambda state, _parameter: np.array([[3*state[0]**2]]),
+        lambda _state, _parameter: np.array([1.0]), np.array([0.0]), 0.0,
+    )
+    assert cubic.curvature_coefficients == (0.0, 0.0, 0.0)
+    assert cubic.normalized_transversality == 1.0
+    parameter_degenerate = audit_turning_point_conditions(
+        lambda state, parameter: state**2 + parameter**2,
+        lambda state, _parameter: np.array([[2*state[0]]]),
+        lambda _state, parameter: np.array([2*parameter]), np.array([0.0]), 0.0,
+    )
+    assert parameter_degenerate.normalized_transversality == 0.0
+    assert all(np.isnan(value) for value in parameter_degenerate.predicted_parameter_curvatures)
+
+
+def test_nullity_gap_and_weighted_curvature_on_two_component_turn():
+    from ehl_solver.turning_point import audit_turning_point_conditions
+
+    result = audit_turning_point_conditions(
+        lambda z, parameter: np.array([z[0]**2 + parameter - 1, z[1] - 2*z[0]]),
+        lambda z, _parameter: np.array([[2*z[0], 0], [-2, 1]]),
+        lambda _state, _parameter: np.array([1.0, 0.0]),
+        np.array([0.0, 0.0]), 1.0, state_weights=np.array([0.5, 0.25]),
+    )
+    assert result.smallest_to_next_singular_ratio < 1e-15
+    assert result.singular_values[-2] > 1.0
+    assert result.finite_difference_jacobian_relative_error < 1e-10
+    np.testing.assert_allclose(result.curvature_coefficients, 4/3, atol=1e-9)
+    np.testing.assert_allclose(result.predicted_parameter_curvatures, -4/3, atol=1e-9)
+
+
+def test_condition_audit_rejects_infeasible_perturbation():
+    from ehl_solver.turning_point import audit_turning_point_conditions
+
+    with pytest.raises(ValueError, match="infeasible"):
+        audit_turning_point_conditions(
+            lambda state, parameter: state**2 + parameter - 1,
+            lambda state, _parameter: np.array([[2*state[0]]]),
+            lambda _state, _parameter: np.array([1.0]), np.array([0.0]), 1.0,
+            feasible=lambda state, _parameter: abs(state[0]) < 1e-4,
+        )
+
+
+def test_condition_audit_does_not_report_isolated_direction_for_nullity_two():
+    from ehl_solver.turning_point import audit_turning_point_conditions
+
+    result = audit_turning_point_conditions(
+        lambda state, parameter: state**2 + np.array([parameter, 0.0]),
+        lambda state, _parameter: np.diag(2*state),
+        lambda _state, _parameter: np.array([1.0, 0.0]), np.zeros(2), 0.0,
+    )
+    assert np.isinf(result.smallest_to_next_singular_ratio)
+
+
+def test_independent_residual_difference_detects_incorrect_supplied_jacobian():
+    from ehl_solver.turning_point import audit_turning_point_conditions
+
+    result = audit_turning_point_conditions(
+        lambda state, parameter: np.array([state[0]**2 + parameter - 1, state[1]]),
+        lambda _state, _parameter: np.diag([0.1, 1.0]),
+        lambda _state, _parameter: np.array([1.0, 0.0]), np.zeros(2), 1.0,
+    )
+    assert result.finite_difference_jacobian_relative_error > 0.09

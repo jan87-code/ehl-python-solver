@@ -194,17 +194,7 @@ def run_case(
     return summary
 
 
-def _localize_turn(problem, initial, left, right, directory, case, reference_modulus,
-                   bracket_tolerance, plots):
-    # Numerical callbacks use interior P, h0/h_ref, and dimensionless gamma.
-    # Geometry/material inputs and reconstructed solution fields remain SI.
-    original_gamma = problem.compliance_factor
-    weights = np.ones(problem.pressure_size + 1)
-    weights[:-1] = 1 / problem.pressure_size
-    parameter_weight = (
-        1.0 if reference_modulus is None else (reference_modulus / problem.e_star_pa)**2
-    )
-
+def _branch_callbacks(problem):
     def residual(state, gamma):
         problem.compliance_factor = gamma
         return problem.residual(state)
@@ -226,6 +216,22 @@ def _localize_turn(problem, initial, left, right, directory, case, reference_mod
         problem.compliance_factor = gamma
         _, film, _ = problem.state_fields(state[:-1], state[-1])
         return bool(np.all(np.isfinite(film)) and np.all(film > problem.film_floor_m))
+
+    return residual, jacobian, derivative, feasible
+
+
+def _localize_turn(problem, initial, left, right, directory, case, reference_modulus,
+                   bracket_tolerance, plots):
+    # Numerical callbacks use interior P, h0/h_ref, and dimensionless gamma.
+    # Geometry/material inputs and reconstructed solution fields remain SI.
+    original_gamma = problem.compliance_factor
+    weights = np.ones(problem.pressure_size + 1)
+    weights[:-1] = 1 / problem.pressure_size
+    parameter_weight = (
+        1.0 if reference_modulus is None else (reference_modulus / problem.e_star_pa)**2
+    )
+
+    residual, jacobian, derivative, feasible = _branch_callbacks(problem)
 
     try:
         turn = localize_parameter_turn(

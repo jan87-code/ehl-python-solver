@@ -333,3 +333,32 @@ rigid parabolic cavitation limit, then use controlled domain expansion or
 appropriate verified far-field conditions before material/film comparisons.
 Pressure-dependent properties need their own benchmarks and must not be used
 to conceal this boundary/domain sensitivity. GPU work remains deferred.
+
+## Desktop GPU implementation audit (2026-10-25)
+
+Built and tested an isolated copy of the staged native HIP feature on the
+RX 6600 XT (gfx1032), using the existing SDK. Host GPU access is required;
+the sandbox hides the device nodes. Forty selected tests pass, including
+all seven native HIP regressions; five optional PyTorch tests skip in the
+CPU environment. Extended direct/invalid-buffer/repeated-call checks and
+129/257/513/1025-grid parity/benchmarks complete. Native displacement errors
+are below 4.88e-21 m. CPU and device/transfer-inclusive timings are separated.
+
+Temporary native-convolution hooks in the current 9x13 positive-load Newton
+solver reproduce NumPy roots at 10/1 MPa to roundoff, with independent audits.
+They slow the small solver by about 35-39 times because every convolution
+allocates/plans/transfers host arrays. Large isolated convolutions benefit,
+but no device-resident iterative solver or automatic GPU enablement is
+claimed. The staged selector chooses NumPy at 129 and HIP at 513 in fresh
+full-workload checks. The staged GPU sources/index are preserved; binaries
+and result data are not tracked.
+
+The separate installed PyTorch GPU environment terminates its isolated probe
+with SIGILL. Native HIP works independently; no driver/system/package changes
+were made. A 48-shape sweep hit its 180 s bound (planning/compilation suspected); a checkpointed
+12-case sweep and all subsequent benchmarks completed. See PHYSICS.md for
+complete evidence and the reproducible validation command.
+
+Continue the CPU inlet/far-field roadmap check. GPU optimization cannot
+resolve the already observed domain dependence; any future cached-plan or
+device-resident work needs separate numerical/performance verification.

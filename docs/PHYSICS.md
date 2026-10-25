@@ -1258,3 +1258,87 @@ SI grid/fields, failure reasons, independent audits and field/path plots are
 preserved. This study supports verified numerical recovery and exposes a
 material limitation; it does not close domain independence, broad physical
 EHL validation, or film-height comparison milestones.
+
+### Desktop native HIP audit (2026-10-25)
+
+The desktop exposes an AMD Radeon RX 6600 XT (`gfx1032`) to host processes;
+sandboxed processes do not see `/dev/kfd` or `/dev/dri`. GPU checks therefore
+ran outside the sandbox. The existing staged HIP feature was copied with
+`git checkout-index` into `/tmp/ehl-gpu-validation`, preserving the original
+index/worktree. Its extension was built there using `scripts/build_hip.py`
+with explicit `--arch gfx1032` and the existing GPU-Testing SDK, version
+10.3.0a20261023. No drivers, system packages or original staged sources were
+changed. The tested C++ source SHA256 is
+`8c56da57e3b69da3a23bfaeaa899a7b376a48203ad17984d0d11739640af8662`.
+The tested runtime reported HIP version integer 71726423 and
+hipFFT version integer 10041. This optional HIP feature remains separate
+from the current develop backend API; it was not silently merged/enabled.
+
+Host regression selection returned 40 passed, 5 optional PyTorch skips;
+all seven native HIP regressions executed. Additional checkpointed checks
+cover 12 random/asymmetric/even/edge/zero/strided-input cases against direct
+spatial convolution, four invalid native-buffer cases, and 100 repeated
+calls. Largest direct error normalized by reference peak was 8.44e-16.
+The fixed-shape repeated-call free-memory readings were identical after
+warmup; this is an observation, not a leak proof under desktop activity.
+A broader 48-shape sweep exhausted its 180 s budget before producing timings;
+plan/compilation cost is suspected but was not profiled. The reduced sweep checkpoints each case and completes.
+
+Three-repetition medians, one BLAS/OpenMP thread, float64 inputs and
+complex128 HIP FFTs:
+
+| Grid | HIP event compute [ms] | HIP convolution wall [ms] | NumPy convolution [ms] | HIP full elasticity [ms] | NumPy full elasticity [ms] |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 129x129 | 0.442 | 21.168 | 7.519 | 45.475 | 31.700 |
+| 257x257 | 2.944 | 31.263 | 119.581 | 133.223 | 220.970 |
+| 513x513 | 16.139 | 48.387 | 239.674 | 470.378 | 696.261 |
+| 1025x1025 | 153.718 | 239.056 | 2821.556 | 2084.967 | 4653.391 |
+
+Convolution wall includes allocation/planning and host/device transfers;
+full elasticity also includes CPU influence-coefficient generation. Maximum
+displacement differences were below 4.88e-21 m and errors normalized by
+reference peak below 2.59e-15. Sizes are capped at 1025; the large case uses
+about 353 MB in explicit device buffers and is gated against four times that
+amount of free device memory for workspace room. This gate is conservative
+experimental protection, not a proven peak-workspace estimate. Timings vary
+with planning/cache/desktop activity and are not performance guarantees.
+
+Fresh staged-selector checks choose NumPy at 129x129 (34.808 ms versus HIP
+48.300 ms full elasticity) and HIP at 513x513 (494.919 ms versus NumPy
+648.566 ms). The selector checks float64/FFT capability and memory before
+using synchronized workload timings. These observations concern the staged
+selector; develop's production numerical solvers still default to CPU.
+
+`examples.validate_native_hip` also compares the current positive-load solver
+with temporary, explicit GPU-convolution hooks, leaving all Reynolds,
+complementarity, sparse preconditioning and Krylov operations on CPU. At
+9x13, Q=0.002 N, the 10 MPa and 1 MPa cases retain 11 and 20 Newton
+corrections. Pressure differences from NumPy are 1.67e-16 and 2.44e-16
+relative L2; independent direct elasticity, mass and force checks pass.
+The native path never imports PyTorch.
+
+Those small solver runs are **slower**: CPU walls are 0.346/0.793 s, versus
+13.586/27.746 s using 467/1065 transferred GPU convolution calls. Summed GPU
+event compute is only 87.8/231.8 ms, while transferred/planned convolution
+walls sum to 13.263/27.073 s. Per-call setup and transfers dominate. This is
+component parity, not a device-resident iterative GPU EHL solver or a reason
+to enable GPU automatically for small Newton problems.
+
+The project CPU venv has no PyTorch. In the separate installed GPU-Testing
+venv, PyTorch 2.15.0+rocm10.3.0a20261023 terminates an isolated import/probe
+with SIGILL (return code -4). Core dumps were disabled. Its cause was not
+inferred from that signal alone; no package/driver replacement was attempted.
+The native HIP result remains independently operational.
+
+To repeat the extended checks using an explicitly built extension:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
+  timeout 180 python -m examples.validate_native_hip \
+  --extension-path /tmp/ehl-gpu-validation/src/ehl_solver/_hip_native.cpython-312-x86_64-linux-gnu.so \
+  --output-directory results/desktop_hip_validation_new
+```
+
+Run with host GPU access. The new directory records device/binary hash,
+checks, separated timings, memory observations and SI solver fields.
+The original staged sources and develop's CPU reference remain preserved.

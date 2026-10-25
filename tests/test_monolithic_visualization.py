@@ -5,9 +5,14 @@ import numpy as np
 
 matplotlib.use("Agg")
 
+from ehl_solver.pseudo_arclength import pseudo_arclength_continue
 from ehl_solver.visualization import (
+    plot_monolithic_compliance_continuation,
+    plot_monolithic_conditioning,
     plot_monolithic_continuation_history,
     plot_monolithic_newton_history,
+    plot_pseudo_arclength_branch,
+    plot_pseudo_arclength_diagnostics,
     save_monolithic_figures,
 )
 
@@ -88,6 +93,26 @@ def test_monolithic_plots_include_required_diagnostics_and_units(tmp_path):
     )
     assert continuation_axes[0].get_ylabel() == "Target signed load [N]"
     assert len(continuation_axes[0].collections) == 1
+    compliance_figure, compliance_axes = plot_monolithic_compliance_continuation(
+        (
+            SimpleNamespace(
+                attempt=1,
+                compliance_factor=0.1,
+                accepted=True,
+                newton_iterations=3,
+                krylov_iterations=12,
+            ),
+            SimpleNamespace(
+                attempt=2,
+                compliance_factor=0.15,
+                accepted=False,
+                newton_iterations=2,
+                krylov_iterations=8,
+            ),
+        )
+    )
+    assert compliance_axes[0].get_ylabel() == "Compliance factor γ"
+    assert len(compliance_axes[0].collections) == 1
 
     paths = save_monolithic_figures(
         x,
@@ -106,3 +131,45 @@ def test_monolithic_plots_include_required_diagnostics_and_units(tmp_path):
     plt.close(newton_figure)
     plt.close(failed_figure)
     plt.close(continuation_figure)
+    plt.close(compliance_figure)
+
+
+def test_conditioning_and_fold_branch_plots_keep_singular_and_turning_data():
+    gamma = np.array([0.0, 0.1, 0.2])
+    conditioning_figure, conditioning_axes = plot_monolithic_conditioning(
+        gamma,
+        np.array([10.0, 100.0, 1e4]),
+        np.array([0.1, 0.01, 1e-4]),
+        np.array([1.0, 0.1, np.nan]),
+    )
+    assert len(conditioning_axes) == 3
+    assert conditioning_axes[0].get_ylabel() == "Scaled Jacobian condition number"
+
+    def residual(state, parameter):
+        return np.array([state[0] ** 2 + parameter - 1.0])
+
+    branch = pseudo_arclength_continue(
+        residual,
+        lambda state, _: np.array([[2.0 * state[0]]]),
+        lambda _state, _: np.ones(1),
+        np.array([-1.0]),
+        0.0,
+        initial_step=0.1,
+        maximum_step=0.1,
+        maximum_steps=18,
+    )
+    branch_figure, branch_axis = plot_pseudo_arclength_branch(
+        branch, state_label="h0 / h_ref"
+    )
+    diagnostics_figure, diagnostics_axes = plot_pseudo_arclength_diagnostics(branch)
+    assert branch_axis.get_xlabel() == "Compliance factor γ"
+    assert branch_axis.get_ylabel() == "h0 / h_ref"
+    assert branch.turning_point_attempts
+    assert len(diagnostics_axes) == 3
+    assert diagnostics_axes[2].get_ylabel() == "Line-search fraction"
+
+    import matplotlib.pyplot as plt
+
+    plt.close(conditioning_figure)
+    plt.close(branch_figure)
+    plt.close(diagnostics_figure)

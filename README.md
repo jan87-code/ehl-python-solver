@@ -65,8 +65,9 @@ Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv
 - `cavitation.py`: separate fixed-film, stationary JFO pressure/saturation active-set solve with local/global mass-conservation, front-refinement, complementarity and uniform inlet-starvation diagnostics; not experimentally validated or coupled to elasticity/load control
 - `coupled.py`: prescribed-`h0` weak Reynolds-elasticity iteration with compliance continuation; no cavitation or load controller
 - `load_control.py`: safeguarded `h0` root for monotone, bracketed, converged signed full-film load evaluations; mathematical verification only
-- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve with an analytic discrete JVP, Schur/GMRES, frozen-film ILU/Jacobi/identity preconditioners, dual line search with tighter-Krylov recovery, and adaptive signed-load/compliance continuation; mathematical verification only
-- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/continuation histories (including inexact-Newton forcing), Krylov/preconditioner comparisons, coupling-ratio diagnostics and accepted-iteration snapshots
+- `monolithic.py`: matrix-free bordered Reynolds-elasticity Newton solve with an analytic discrete JVP, Schur/GMRES, frozen-film ILU/Jacobi/identity preconditioners, dual line search with tighter-Krylov recovery, adaptive signed-load/compliance continuation, and small-grid Jacobian-spectrum / experimental pseudo-arclength diagnostics; mathematical verification only
+- `pseudo_arclength.py`: bounded dense predictor-corrector continuation prototype with tangent tracking, feasibility, Armijo globalization, retries, and turning-point records; small-system diagnostic only
+- `visualization.py`: independent MPa/µm distributions, interpolated cross sections, Picard/Newton/load/compliance continuation histories (including line-search and inexact-Newton diagnostics), conditioning and branch plots, Krylov/preconditioner comparisons, coupling-ratio diagnostics and accepted-state fields
 
 Run the weakly coupled benchmark and save report figures under
 `results/weak_coupling_demo/`:
@@ -91,6 +92,23 @@ python -m examples.run_compliance_continuation
 
 It reports independently recomputed residuals, Krylov work, line-search
 rejections, film/pressure extrema, deformation and continuation-stage status.
+
+Audit the small-grid signed full-film Jacobian, compare fixed-compliance
+continuation against the experimental pseudo-arclength branch tracker, and
+save conditioning/branch/field figures with:
+
+```bash
+python examples/run_pseudo_arclength_diagnostic.py
+```
+
+The diagnostic refuses to overwrite
+`results/monolithic_pseudo_arclength_audit/`; choose a new path with
+`--output-directory` to keep earlier figures. For the 1 MPa exploratory case, the
+scaled Jacobian condition estimate rises to `5.33e4` at the last fixed-gamma
+state. Pseudo-arclength detects a tangent reversal near gamma `0.179191`, but
+does not reach full compliance and follows the branch back down within its
+20-step budget. This is evidence about the computed mathematical branch only;
+it does not validate strong-coupling or physical EHL behavior.
 
 Reproduce the prescribed-film cavitation wedge, front-refinement, and inlet
 starvation verification with:

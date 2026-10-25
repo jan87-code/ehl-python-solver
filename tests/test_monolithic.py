@@ -13,7 +13,9 @@ from ehl_solver.monolithic import (
     MonolithicNewtonError,
     build_frozen_film_preconditioner,
     compare_bordered_preconditioners,
+    continue_monolithic_compliance_pseudo_arclength,
     continue_monolithic_load,
+    estimate_bordered_jacobian_conditioning,
     make_feasible_initial_state,
     solve_bordered_correction,
     solve_monolithic_full_film_load,
@@ -120,6 +122,90 @@ def test_matrix_free_bordered_jvp_matches_independent_finite_difference():
     )) / (2.0 * step)
 
     np.testing.assert_allclose(observed, expected, rtol=2e-5, atol=2e-8)
+
+
+@pytest.mark.parametrize("compliance_factor", [0.0, 0.175])
+def test_complete_small_grid_jacobian_matches_residual_finite_differences(
+    compliance_factor,
+):
+    x = np.linspace(-0.5e-3, 0.75e-3, 7)
+    y = np.linspace(-0.5e-3, 0.5e-3, 5)
+    xx, yy = np.meshgrid(x, y, indexing="xy")
+    film = (20e-6 + xx**2 / (2.0 * 0.01) + yy**2 / (2.0 * 0.02)) / FILM_SCALE_M
+    pressure = solve_reynolds_pressure(
+        film,
+        (x[1] - x[0]) / LENGTH_SCALE_M,
+        (y[1] - y[0]) / LENGTH_SCALE_M,
+        REYNOLDS_PARAMETER,
+        rtol=1e-12,
+        atol=1e-14,
+    ).pressure
+    target = _load(pressure, x, y)
+    problem = BorderedReynoldsElasticityProblem(
+        x,
+        y,
+        0.01,
+        0.02,
+        1e6,
+        LENGTH_SCALE_M,
+        FILM_SCALE_M,
+        PRESSURE_SCALE_PA,
+        REYNOLDS_PARAMETER,
+        target,
+        compliance_factor=compliance_factor,
+        reynolds_residual_scale=100.0,
+    )
+    state = np.concatenate(
+        (pressure[1:-1, 1:-1].ravel(), [20e-6 / FILM_SCALE_M])
+    )
+    size = state.size
+    identity = np.eye(size)
+    finite_difference_jacobian = np.empty((size, size))
+    for column in range(size):
+        step = 1e-5 * max(1.0, abs(state[column]))
+        perturbation = step * identity[:, column]
+        finite_difference_jacobian[:, column] = (
+            problem.residual(state + perturbation)
+            - problem.residual(state - perturbation)
+        ) / (2.0 * step)
+
+    analytic_jacobian = np.column_stack(
+        [problem.jacobian_vector(state, identity[:, column]) for column in range(size)]
+    )
+    relative_matrix_error = np.linalg.norm(
+        analytic_jacobian - finite_difference_jacobian
+    ) / np.linalg.norm(finite_difference_jacobian)
+
+    assert relative_matrix_error < 2e-8
+    spectrum = np.linalg.svd(analytic_jacobian, compute_uv=False)
+    diagnostic = estimate_bordered_jacobian_conditioning(problem, state)
+    assert diagnostic.largest_singular_value == pytest.approx(spectrum[0])
+    assert diagnostic.smallest_singular_value == pytest.approx(spectrum[-1])
+    assert diagnostic.condition_number == pytest.approx(spectrum[0] / spectrum[-1])
+    np.testing.assert_allclose(
+        analytic_jacobian[-1],
+        problem.load_gradient().tolist() + [0.0],
+        rtol=2e-12,
+        atol=1e-12,
+    )
+    rng = np.random.default_rng(812)
+    direction = rng.normal(size=size)
+    direction /= np.linalg.norm(direction)
+    analytic_action = problem.jacobian_vector(state, direction)
+    relative_errors = []
+    for step in (1e-3, 1e-4, 1e-5):
+        finite_difference_action = (
+            problem.residual(state + step * direction)
+            - problem.residual(state - step * direction)
+        ) / (2.0 * step)
+        relative_errors.append(
+            np.linalg.norm(finite_difference_action - analytic_action)
+            / np.linalg.norm(analytic_action)
+        )
+    assert relative_errors[0] < 1e-6
+    assert relative_errors[1] < 1e-8
+    assert relative_errors[2] < 1e-8
+    assert relative_errors[1] < relative_errors[0]
 
 
 def test_schur_correction_satisfies_complete_bordered_linearization():
@@ -756,6 +842,38 @@ def test_compliance_continuation_matches_direct_moderate_solution_and_retries(mo
     assert all(
         step.maximum_bordered_correction_residual <= 1e-2
         for step in accepted_steps
+    )
+
+
+def test_monolithic_pseudo_arclength_compliance_reaches_small_target():
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 20e-6)
+    problem = _problem(_load(pressure, x, y), e_star=1e7, compliance_factor=0.0)
+    initial = solve_monolithic_full_film_load(problem, pressure, 20e-6)
+    result = continue_monolithic_compliance_pseudo_arclength(
+        problem,
+        initial,
+        target_compliance_factor=0.05,
+        initial_step=0.03,
+        maximum_step=0.05,
+        maximum_steps=4,
+        residual_tolerance=1e-7,
+    )
+
+    assert result.branch.termination_reason == "target_parameter_reached"
+    assert result.solution.film_thickness_m.min() > problem.film_floor_m
+    assert result.solution.load_residual_n == pytest.approx(0.0, abs=1e-8)
+    assert all(step.accepted for step in result.branch.steps)
+    final_state = np.concatenate(
+        (
+            result.solution.pressure_dimensionless[1:-1, 1:-1].ravel(),
+            [result.solution.central_film_offset_m / FILM_SCALE_M],
+        )
+    )
+    assert (
+        np.linalg.norm(problem.residual(final_state)[:-1])
+        / np.sqrt(problem.pressure_size)
+        < 1e-7
     )
 
 

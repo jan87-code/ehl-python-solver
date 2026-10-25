@@ -576,6 +576,58 @@ residual warrants it, and its work is reported, but it does **not** advance
 the strong-coupling branch. Most rejected compliance stages terminate on
 Armijo failure; one fails the bordered GMRES residual check.
 
+### Jacobian conditioning and experimental pseudo-arclength
+Run `python examples/run_pseudo_arclength_diagnostic.py` for the small-grid
+`E*=1 MPa` comparison. It writes fixed-compliance and pseudo-arclength
+conditioning, continuation, branch, and accepted-state pressure/film plots to
+`results/monolithic_pseudo_arclength_audit/` and refuses to overwrite an existing
+output directory. On the `(ny,nx)=13x17` grid, the independently assembled
+finite-difference Jacobian tests use the actual nonlinear residual, including
+its pressure, elastic-film, mobility, entrainment, `h0`, and load terms; at
+compliance 0 and 0.175 the explicit matrix relative error is below `2e-8`.
+Directional checks cover three perturbation sizes. These checks verify the
+discrete derivatives, not the physical model.
+
+At accepted 1 MPa fixed-compliance states, the scaled Jacobian condition
+estimate rises from `1.10e3` at gamma `0.1`, to `5.54e3` at `0.175`,
+`1.40e4` at `0.178516`, and `5.33e4` at the last accepted gamma
+`0.179174805`; its smallest singular value falls from `2.22e-2` to
+`3.48e-4`. Over those same states the directly assembled Schur denominator
+decreases from `1.36` to `5.63e-2`. Exact small-grid pressure-block Schur
+reconstruction and full dense bordered solves agree to relative correction
+differences below `4e-15`; their directly evaluated relative linear residuals
+are below `3.1e-13`. This confirms the Schur algebra on these states, but
+does not imply that iterative solves remain well-conditioned.
+
+At gamma `0.175`, frozen-film ILU, Jacobi, and identity preconditioners
+required 14, 82, and 134 Krylov iterations, with independently recomputed
+true residuals `4.97e-9`, `3.68e-9`, and `6.33e-9`. The existing ILU is the
+best of these tested choices at this state; no new preconditioner is claimed.
+For the ILU Schur solve at gamma `0.175`, the iterative Schur denominator
+differed from the exact small-grid value by `1.45e-9` relative; its pressure
+and complete bordered true residuals were `4.97e-9` and `7.72e-9`. This
+single-state agreement does not establish robustness close to the stall.
+The fixed-compliance run still stalls at gamma `0.179174805` after 23,629
+Krylov iterations and 1,249 rejected Armijo trials (132.1 s in this diagnostic
+run). Its last accepted state has independently recomputed scaled Reynolds
+RMS `6.13e-9`, load error `1.08e-10 N`, and minimum film `15.013 um`.
+
+The experimental pseudo-arclength corrector uses compliance gamma as a
+continuation parameter, analytic state-JVP columns, a finite-difference gamma
+derivative, RMS-scaled pressure variables, strict positive-film feasibility,
+and dense bordered Newton solves. It is limited to small state dimensions.
+On the same grid it crossed a tangent sign reversal near a shallow maximum at
+gamma `0.179191378` (condition estimate `6.59e4`, smallest singular value
+`2.77e-4`, Schur denominator `-4.75e-2`), then continued back down the branch.
+With a 20-step budget it accepted 20 correctors (50 dense Newton corrections,
+zero rejected line searches) and reached a maximum gamma of only `0.179191378`,
+ending at gamma `0.168947605`; it did not reach full compliance. The final
+state independently has scaled Reynolds RMS `4.29e-8`, load error
+`8.67e-19 N`, and minimum film `13.278 um`, while pressure remains signed.
+This is evidence of a turning point in the computed mathematical branch, not
+proof of a physical EHL fold or a solution beyond it. The small increase in
+maximum gamma does not resolve the strong-coupling failure.
+
 For `E*=100 kPa`, a bounded continuation probe targeting gamma `0.2` rejects
 gamma `0.1` and `0.05` from the rigid reference with Armijo failures (5 and 4
 accepted Newton corrections, 155 and 105 Krylov iterations respectively);
@@ -583,7 +635,8 @@ the last accepted state remains gamma=0. The probe takes `1.043 s`. The separate
 initialization-only test requires raising `h0` by `46.588 um` to move the
 minimum film from `-46.568 um` to `20.001 nm`.
 That adjustment demonstrates strict feasibility only, not convergence or a
-physical branch. A branch/turning-point investigation, potentially with
-pseudo-arclength continuation, remains necessary before interpreting
-stagnation as absence of a solution. These results remain signed full-film
-mathematical checks, with no physical-load or cavitation validation.
+physical branch. Although the small-grid 1 MPa pseudo-arclength experiment
+now detects and follows a local turning point, it does not establish
+continuation to full compliance, nor explain the 100 kPa failure. These
+results remain signed full-film mathematical checks, with no physical-load
+or cavitation validation.

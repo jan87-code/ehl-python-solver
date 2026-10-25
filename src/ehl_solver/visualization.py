@@ -17,11 +17,13 @@ if TYPE_CHECKING:
     from ehl_solver.coupled import CoupledReynoldsSolution, CoupledSnapshot
     from ehl_solver.load_control import FullFilmLoadSolution
     from ehl_solver.monolithic import (
+        ComplianceContinuationStep,
         MonolithicIteration,
         MonolithicLoadContinuation,
         MonolithicLoadSolution,
         PreconditionerBenchmark,
     )
+    from ehl_solver.pseudo_arclength import PseudoArclengthResult
 
 
 def _validated_plot_fields(
@@ -714,6 +716,193 @@ def plot_monolithic_continuation_history(
     axes[2].grid(True, alpha=0.25)
     fig.suptitle("Adaptive signed-load continuation history")
     return fig, axes
+
+
+def plot_monolithic_conditioning(
+    compliance_factor: ArrayLike,
+    condition_number: ArrayLike,
+    smallest_singular_value: ArrayLike,
+    schur_denominator: ArrayLike,
+) -> tuple[Figure, NDArray[Any]]:
+    """Plot small-system bordered-Jacobian spectrum and Schur diagnostics."""
+    gamma = np.asarray(compliance_factor, dtype=np.float64)
+    condition = np.asarray(condition_number, dtype=np.float64)
+    smallest = np.asarray(smallest_singular_value, dtype=np.float64)
+    schur = np.asarray(schur_denominator, dtype=np.float64)
+    if (
+        gamma.ndim != 1
+        or gamma.size == 0
+        or condition.shape != gamma.shape
+        or smallest.shape != gamma.shape
+        or schur.shape != gamma.shape
+        or np.any(~np.isfinite(gamma))
+        or np.any(gamma < 0.0)
+        or np.any(gamma > 1.0)
+        or np.any(condition <= 0.0)
+        or np.any(smallest < 0.0)
+    ):
+        raise ValueError("conditioning arrays must be aligned, finite and physically ranged")
+    figure, axes = plt.subplots(3, 1, figsize=(8, 10), constrained_layout=True)
+    axes[0].semilogy(gamma, condition, "o-")
+    axes[0].set_ylabel("Scaled Jacobian condition number")
+    axes[1].semilogy(
+        gamma,
+        np.maximum(smallest, np.finfo(np.float64).tiny),
+        "s-",
+        color="tab:orange",
+    )
+    axes[1].set_ylabel("Smallest singular value")
+    axes[2].semilogy(
+        gamma,
+        np.maximum(np.where(np.isfinite(schur), np.abs(schur), np.nan),
+                   np.finfo(np.float64).tiny),
+        "d-",
+        color="tab:green",
+    )
+    axes[2].set_ylabel("|Schur denominator|")
+    axes[2].set_xlabel("Compliance factor γ")
+    for axis in axes:
+        axis.grid(True, which="both", alpha=0.25)
+    figure.suptitle("Bordered Jacobian conditioning diagnostics")
+    return figure, axes
+
+
+def plot_monolithic_compliance_continuation(
+    steps: tuple[ComplianceContinuationStep, ...],
+) -> tuple[Figure, NDArray[Any]]:
+    """Plot accepted/rejected compliance attempts and per-step solver work."""
+    if not steps:
+        raise ValueError("compliance continuation must contain attempted steps")
+    attempts = np.arange(1, len(steps) + 1)
+    gamma = np.asarray([step.compliance_factor for step in steps])
+    accepted = np.asarray([step.accepted for step in steps], dtype=bool)
+    figure, axes = plt.subplots(2, 1, figsize=(8, 7), constrained_layout=True)
+    axes[0].plot(
+        attempts[accepted], gamma[accepted], "o-", color="tab:green",
+        label="Accepted compliance",
+    )
+    axes[0].scatter(
+        attempts[~accepted], gamma[~accepted], marker="x", color="tab:red",
+        label="Rejected attempt", zorder=3,
+    )
+    axes[0].set_ylabel("Compliance factor γ")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.25)
+    axes[1].plot(
+        attempts, [step.newton_iterations for step in steps], "o-",
+        label="Newton corrections",
+    )
+    axes[1].plot(
+        attempts, [step.krylov_iterations for step in steps], "s-",
+        label="Krylov iterations",
+    )
+    axes[1].set_xlabel("Continuation attempt")
+    axes[1].set_ylabel("Iterations per attempt")
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.25)
+    figure.suptitle("Adaptive compliance continuation diagnostics")
+    return figure, axes
+
+
+def plot_pseudo_arclength_branch(
+    branch: PseudoArclengthResult,
+    *,
+    state_component: int = -1,
+    state_label: str = "State component",
+) -> tuple[Figure, Axes]:
+    """Plot accepted pseudo-arclength branch points and rejected correctors."""
+    if not branch.steps:
+        raise ValueError("branch must contain at least one attempted step")
+    accepted = [step for step in branch.steps if step.accepted]
+    rejected = [step for step in branch.steps if not step.accepted]
+    figure, axis = plt.subplots(figsize=(7, 5), constrained_layout=True)
+    if accepted:
+        axis.plot(
+            [step.parameter for step in accepted],
+            [step.state[state_component] for step in accepted],
+            "o-",
+            label="Accepted branch",
+        )
+    if rejected:
+        axis.scatter(
+            [step.parameter for step in rejected],
+            [step.state[state_component] for step in rejected],
+            marker="x",
+            color="tab:red",
+            label="Rejected corrector (last accepted state)",
+        )
+    axis.set_xlabel("Compliance factor γ")
+    axis.set_ylabel(state_label)
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    axis.set_title(f"Pseudo-arclength continuation ({branch.termination_reason})")
+    return figure, axis
+
+
+def plot_pseudo_arclength_diagnostics(
+    branch: PseudoArclengthResult,
+) -> tuple[Figure, NDArray[Any]]:
+    """Plot accepted/rejected correctors, line-search feasibility and work."""
+    if not branch.steps:
+        raise ValueError("branch must contain at least one attempted step")
+    attempts = np.asarray([step.attempt for step in branch.steps])
+    accepted = np.asarray([step.accepted for step in branch.steps], dtype=bool)
+    figure, axes = plt.subplots(3, 1, figsize=(8, 10), constrained_layout=True)
+    axes[0].plot(
+        attempts[accepted],
+        [step.parameter for step in branch.steps if step.accepted],
+        "o-",
+        color="tab:green",
+        label="Accepted compliance",
+    )
+    axes[0].scatter(
+        attempts[~accepted],
+        [step.parameter for step in branch.steps if not step.accepted],
+        marker="x",
+        color="tab:red",
+        label="Rejected attempt",
+    )
+    axes[0].set_ylabel("Compliance factor γ")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.25)
+
+    axes[1].plot(
+        attempts,
+        [step.newton_iterations for step in branch.steps],
+        "o-",
+        label="Dense Newton corrections",
+    )
+    axes[1].plot(
+        attempts,
+        [step.rejected_line_search_trials for step in branch.steps],
+        "s-",
+        label="Rejected Armijo trials",
+    )
+    axes[1].set_ylabel("Count per corrector")
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.25)
+
+    feasible_limits = np.asarray(
+        [
+            min(step.feasible_step_limits, default=np.nan)
+            for step in branch.steps
+        ]
+    )
+    accepted_lengths = np.asarray(
+        [
+            min(step.accepted_step_lengths, default=np.nan)
+            for step in branch.steps
+        ]
+    )
+    axes[2].plot(attempts, feasible_limits, "o-", label="Feasible step limit")
+    axes[2].plot(attempts, accepted_lengths, "s-", label="Accepted step length")
+    axes[2].set_ylim(0.0, 1.05)
+    axes[2].set_xlabel("Continuation attempt")
+    axes[2].set_ylabel("Line-search fraction")
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.25)
+    figure.suptitle("Pseudo-arclength corrector diagnostics (dense direct solves)")
+    return figure, axes
 
 
 def save_monolithic_figures(

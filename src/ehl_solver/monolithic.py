@@ -16,6 +16,10 @@ from scipy.sparse.linalg import LinearOperator, gmres, spilu
 from ehl_solver.backend import make_backend
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.elasticity import cell_integrated_kernel
+from ehl_solver.pseudo_arclength import (
+    PseudoArclengthResult,
+    pseudo_arclength_continue,
+)
 from ehl_solver.reynolds import assemble_reynolds_system, reynolds_residual
 
 logger = logging.getLogger(__name__)
@@ -1733,12 +1737,68 @@ class ComplianceContinuationStep:
     rejected_line_search_trials: int = 0
     maximum_true_linear_residual: float = 0.0
     maximum_bordered_correction_residual: float = 0.0
+    solution: MonolithicLoadSolution | None = None
 
 
 @dataclass(frozen=True)
 class MonolithicComplianceContinuation:
     solution: MonolithicLoadSolution
     steps: tuple[ComplianceContinuationStep, ...]
+
+
+@dataclass(frozen=True)
+class MonolithicPseudoArclengthContinuation:
+    solution: MonolithicLoadSolution
+    branch: PseudoArclengthResult
+
+
+@dataclass(frozen=True)
+class JacobianConditioningDiagnostic:
+    compliance_factor: float
+    largest_singular_value: float
+    smallest_singular_value: float
+    condition_number: float
+
+
+def estimate_bordered_jacobian_conditioning(
+    problem: BorderedReynoldsElasticityProblem,
+    state: ArrayLike,
+    *,
+    maximum_state_size: int = 256,
+) -> JacobianConditioningDiagnostic:
+    """Explicitly assemble the small scaled Jacobian and estimate its spectrum."""
+    values = np.asarray(state, dtype=np.float64)
+    if (
+        not isinstance(maximum_state_size, int)
+        or isinstance(maximum_state_size, bool)
+        or maximum_state_size < 1
+        or values.shape != (problem.pressure_size + 1,)
+        or values.size > maximum_state_size
+    ):
+        raise ValueError("state dimension is invalid or exceeds the explicit spectrum limit")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("state must be finite")
+    identity = np.eye(values.size, dtype=np.float64)
+    matrix = np.column_stack(
+        [
+            problem.jacobian_vector(values, identity[:, index])
+            for index in range(values.size)
+        ]
+    )
+    singular_values = np.linalg.svd(matrix, compute_uv=False)
+    largest = float(singular_values[0])
+    smallest = float(singular_values[-1])
+    condition = (
+        math.inf
+        if smallest == 0.0
+        else largest / smallest
+    )
+    return JacobianConditioningDiagnostic(
+        problem.compliance_factor,
+        largest,
+        smallest,
+        condition,
+    )
 
 
 def continue_monolithic_compliance(
@@ -1880,9 +1940,177 @@ def continue_monolithic_compliance(
                 ),
                 default=0.0,
             ),
+            solution=candidate,
         ))
         accepted_factor = proposed
         accepted_solution = candidate
         retries = 0
         step = min(maximum_step, 1.5 * step)
     return MonolithicComplianceContinuation(accepted_solution, tuple(records))
+
+
+def continue_monolithic_compliance_pseudo_arclength(
+    problem: BorderedReynoldsElasticityProblem,
+    initial_solution: MonolithicLoadSolution,
+    *,
+    target_compliance_factor: float = 1.0,
+    initial_step: float = 0.02,
+    minimum_step: float = 1e-4,
+    maximum_step: float = 0.05,
+    maximum_steps: int = 24,
+    maximum_retries_per_step: int = 6,
+    residual_tolerance: float = 1e-8,
+    load_tolerance: float = 1e-6,
+    maximum_state_size: int = 256,
+) -> MonolithicPseudoArclengthContinuation:
+    """Experimental dense predictor-corrector continuation in compliance.
+
+    The full residual Jacobian is assembled from analytic matrix-free JVPs
+    and solved directly. This intentionally limits the method to small
+    systems; it is a branch diagnostic, not a large-grid solver. Pressure
+    unknowns are weighted by their RMS norm, while ``h0/h_ref`` and
+    compliance each have unit weight. Strict film positivity is checked at
+    every predictor and corrector trial. The compliance derivative is
+    independently differenced because the existing problem API exposes the
+    state Jacobian but not a parameter derivative.
+    """
+    if (
+        not isinstance(maximum_state_size, int)
+        or isinstance(maximum_state_size, bool)
+        or maximum_state_size < 2
+        or problem.pressure_size + 1 > maximum_state_size
+    ):
+        raise ValueError(
+            "pseudo-arclength continuation is limited to "
+            f"{maximum_state_size} pressure/film unknowns"
+        )
+    if not math.isfinite(target_compliance_factor) or not (
+        0.0 <= target_compliance_factor <= 1.0
+    ):
+        raise ValueError("target_compliance_factor must be finite and in [0, 1]")
+    if not math.isfinite(residual_tolerance) or residual_tolerance <= 0.0:
+        raise ValueError("residual_tolerance must be finite and positive")
+    if not math.isfinite(load_tolerance) or load_tolerance <= 0.0:
+        raise ValueError("load_tolerance must be finite and positive")
+    if not math.isclose(
+        initial_solution.target_load_n,
+        problem.target_load_n,
+        rel_tol=1e-12,
+        abs_tol=8.0 * np.finfo(np.float64).eps * problem.load_residual_scale_n,
+    ):
+        raise ValueError("problem load must match the initial converged solution")
+
+    state = np.concatenate(
+        (
+            initial_solution.pressure_dimensionless[1:-1, 1:-1].ravel(),
+            [initial_solution.central_film_offset_m / problem.film_scale_m],
+        )
+    )
+    initial_residual = problem.residual(state)
+    if (
+        np.linalg.norm(initial_residual[:-1]) / math.sqrt(problem.pressure_size)
+        > residual_tolerance
+        or abs(initial_residual[-1]) > load_tolerance
+    ):
+        raise ValueError("initial solution does not satisfy continuation tolerances")
+    _, reconstructed_film, _ = problem.state_fields(state[:-1], float(state[-1]))
+    if not np.allclose(
+        initial_solution.film_thickness_m,
+        reconstructed_film,
+        rtol=1e-10,
+        atol=32.0 * np.finfo(np.float64).eps * problem.film_scale_m,
+    ):
+        raise ValueError("initial solution film is inconsistent with the problem")
+
+    def residual_at(
+        values: NDArray[np.float64], compliance: float
+    ) -> NDArray[np.float64]:
+        if not 0.0 <= compliance <= 1.0:
+            raise ValueError("compliance factor must remain in [0, 1]")
+        problem.compliance_factor = compliance
+        return problem.residual(values)
+
+    def jacobian_at(
+        values: NDArray[np.float64], compliance: float
+    ) -> NDArray[np.float64]:
+        problem.compliance_factor = compliance
+        identity = np.eye(values.size, dtype=np.float64)
+        return np.column_stack(
+            [
+                problem.jacobian_vector(values, identity[:, index])
+                for index in range(values.size)
+            ]
+        )
+
+    def compliance_derivative(
+        values: NDArray[np.float64], compliance: float
+    ) -> NDArray[np.float64]:
+        step = min(1e-5, compliance, 1.0 - compliance)
+        if step > 0.0:
+            return (
+                residual_at(values, compliance + step)
+                - residual_at(values, compliance - step)
+            ) / (2.0 * step)
+        step = 1e-5
+        if compliance <= 0.0:
+            return (
+                residual_at(values, compliance + step)
+                - residual_at(values, compliance)
+            ) / step
+        return (
+            residual_at(values, compliance)
+            - residual_at(values, compliance - step)
+        ) / step
+
+    def feasible(values: NDArray[np.float64], compliance: float) -> bool:
+        if not 0.0 <= compliance <= 1.0:
+            return False
+        problem.compliance_factor = compliance
+        try:
+            _, film_m, _ = problem.state_fields(values[:-1], float(values[-1]))
+        except ValueError:
+            return False
+        return bool(
+            np.all(np.isfinite(film_m))
+            and np.all(film_m > problem.film_floor_m)
+        )
+
+    weights = np.ones(state.size, dtype=np.float64)
+    weights[:-1] = 1.0 / problem.pressure_size
+    branch = pseudo_arclength_continue(
+        residual_at,
+        jacobian_at,
+        compliance_derivative,
+        state,
+        problem.compliance_factor,
+        state_weights=weights,
+        feasible=feasible,
+        target_parameter=target_compliance_factor,
+        initial_step=initial_step,
+        minimum_step=minimum_step,
+        maximum_step=maximum_step,
+        maximum_steps=maximum_steps,
+        maximum_retries_per_step=maximum_retries_per_step,
+        residual_tolerance=min(residual_tolerance, load_tolerance),
+        arclength_tolerance=min(residual_tolerance, load_tolerance),
+    )
+    problem.compliance_factor = branch.parameter
+    pressure, film, displacement = problem.state_fields(
+        branch.state[:-1], float(branch.state[-1])
+    )
+    pressure_pa = pressure * problem.pressure_scale_pa
+    calculated_load = _integrated_load_n(problem.x, problem.y, pressure_pa)
+    solution = MonolithicLoadSolution(
+        pressure_dimensionless=pressure,
+        pressure_pa=pressure_pa,
+        film_thickness_m=film,
+        elastic_displacement_m=displacement,
+        central_film_offset_m=float(branch.state[-1]) * problem.film_scale_m,
+        target_load_n=problem.target_load_n,
+        calculated_load_n=calculated_load,
+        load_residual_n=calculated_load - problem.target_load_n,
+        history=(),
+        operator_evaluations=problem.operator_evaluations,
+        initial_h0_adjustment_m=initial_solution.initial_h0_adjustment_m,
+    )
+    return MonolithicPseudoArclengthContinuation(solution, branch)

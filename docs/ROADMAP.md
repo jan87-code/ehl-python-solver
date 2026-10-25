@@ -151,3 +151,37 @@ sampling/localization error. Distinguish discretization dependence from
 branch-conditioning and globalization failures before changing the primary
 Newton preconditioner. Physical cavitation/load coupling and independent
 film-height validation remain unimplemented.
+
+## Bracketed turn localization increment (2026-10-25)
+
+Implemented bounded localization using the existing pseudo-arclength
+corrector, strict feasibility/Armijo checks, tangent-sign bracketing and a
+contraction guard. Both bracket and normalized parameter-tangent tolerances
+are required. Failed predictors, correctors, noncontracting probes and
+budget exhaustion preserve the last bracket and full attempted history.
+Analytical quadratic/cubic turns, reparameterization, failure recovery and
+an independently audited coupled-state regression cover the implementation.
+
+The fixed-load four-case study now localizes gamma at 0.182176253504 (7x9),
+0.179225816365 (13x17), 0.178395632035 (19x25), and 0.176425633616 (expanded
+17x21 at baseline spacing). All 64 refinement probes pass independent
+Reynolds/load/elasticity/film/boundary/flux checks. All final weighted brackets
+are below 7.64e-7 and normalized tangents below 4.38e-7. A tighter baseline
+bracket changes gamma by only 1.67e-13. Reproducible settings, numerical
+limits, timings and plots are described in PHYSICS.md; result directories
+were newly created and remain untracked.
+Verification: `ruff check .` clean; `pytest -q` 170 passed, 4 optional
+GPU skips. The four-case localized study and tighter-baseline restart completed.
+
+The mesh/domain shifts remain larger than continuation-sampling corrections.
+No continuum fold or physical EHL instability is established; the model still
+has signed pressure and a negative target load. Full-compliance convergence
+and physical load control remain unresolved, and those boxes stay open.
+
+Next development action: independently test nullity, transversality and
+curvature at the localized discrete turn before labeling it a simple fold.
+Use the retained brackets for such diagnostics rather than repeating the
+expensive failed continuation. Then prioritize a positive-load prescribed-film
+cavitation/elasticity benchmark; the negative signed-load stress branch cannot
+validate nonnegative-pressure physical EHL. Preserve the original staged HIP
+checkout and keep CPU verification ahead of GPU work.

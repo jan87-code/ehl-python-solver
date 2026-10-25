@@ -28,6 +28,7 @@ from ehl_solver.monolithic import (
     solve_monolithic_full_film_load,
 )
 from ehl_solver.reynolds import solve_reynolds_pressure
+from ehl_solver.turning_point import localize_parameter_turn
 from ehl_solver.verification import audit_full_film_solution
 
 
@@ -120,7 +121,7 @@ def _require_verified(audit, problem):
 
 def run_case(
     case, problem, initial, directory, *, maximum_steps=12, plots=False,
-    compliance_reference_modulus_pa=None,
+    compliance_reference_modulus_pa=None, localize_turn=False, turn_bracket_tolerance=1e-6,
 ):
     started = time.perf_counter()
     result = continue_monolithic_compliance_pseudo_arclength(
@@ -181,9 +182,112 @@ def run_case(
         "audits": [asdict(audit) for audit in audits],
         "elapsed_seconds": time.perf_counter() - started,
     }
+    if localize_turn:
+        summary["turning_point"] = (
+            _localize_turn(problem, initial, *reversals[0], directory, case,
+                           compliance_reference_modulus_pa, turn_bracket_tolerance, plots)
+            if reversals else {"termination_reason": "no_tangent_reversal"}
+        )
+    summary["elapsed_seconds"] = time.perf_counter() - started
     if plots:
         _save_plots(directory, case, problem, initial, peak, result.branch)
     return summary
+
+
+def _localize_turn(problem, initial, left, right, directory, case, reference_modulus,
+                   bracket_tolerance, plots):
+    # Numerical callbacks use interior P, h0/h_ref, and dimensionless gamma.
+    # Geometry/material inputs and reconstructed solution fields remain SI.
+    original_gamma = problem.compliance_factor
+    weights = np.ones(problem.pressure_size + 1)
+    weights[:-1] = 1 / problem.pressure_size
+    parameter_weight = (
+        1.0 if reference_modulus is None else (reference_modulus / problem.e_star_pa)**2
+    )
+
+    def residual(state, gamma):
+        problem.compliance_factor = gamma
+        return problem.residual(state)
+
+    def jacobian(state, gamma):
+        problem.compliance_factor = gamma
+        identity = np.eye(state.size)
+        return np.column_stack([
+            problem.jacobian_vector(state, identity[:, i]) for i in range(state.size)
+        ])
+
+    def derivative(state, gamma):
+        problem.compliance_factor = gamma
+        return problem.compliance_derivative(state)
+
+    def feasible(state, gamma):
+        if not 0 <= gamma <= 1:
+            return False
+        problem.compliance_factor = gamma
+        _, film, _ = problem.state_fields(state[:-1], state[-1])
+        return bool(np.all(np.isfinite(film)) and np.all(film > problem.film_floor_m))
+
+    try:
+        turn = localize_parameter_turn(
+            residual, jacobian, derivative, np.asarray(left.state), left.parameter,
+            np.asarray(right.state), right.parameter, state_weights=weights,
+            parameter_weight=parameter_weight, feasible=feasible,
+            bracket_tolerance=bracket_tolerance, residual_tolerance=1e-10,
+        )
+        # Preserve attempted correctors before the independent state audits.
+        (directory / f"{case.name}_turning_point.json").write_text(
+            json.dumps(_json_finite(asdict(turn)), indent=2, allow_nan=False) + "\n"
+        )
+        audits = []
+        for probe in turn.probes:
+            if probe.steps and probe.steps[-1].accepted:
+                audit = audit_full_film_solution(
+                    problem, _solution_at(problem, initial, probe),
+                    compliance_factor=probe.parameter
+                )
+                _require_verified(audit, problem)
+                if audit.reynolds_rms_scaled > 1.01e-10:
+                    raise RuntimeError("localized probe fails independent Reynolds tolerance")
+                audits.append(asdict(audit))
+        best_audit = audit_full_film_solution(
+            problem, _solution_at(problem, initial, turn.best),
+            compliance_factor=turn.best.parameter
+        )
+        _require_verified(best_audit, problem)
+        if best_audit.reynolds_rms_scaled > 1.01e-10:
+            raise RuntimeError("localized best state fails independent Reynolds tolerance")
+        if plots:
+            _save_turn_plot(directory, case, turn, parameter_weight)
+        return {
+            "termination_reason": turn.termination_reason,
+            "parameter": turn.best.parameter,
+            "normalized_compliance_per_pa": turn.best.parameter / problem.e_star_pa,
+            "bracket_width": turn.bracket_width,
+            "bracket_widths": turn.bracket_widths,
+            "normalized_parameter_tangent": turn.normalized_parameter_tangent,
+            "refinements": len(turn.probes),
+            "best_audit": asdict(best_audit), "probe_audits": audits,
+        }
+    finally:
+        problem.compliance_factor = original_gamma
+
+
+def _save_turn_plot(directory, case, turn, parameter_weight):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    figure, axes = plt.subplots(2, 1, constrained_layout=True)
+    axes[0].semilogy(turn.bracket_widths, "o-")
+    axes[0].set_ylabel("Weighted state/parameter bracket width")
+    axes[1].semilogy(
+        range(1, len(turn.probes) + 1),
+        [abs(math.sqrt(parameter_weight) * probe.tangent[-1]) for probe in turn.probes], "o-",
+    )
+    axes[1].set(xlabel="Refinement", ylabel="|Normalized probe parameter tangent|")
+    figure.suptitle(f"{case.name}: {turn.termination_reason}; gamma={turn.best.parameter:.10f}")
+    figure.savefig(directory / f"{case.name}_turn_localization.png", dpi=120)
+    plt.close(figure)
 
 
 def _save_plots(directory, case, problem, initial, peak, branch):
@@ -238,6 +342,8 @@ def _save_plots(directory, case, problem, initial, peak, branch):
 
 
 def _json_finite(value):
+    if isinstance(value, np.ndarray):
+        return _json_finite(value.tolist())
     if isinstance(value, dict):
         return {key: _json_finite(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):
@@ -249,7 +355,7 @@ def _json_finite(value):
 
 def main(
     output_directory: Path, *, maximum_steps=12, plots=False, study="mesh",
-    compliance_reference_modulus_pa=None,
+    compliance_reference_modulus_pa=None, localize_turn=False, turn_bracket_tolerance=1e-6,
 ):
     cases = CASES if study == "mesh" else MODULUS_CASES
     output_directory.mkdir(parents=True, exist_ok=False)
@@ -257,6 +363,9 @@ def main(
         "model": "signed full-film mathematical branch; no coupled cavitation",
         "study": study,
         "compliance_reference_modulus_pa": compliance_reference_modulus_pa,
+        "localization": {"enabled": localize_turn, "bracket_tolerance": turn_bracket_tolerance,
+                         "tangent_tolerance": 1e-6, "maximum_refinements": 24,
+                         "residual_tolerance": 1e-10},
         "axis_order": "(ny, nx); x is entrainment",
         "runtime": {"python": platform.python_version(), "numpy": np.__version__,
                     "scipy": scipy.__version__,
@@ -280,6 +389,7 @@ def main(
         summary = run_case(
             case, problem, initial, output_directory, maximum_steps=maximum_steps, plots=plots,
             compliance_reference_modulus_pa=compliance_reference_modulus_pa,
+            localize_turn=localize_turn, turn_bracket_tolerance=turn_bracket_tolerance,
         )
         report["cases"].append(summary)
         (output_directory / "summary.json").write_text(
@@ -289,6 +399,10 @@ def main(
               f"sample max gamma={summary['maximum_sampled_compliance']:.9f}; "
               f"reversal brackets={len(summary['tangent_reversal_brackets'])}; "
               f"{summary['elapsed_seconds']:.2f} s", flush=True)
+        if "turning_point" in summary:
+            turn = summary["turning_point"]
+            print(f"  localization: {turn['termination_reason']}; "
+                  f"gamma={turn.get('parameter')}; width={turn.get('bracket_width')}", flush=True)
 
 
 if __name__ == "__main__":
@@ -298,8 +412,11 @@ if __name__ == "__main__":
     parser.add_argument("--plots", action="store_true")
     parser.add_argument("--study", choices=("mesh", "modulus"), default="mesh")
     parser.add_argument("--compliance-reference-modulus-pa", type=float)
+    parser.add_argument("--localize-turn", action="store_true")
+    parser.add_argument("--turn-bracket-tolerance", type=float, default=1e-6)
     options = parser.parse_args()
     logging.basicConfig(level=logging.WARNING)
     main(options.output_directory, maximum_steps=options.maximum_steps,
          plots=options.plots, study=options.study,
-         compliance_reference_modulus_pa=options.compliance_reference_modulus_pa)
+         compliance_reference_modulus_pa=options.compliance_reference_modulus_pa,
+         localize_turn=options.localize_turn, turn_bracket_tolerance=options.turn_bracket_tolerance)

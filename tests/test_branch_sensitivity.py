@@ -3,7 +3,7 @@ import pytest
 
 from ehl_solver.monolithic import continue_monolithic_compliance_pseudo_arclength
 from ehl_solver.verification import audit_full_film_solution
-from examples.run_branch_sensitivity import CASES, Case, make_case
+from examples.run_branch_sensitivity import CASES, Case, make_case, run_case
 
 
 def test_mesh_and_domain_cases_share_load_without_retargeting_the_rigid_gap():
@@ -64,3 +64,23 @@ def test_normalized_compliance_metric_rejects_invalid_or_unrepresentable_values(
         continue_monolithic_compliance_pseudo_arclength(
             problem, root, compliance_reference_modulus_pa=modulus
         )
+
+
+
+def test_localized_coupled_turn_passes_independent_audit_and_restores_problem(tmp_path):
+    case = CASES[1]
+    problem, initial = make_case(case)
+    report = run_case(
+        case, problem, initial, tmp_path, localize_turn=True,
+        compliance_reference_modulus_pa=1e6,
+    )
+    turn = report["turning_point"]
+    assert turn["termination_reason"] == "localized"
+    assert turn["bracket_width"] <= 1e-6
+    assert abs(turn["normalized_parameter_tangent"]) <= 1e-6
+    assert turn["best_audit"]["reynolds_rms_scaled"] < 1.01e-10
+    assert abs(turn["best_audit"]["load_residual_scaled"]) < 1e-6
+    assert turn["parameter"] >= report["maximum_sampled_compliance"]
+    with np.load(tmp_path / f"{case.name}_states.npz") as archive:
+        assert problem.compliance_factor == archive["parameters"][-1]
+    assert (tmp_path / f"{case.name}_turning_point.json").is_file()

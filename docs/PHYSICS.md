@@ -828,3 +828,97 @@ The report records the selected metric, per-case modulus, normalized
 compliance and effective modulus at each sampled maximum. These are signed
 mathematical branch checks, not physical bearing-material validation, a
 localized fold, or full-compliance success at 100 kPa.
+
+
+### Bracketed parameter-turn localization
+
+`turning_point.localize_parameter_turn` is a bounded dense diagnostic for
+callbacks using the same explicitly scaled state/parameter conventions as
+`pseudo_arclength_continue`. It accepts two nearby converged roots whose
+parameter tangents, oriented along their weighted chord, have opposite
+signs. EHL benchmark callbacks use interior dimensionless `P`, `h0/h_ref`
+and gamma; dimensional solution fields remain Pa and m. The metric is the
+existing RMS pressure/unit offset metric with parameter weight
+`(E_ref/E*)**2` when normalized compliance is selected.
+
+Each refinement takes one tangent-plane predictor/corrector from the left
+root, with step equal to half the weighted bracket chord length. The
+existing residual, feasibility, Armijo, and tangent calculations are reused.
+The candidate must lie within 0.9 old bracket widths of both endpoints;
+otherwise refinement stops with the old bracket intact. Opposing oriented
+tangent signs select the next bracket. Localization requires both weighted
+bracket width <=1e-6 and `abs(sqrt(parameter_weight)*t_gamma)<=1e-6`.
+The residual-root tolerance is 1e-10 RMS, with at most 24 refinements, one
+12-iteration/16-backtrack corrector per refinement, no retries, and at most
+512 state variables. Failed predictors/correctors, noncontracting probes,
+and budget exhaustion retain the bracket and all attempted probe records.
+Initial invalid/non-root/non-bracketing inputs raise. No pressure or film
+clamps are introduced.
+
+The contraction check is a safeguard for a *local* branch bracket, not a
+proof of branch uniqueness or an interval bound for a continuum solution.
+A tangent reversal locates a stationary parameter in the computed branch;
+it alone does not prove the nondegeneracy conditions for a simple fold, a
+physical instability, or the absence of other branches. Generic analytical
+regressions cover a quadratic fold, a cubic turn with a transverse state,
+parameter-rescaling invariance, failed feasibility, a distant noncontracting
+root, invalid controls, and budget exhaustion. An independently audited
+small coupled case verifies localization and restoration of mutable problem
+compliance after the benchmark callback adapter returns.
+
+The branch study accepts `--localize-turn` and
+`--turn-bracket-tolerance` to enable/refine localization. Per-case JSON files
+preserve both endpoint roots/tangents and every attempted corrector before
+independent state audits run. The main report records the best root,
+contraction history, normalized parameter tangent, and direct elasticity,
+Reynolds, load and conservation audits for each accepted probe. Optional
+plots show bracket contraction and parameter-tangent reduction alongside
+the existing sampled-branch/field plots. Existing directories are refused.
+
+#### Localized 1 MPa grid/domain results
+
+Run the previous four-case study with localization and normalized compliance:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python examples/run_branch_sensitivity.py --localize-turn --plots \
+  --compliance-reference-modulus-pa 1000000 \
+  --output-directory results/turn_localization_new
+```
+
+At the same fixed negative signed target and physical inputs documented
+above, every case localized after 16 refinements:
+
+| Case `(ny,nx)` | Localized gamma | Change from sampled maximum | Final bracket width | Normalized parameter tangent | Continuation + audits + localization [s] |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Coarse (7,9) | 0.182176253504 | 4.67e-5 | 7.63e-7 | -1.82e-7 | 2.94 |
+| Baseline (13,17) | 0.179225816365 | 2.30e-5 | 7.64e-7 | 4.38e-7 | 17.05 |
+| Fine (19,25) | 0.178395632035 | 6.77e-5 | 7.64e-7 | 3.77e-7 | 66.71 |
+| Expanded (17,21) | 0.176425633616 | 2.51e-5 | 7.64e-7 | 2.32e-7 | 38.65 |
+
+All 64 accepted localization probes pass independently evaluated scaled
+Reynolds RMS <=1.01e-10, signed load, positive film, direct/FFT coupling,
+zero pressure boundary and local/global flux checks. The largest measured
+scaled Reynolds RMS is below 8.87e-11, absolute load error below 1.31e-18 N,
+and absolute net integrated flux below 3.73e-9 (dimensionless flux units).
+The direct/FFT quadrature coefficients are the same separately verified
+cell integrals; this checks summation and coupling, not an independent
+elasticity quadrature. The wall timings above exclude plotting and vary with
+machine/load. All runs use one BLAS/OpenMP thread and the earlier grid caps.
+
+A baseline restart from its retained bracket at tolerance 1e-7 took three
+more refinements: gamma=0.179225816365158, bracket width 9.55e-8, normalized
+tangent -1.72e-8. Its gamma change was 1.67e-13. This is an empirical
+localization sensitivity check under the fixed 1e-10 residual tolerance,
+not a rigorous error bound or an independently proved fold condition.
+
+The localized coarse-to-baseline shift is about 0.00295044 and the
+baseline-to-fine shift about 0.00083018. Both exceed the observed sampling
+corrections. At fixed baseline spacing and target load, the expanded-domain
+shift is about -0.00280018. Thus resolving the parameter turn does not
+remove discretization/domain dependence. These small grids and one domain
+expansion do not support a continuum limiting gamma, an asymptotic order
+claim, or physical instability. Gamma=1 remains unreached by these branches.
+The negative target cannot serve as a nonnegative-pressure physical EHL
+load benchmark; future coupled cavitation verification needs an admissible
+positive-load case.

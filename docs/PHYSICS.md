@@ -1426,3 +1426,79 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=sr
 
 Fresh output directories preserve SI grid/fields, analytical reference,
 centerline comparisons, rupture/conservation metrics and inlet-study data.
+
+### Separating point-contact inlet, outlet and transverse extents
+
+`examples.run_cavitating_boundaries` extends each boundary family separately
+by four/eight original cells. The baseline is `(ny,nx)=(13,17)`,
+x=[-0.5,0.75] mm, y=[-0.5,0.5] mm; dx=78.125 um, dy=83.333333 um.
+Inlet extensions put xmin at -0.8125/-1.125 mm; outlet extensions put xmax
+at 1.0625/1.375 mm; transverse extensions put both y edges at
++/-0.833333/1.166667 mm. All original nodes are retained exactly. Every case
+uses E*=10 MPa, Rx=10 mm, Ry=20 mm, h_ref=20 um, L=0.5 mm,
+p_ref=21250 Pa, Lambda=12 and flooded west content. This matches eta=0.04
+Pa s and mean entrainment Ue=0.425 m/s. Pressure is zero on all four edges.
+
+Each independent prescribed-h0=20 um compliance continuation supplies both
+a rigid (gamma=0) force and an elastic (gamma=1) initial root; adaptive
+positive-force continuation then solves h0 at Q=0.002 N. No field is
+interpolated from another domain, no boundary condition is changed, and
+iteration/tolerance limits are unchanged.
+
+| Extended boundary | Grid `(ny,nx)` | Rigid force at h0=20 um [N] | Elastic force at h0=20 um [N] | h0 at Q=0.002 N [um] | Relative pressure change on baseline nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline | (13,17) | 0.00231802 | 0.00229602 | 21.3005243 | 0 |
+| Inlet +4 | (13,21) | 0.00545200 | 0.00530370 | 32.9530689 | 0.475451 |
+| Inlet +8 | (13,25) | 0.00742901 | 0.00718947 | 40.7639950 | 0.599390 |
+| Outlet +4 | (13,21) | 0.00231802 | 0.00229602 | 21.3005243 | 4.44e-16 |
+| Outlet +8 | (13,25) | 0.00231802 | 0.00229602 | 21.3005243 | 4.90e-16 |
+| Transverse +4 each | (21,17) | 0.00380367 | 0.00375144 | 27.0190576 | 0.377863 |
+| Transverse +8 each | (29,17) | 0.00450645 | 0.00443703 | 29.7131725 | 0.473898 |
+
+All seven targets complete in six accepted load stages each, without
+rejections. Newton corrections total 17/22/29/17/17/21/21 in table order.
+The 42 accepted states pass separate direct-spatial elasticity and
+opposing-face flux audits: maximum dimensionless local mass residual
+6.68e-9, absolute net flux 2.20e-9, complementarity 3.29e-22,
+film-coupling error 2.04e-20 m. Final force errors are below 4.34e-19 N.
+The largest grid here has 493 nodes, below the existing audit cap.
+
+At the target force, outward west/east/south/north dimensionless fluxes are:
+
+| Case | West | East | South | North |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline | -30.652797 | 27.095336 | 1.778730 | 1.778730 |
+| Inlet +4 | -54.673314 | 40.630072 | 7.021621 | 7.021621 |
+| Inlet +8 | -83.179240 | 49.602691 | 16.788274 | 16.788274 |
+| Outlet +4/+8 | -30.652797 | 27.095336 | 1.778730 | 1.778730 |
+| Transverse +4 | -69.047158 | 64.903837 | 2.071661 | 2.071661 |
+| Transverse +8 | -118.907177 | 114.396258 | 2.255459 | 2.255459 |
+
+For these cases, the outlet is already beyond rupture: added downstream
+nodes carry zero pressure and transport reduced content through the widening
+gap without altering the pressure upstream. A regression independently solves
+the baseline and extended load roots, checks direct audits, unchanged film
+and pressure on shared nodes, and conserved downstream row flux. The old
+east boundary content was copied from the interior; it becomes a genuine
+flow unknown when the domain extends and is excluded from content overlap
+comparisons. This observation is not a universal outlet-independence claim.
+
+The inlet and transverse boundaries both materially affect these small-domain
+roots. Their influence also exists in the rigid reference, so it cannot be
+attributed solely to elastic coupling. Finite-inlet and lateral outflow
+effects remain coupled in the point problem; the one-dimensional analytical
+limit does not supply a complete point-contact far-field condition. The
+offsets above remain domain-dependent numerical results, not independently
+validated physical film heights. Next verification should establish a
+controlled rigid point-contact far-field limit with explicit extent versus
+resolution checks before extending material or constitutive comparisons.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_cavitating_boundaries --plots \
+  --output-directory results/cavitating_boundaries_new
+```
+
+New directories contain unique names even for equal-shaped inlet/outlet
+grids, all reference/Newton histories, SI states, trial audits, flux budgets,
+pressure-overlap changes and a comparison plot. Prior results are preserved.

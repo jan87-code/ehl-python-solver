@@ -27,12 +27,22 @@ from examples.run_cavitating_load_continuation import save_path_plot
 
 
 def make_domain_problem(extra):
-    if not isinstance(extra, int) or isinstance(extra, bool) or extra < 0:
-        raise ValueError("extra boundary nodes must be a nonnegative integer")
+    return make_boundary_problem(inlet_nodes=extra, outlet_nodes=extra, transverse_nodes=extra)
+
+
+def make_boundary_problem(*, inlet_nodes=0, outlet_nodes=0, transverse_nodes=0):
+    """Extend selected boundaries in whole cells; preserve baseline SI nodes.
+
+    Transverse extensions add the same number of nodes on both y edges.
+    x follows entrainment; arrays have shape (ny, nx).
+    """
+    for extra in (inlet_nodes, outlet_nodes, transverse_nodes):
+        if not isinstance(extra, int) or isinstance(extra, bool) or extra < 0:
+            raise ValueError("extra boundary nodes must be a nonnegative integer")
     dx, dy = 0.00125 / 16, 0.001 / 12
     return CavitatingElasticityProblem(
-        np.linspace(-0.0005 - extra * dx, 0.00075 + extra * dx, 17 + 2 * extra),
-        np.linspace(-0.0005 - extra * dy, 0.0005 + extra * dy, 13 + 2 * extra),
+        -0.0005 + np.arange(-inlet_nodes, 17 + outlet_nodes) * dx,
+        -0.0005 + np.arange(-transverse_nodes, 13 + transverse_nodes) * dy,
         20e-6,
         0.01,
         0.02,
@@ -77,9 +87,16 @@ def _audit(problem, solution, target=None):
 def run_case(extra, directory, *, plots=False, target=0.002):
     problem = make_domain_problem(extra)
     name = f"domain_{problem.shape[0]}_{problem.shape[1]}"
+    entry = run_problem(problem, directory, name=name, plots=plots, target=target)
+    entry["extra_nodes_per_edge"] = extra
+    return entry
+
+
+def run_problem(problem, directory, *, name, plots=False, target=0.002):
+    """Solve and independently audit one domain; retain failed candidates."""
     entry = {
+        "name": name,
         "shape": problem.shape,
-        "extra_nodes_per_edge": extra,
         "x_limits_m": [float(problem.x_m[0]), float(problem.x_m[-1])],
         "y_limits_m": [float(problem.y_m[0]), float(problem.y_m[-1])],
         "dx_m": problem.dx_m,
@@ -103,6 +120,10 @@ def run_case(extra, directory, *, plots=False, target=0.002):
     entry["initial_reference_audit"] = asdict(_audit(problem, initial))
     entry["initial_reference_iterations"] = len(initial.history)
     entry["initial_reference_force_n"] = initial.load_n
+    entry["initial_reference_history"] = [asdict(row) for row in initial.history]
+    entry["rigid_reference_force_n"] = next(
+        row.load_n for row in reversed(initial.history) if row.compliance_factor == 0
+    )
     _save_state(directory / f"{name}_initial.npz", problem, initial)
     failed = None
     try:

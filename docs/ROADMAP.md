@@ -390,3 +390,30 @@ remain open.
 Verification: `ruff check .` clean; `pytest -q` 233 passed, 4 optional
 GPU skips. The analytical quadrature checks, three wide JFO grids and plotted
 reference/inlet study completed with single-thread CPU settings.
+
+## Separate boundary sensitivity at positive force (2026-10-25)
+
+Completed seven matched-input cases: baseline plus inlet, outlet and both
+transverse edges extended independently by four/eight original cells. All
+original nodes and spacings are preserved. Each case has an independent
+rigid/coupled prescribed-offset reference and adaptive continuation to
+Q=0.002 N. All 42 accepted load roots pass direct elasticity and conservative
+flux audits, with maximum local mass residual 6.68e-9; no retries are needed.
+
+Inlet expansion changes h0 from 21.3005 to 32.9531/40.7640 um; transverse
+expansion gives 27.0191/29.7132 um. Outlet expansion leaves h0 unchanged and
+shared-node pressure differs by less than 4.90e-16 relative. Added outlet
+cells remain cavitated with conserved row flux; a regression checks this
+root invariance independently. Rigid reference forces also have strong
+inlet/transverse sensitivity. The effect is therefore present before
+elastic coupling. PHYSICS.md records matched inputs, limits, histories,
+flow budgets and reproduction. New output directories preserve prior data.
+
+The point-contact model remains domain-dependent; physical film heights are
+not validated. Next: a bounded rigid point-contact far-field study that
+separates physical extent and interior resolution, with explicit scaling
+and thin-film applicability, before material/constitutive extensions.
+The CPU reference, signed mathematical solvers and staged HIP sources are
+preserved. GPU audit findings above remain applicable.
+Verification: `ruff check .` clean; `pytest -q` 244 passed, 4 optional
+PyTorch skips. All seven independent CPU runs and comparison plots completed.

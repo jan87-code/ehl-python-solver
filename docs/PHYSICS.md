@@ -682,3 +682,79 @@ with a separate fixed-compliance matrix-free Newton solve. This establishes
 endpoint correctness for these cases, not strong-compliance robustness or
 physical EHL validation. A fixed-parameter endpoint at a singular fold may
 still fail and must retain failed-corrector diagnostics.
+
+### Bounded grid/domain audit of the 1 MPa signed branch
+
+`examples/run_branch_sensitivity.py` compares three rectangular meshes and an
+expanded domain. Its target is held at the baseline 13x17 rigid `h0=20 um`
+signed load, **-0.0026894389511675915 N**, for every case. Each other rigid
+starting root solves for its own offset at that same load; retargeting each
+mesh at the same rigid offset would mix load sensitivity into this study.
+The modulus is 1 MPa; radii are 10 and 20 mm; `L=0.5 mm`, `h_ref=20 um`,
+`p_ref=21250 Pa`, `Lambda=12`, and Reynolds residual scale is 100.
+
+The base domain is `x=[-0.5,0.75] mm`, `y=[-0.5,0.5] mm` with zero boundary
+pressure. The expanded domain is `x=[-0.65625,0.90625] mm`,
+`y=[-2/3,2/3] mm`; it adds two nodes at every edge and holds the baseline
+spacings fixed. The dense continuation diagnostic caps the state size at
+512, takes at most 12 continuation steps, allows 3 retries per step, and uses
+initial/max arclength steps 0.03/0.05 and residual tolerance 1e-8. Its
+corrector retains the existing 12-iteration and 16-backtrack bounds.
+
+Measured with Python 3.12.3, NumPy 2.5.4, SciPy 1.18.1 and one BLAS/OpenMP
+thread, all four runs accepted 12 states, found a tangent sign reversal and
+terminated at the step budget, without reaching gamma=1:
+
+| Case `(ny,nx)` | Initial h0 [um] | Largest sampled gamma | Minimum film there [um] | Scaled Jacobian condition there | Continuation + audit [s] |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Coarse (7,9) | 19.50891 | 0.182129572 | 14.62403 | 8.30e3 | 1.03 |
+| Baseline (13,17) | 20.00000 | 0.179202822 | 14.84055 | 8.04e4 | 6.54 |
+| Fine (19,25) | 20.08891 | 0.178327919 | 14.81936 | 1.32e5 | 28.29 |
+| Expanded (17,21) | 25.27835 | 0.176400509 | 18.83067 | 2.34e5 | 15.71 |
+
+These are sampled maxima, not localized folds or bounds on the exact maximum.
+The same-domain successive changes decrease (about 0.00293 then 0.000875),
+but three small meshes and a fixed arclength sampling do not establish grid
+convergence. Expanding the domain shifts the sampled maximum by about
+0.00280 at fixed spacing and load. Therefore neither a mesh-independent
+turning point nor domain independence is established. Condition estimates
+use the existing scaled Jacobian and change with discretization size; they
+are diagnostics, not invariant measures of physical stiffness.
+
+`audit_full_film_solution` independently evaluates direct spatial convolution
+using the existing separately verified cell-integrated coefficients, film
+coupling, dimensional pressure scaling, edge conditions, signed trapezoidal
+load and face-flux conservation. It never calls the FFT state reconstruction
+or the nonlinear residual, and is capped at 1024 grid points by default.
+Using the supplied film, it forms `qx=-avg(H**3)*diff(P)/dX + Lambda*avg(H)`
+and `qy=-avg(H**3)*diff(P)/dY`, then differences these fluxes. This also
+checks the Reynolds stencil by a distinct flux implementation. Summed
+interior-volume balances telescope to the outward flux through the outer
+faces of those volumes, halfway between interior and boundary nodes.
+
+Across all 48 accepted states, the largest independently computed scaled
+Reynolds RMS was 9.73e-12; absolute load error was below 8.68e-19 N;
+maximum local integrated flux imbalance was below 1.43e-10 and absolute
+net boundary flux below 7.07e-10 (dimensionless integrated flux). Direct/FFT
+coupling differences were at roundoff. The benchmark separately enforces
+Reynolds RMS <=1.01e-8, scaled load error <=1e-6, strict film feasibility,
+zero pressure edges, direct displacement/film errors <=1e-12*h_ref, and
+local/net flux errors <=1e-6. Telescoping mismatch must be <=1e-10.
+
+Reproduce with a new output directory (existing directories are refused):
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python examples/run_branch_sensitivity.py --plots \
+  --output-directory results/branch_sensitivity_new
+```
+
+The JSON report records settings, runtime versions, all attempt diagnostics,
+independent accepted-state audits and tangent-reversal state intervals. NPZ
+files preserve every attempted pressure/offset state, parameter and acceptance
+flag. Optional figures show pressure, film, both centerline directions,
+unscaled deformation, branch, corrector and conditioning diagnostics. Dense
+correctors have no Krylov history. Output data and plots are not tracked.
+Negative pressures and the negative signed target remain mathematical model
+features, not cavitation-corrected physical loads. This audit does not close
+strong-compliance or physical EHL validation.

@@ -1,0 +1,284 @@
+"""Bounded CPU grid/domain sensitivity of the signed 1 MPa branch.
+
+Run with OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src.
+All cases share the baseline rigid-reference signed load; no results are
+physical EHL solutions. Output directories must be new. Dense state size,
+continuation attempts, retries and Newton corrections are explicitly capped.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import math
+import os
+import platform
+import time
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
+
+import numpy as np
+import scipy
+from scipy.integrate import trapezoid
+
+from ehl_solver.monolithic import (
+    BorderedReynoldsElasticityProblem,
+    continue_monolithic_compliance_pseudo_arclength,
+    solve_monolithic_full_film_load,
+)
+from ehl_solver.reynolds import solve_reynolds_pressure
+from ehl_solver.verification import audit_full_film_solution
+
+
+@dataclass(frozen=True)
+class Case:
+    name: str
+    ny: int
+    nx: int
+    x_limits_m: tuple[float, float] = (-0.5e-3, 0.75e-3)
+    y_limits_m: tuple[float, float] = (-0.5e-3, 0.5e-3)
+
+
+CASES = (
+    Case("baseline", 13, 17),
+    Case("coarse", 7, 9),
+    Case("fine", 19, 25),
+    # Two extra nodes at each edge preserve the baseline dx and dy.
+    Case("expanded", 17, 21, (-0.65625e-3, 0.90625e-3), (-2e-3 / 3, 2e-3 / 3)),
+)
+
+
+def make_case(case: Case, target_load_n: float | None = None):
+    """Build a rigid initial root; target_load_n is SI N and is never rescaled."""
+    x = np.linspace(*case.x_limits_m, case.nx)
+    y = np.linspace(*case.y_limits_m, case.ny)
+    xx, yy = np.meshgrid(x, y, indexing="xy")
+    film_scale_m, length_scale_m, pressure_scale_pa = 20e-6, 5e-4, 21250.0
+    film = (film_scale_m + xx**2 / 0.02 + yy**2 / 0.04) / film_scale_m
+    pressure = solve_reynolds_pressure(
+        film, (x[1] - x[0]) / length_scale_m,
+        (y[1] - y[0]) / length_scale_m, 12.0, rtol=1e-12, atol=1e-14,
+    ).pressure
+    if target_load_n is None:
+        target_load_n = float(trapezoid(trapezoid(pressure * pressure_scale_pa, x, axis=1), y))
+    problem = BorderedReynoldsElasticityProblem(
+        x, y, 0.01, 0.02, 1e6, length_scale_m, film_scale_m, pressure_scale_pa,
+        12.0, target_load_n, compliance_factor=0.0, reynolds_residual_scale=100.0,
+        krylov_max_iterations=50,
+    )
+    initial = solve_monolithic_full_film_load(problem, pressure, film_scale_m, max_iterations=12)
+    return problem, initial
+
+
+def _solution_at(problem, initial, step):
+    z = np.asarray(step.state)
+    saved_gamma = problem.compliance_factor
+    try:
+        problem.compliance_factor = step.parameter
+        pressure, film, displacement = problem.state_fields(z[:-1], float(z[-1]))
+    finally:
+        problem.compliance_factor = saved_gamma
+    return replace(
+        initial,
+        pressure_dimensionless=pressure,
+        pressure_pa=pressure * problem.pressure_scale_pa,
+        film_thickness_m=film,
+        elastic_displacement_m=displacement,
+        central_film_offset_m=float(z[-1]) * problem.film_scale_m,
+        calculated_load_n=float(trapezoid(
+            trapezoid(pressure * problem.pressure_scale_pa, problem.x, axis=1), problem.y
+        )),
+        load_residual_n=float(trapezoid(
+            trapezoid(pressure * problem.pressure_scale_pa, problem.x, axis=1), problem.y
+        )) - problem.target_load_n,
+        history=(),
+    )
+
+
+def _require_verified(audit, problem):
+    # A combined RMS corrector tolerance permits a small sqrt((N+1)/N)
+    # factor in Reynolds RMS; verify each component separately here.
+    if (
+        audit.reynolds_rms_scaled > 1.01e-8
+        or abs(audit.load_residual_scaled) > 1e-6
+        or audit.minimum_film_m <= problem.film_floor_m
+        or audit.boundary_pressure_max_pa != 0.0
+        or audit.pressure_scaling_max_error_pa > 1e-10
+        or audit.film_coupling_max_error_m > 1e-12 * problem.film_scale_m
+        or audit.displacement_max_error_m > 1e-12 * problem.film_scale_m
+        or audit.maximum_local_flux_balance > 1e-6
+        or abs(audit.net_boundary_flux) > 1e-6
+        or abs(audit.net_boundary_flux - audit.summed_local_flux_balance) > 1e-10
+    ):
+        raise RuntimeError(f"independent branch-state audit failed: {audit}")
+
+
+def run_case(case, problem, initial, directory, *, maximum_steps=12, plots=False):
+    started = time.perf_counter()
+    result = continue_monolithic_compliance_pseudo_arclength(
+        problem, initial, initial_step=0.03, maximum_step=0.05,
+        maximum_steps=maximum_steps, maximum_retries_per_step=3,
+        maximum_state_size=512, residual_tolerance=1e-8,
+    )
+    # Save all attempted states before checking acceptance independently.
+    np.savez_compressed(
+        directory / f"{case.name}_states.npz", x_m=problem.x, y_m=problem.y,
+        states=np.asarray([step.state for step in result.branch.steps]),
+        parameters=np.asarray([step.parameter for step in result.branch.steps]),
+        accepted=np.asarray([step.accepted for step in result.branch.steps]),
+    )
+    accepted = [step for step in result.branch.steps if step.accepted]
+    if not accepted:
+        raise RuntimeError(f"no accepted branch states for {case.name}")
+    audits = []
+    for step in accepted:
+        audit = audit_full_film_solution(
+            problem, _solution_at(problem, initial, step), compliance_factor=step.parameter
+        )
+        audits.append(audit)
+        _require_verified(audit, problem)
+    peak_index = max(range(len(accepted)), key=lambda index: accepted[index].parameter)
+    peak = accepted[peak_index]
+    reversals = [
+        (before, after)
+        for before, after in zip(accepted, accepted[1:], strict=False)
+        if before.tangent_parameter_component * after.tangent_parameter_component < 0
+    ]
+    summary = {
+        "case": asdict(case), "target_load_n": problem.target_load_n,
+        "dx_m": problem.dx_m, "dy_m": problem.dy_m,
+        "initial_h0_m": initial.central_film_offset_m,
+        "termination_reason": result.branch.termination_reason,
+        "maximum_sampled_compliance": peak.parameter,
+        "peak_state_audit": asdict(audits[peak_index]),
+        "peak_jacobian_condition_number": peak.jacobian_condition_number,
+        "peak_smallest_jacobian_singular_value": peak.smallest_jacobian_singular_value,
+        "tangent_reversal_brackets": [
+            {"attempts": [before.attempt, after.attempt],
+             "compliance": [before.parameter, after.parameter],
+             "h0_m": [before.state[-1] * problem.film_scale_m,
+                      after.state[-1] * problem.film_scale_m],
+             "tangent_parameter_components": [before.tangent_parameter_component,
+                                              after.tangent_parameter_component]}
+            for before, after in reversals
+        ],
+        "maximum_reynolds_rms_scaled": max(a.reynolds_rms_scaled for a in audits),
+        "maximum_abs_load_error_n": max(abs(a.load_residual_n) for a in audits),
+        "maximum_local_flux_balance": max(a.maximum_local_flux_balance for a in audits),
+        "maximum_abs_net_boundary_flux": max(abs(a.net_boundary_flux) for a in audits),
+        "steps": [asdict(step) for step in result.branch.steps],
+        "audits": [asdict(audit) for audit in audits],
+        "elapsed_seconds": time.perf_counter() - started,
+    }
+    if plots:
+        _save_plots(directory, case, problem, initial, peak, result.branch)
+    return summary
+
+
+def _save_plots(directory, case, problem, initial, peak, branch):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from ehl_solver.visualization import (
+        plot_field_cross_section,
+        plot_film_thickness_distribution,
+        plot_monolithic_conditioning,
+        plot_pressure_distribution,
+        plot_pseudo_arclength_branch,
+        plot_pseudo_arclength_diagnostics,
+    )
+    solution = _solution_at(problem, initial, peak)
+    accepted = [step for step in branch.steps if step.accepted]
+    figures = {
+        "branch": plot_pseudo_arclength_branch(branch, state_label="h0 / h_ref")[0],
+        "correctors": plot_pseudo_arclength_diagnostics(branch)[0],
+        "conditioning": plot_monolithic_conditioning(
+            [step.parameter for step in accepted],
+            [step.jacobian_condition_number for step in accepted],
+            [step.smallest_jacobian_singular_value for step in accepted],
+            [math.nan] * len(accepted),
+        )[0],
+        "pressure": plot_pressure_distribution(problem.x, problem.y, solution.pressure_pa)[0],
+        "film": plot_film_thickness_distribution(
+            problem.x, problem.y, solution.film_thickness_m
+        )[0],
+    }
+    for axis in ("x", "y"):
+        for field, values in (
+            ("pressure", solution.pressure_pa),
+            ("film", solution.film_thickness_m),
+        ):
+            figures[f"{field}_{axis}"] = plot_field_cross_section(
+                problem.x, problem.y, values, axis=axis, coordinate_m=0.0,
+                quantity=field,
+            )[0]
+    figure, axis = plt.subplots(constrained_layout=True)
+    mesh = axis.pcolormesh(
+        problem.x * 1e3, problem.y * 1e3, solution.elastic_displacement_m * 1e6,
+        shading="auto", cmap="coolwarm",
+    )
+    axis.set(xlabel="x [mm] (entrainment)", ylabel="y [mm]", title="Unscaled displacement w")
+    figure.colorbar(mesh, ax=axis, label="w [µm]; film uses gamma*w")
+    figures["displacement"] = figure
+    for name, figure in figures.items():
+        figure.savefig(directory / f"{case.name}_{name}.png", dpi=120)
+        plt.close(figure)
+
+
+def _json_finite(value):
+    if isinstance(value, dict):
+        return {key: _json_finite(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_json_finite(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
+def main(output_directory: Path, *, maximum_steps=12, plots=False):
+    output_directory.mkdir(parents=True, exist_ok=False)
+    report = {
+        "model": "signed full-film mathematical branch; no coupled cavitation",
+        "axis_order": "(ny, nx); x is entrainment",
+        "runtime": {"python": platform.python_version(), "numpy": np.__version__,
+                    "scipy": scipy.__version__,
+                    "OPENBLAS_NUM_THREADS": os.environ.get("OPENBLAS_NUM_THREADS"),
+                    "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS")},
+        "settings": {"maximum_steps": maximum_steps, "initial_step": 0.03,
+                     "maximum_step": 0.05, "maximum_retries_per_step": 3,
+                     "maximum_state_size": 512, "residual_tolerance": 1e-8,
+                     "E_star_pa": 1e6, "length_scale_m": 5e-4,
+                     "film_scale_m": 20e-6, "pressure_scale_pa": 21250.0,
+                     "reynolds_parameter": 12.0, "reynolds_residual_scale": 100.0},
+        "cases": [],
+    }
+    baseline_problem, baseline_initial = make_case(CASES[0])
+    target_load_n = baseline_problem.target_load_n
+    for case in CASES:
+        problem, initial = (
+            (baseline_problem, baseline_initial) if case is CASES[0]
+            else make_case(case, target_load_n)
+        )
+        summary = run_case(
+            case, problem, initial, output_directory, maximum_steps=maximum_steps, plots=plots
+        )
+        report["cases"].append(summary)
+        (output_directory / "summary.json").write_text(
+            json.dumps(_json_finite(report), indent=2, allow_nan=False) + "\n"
+        )
+        print(f"{case.name} ({case.ny}, {case.nx}): "
+              f"sample max gamma={summary['maximum_sampled_compliance']:.9f}; "
+              f"reversal brackets={len(summary['tangent_reversal_brackets'])}; "
+              f"{summary['elapsed_seconds']:.2f} s", flush=True)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-directory", type=Path, default=Path("results/branch_sensitivity"))
+    parser.add_argument("--maximum-steps", type=int, default=12, choices=range(1, 41))
+    parser.add_argument("--plots", action="store_true")
+    options = parser.parse_args()
+    logging.basicConfig(level=logging.WARNING)
+    main(options.output_directory, maximum_steps=options.maximum_steps, plots=options.plots)

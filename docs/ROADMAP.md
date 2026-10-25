@@ -101,3 +101,25 @@ Next development action: run a bounded grid/domain sensitivity study of the
 semantics. Compare residual roots, film feasibility, conditioning and tangent
 reversal across meshes before drawing physical conclusions or changing
 preconditioners. Continue to preserve the original staged HIP checkout.
+
+## Grid/domain branch sensitivity increment (2026-10-25)
+
+Added a bounded, reproducible 1 MPa branch study at one fixed signed load,
+with direct-convolution elasticity and independently differenced face-flux
+state audits. Three same-domain grids and one enlarged domain all detect
+positive-film tangent reversals; largest sampled compliance factors are
+0.182129572 (7x9), 0.179202822 (13x17), 0.178327919 (19x25) and
+0.176400509 (17x21 expanded at baseline spacing). All 48 accepted states
+pass independent Reynolds/load/coupling/edge/flux checks. See PHYSICS.md
+for the physical inputs, negative target load, measured residuals and run
+recipe. Attempt states, metadata and optional plots are preserved in new
+untracked result directories. No existing baseline was overwritten.
+Verification: `ruff check .` clean; `pytest -q` 140 passed, 4 optional
+GPU skips; the four-case benchmark with all plots completed.
+
+The observed mesh and domain dependence precludes claiming a converged
+fold or physical instability. Next action: quantify the exact gamma/E*
+compliance scaling before treating the 100 kPa case as a distinct failure;
+then localize tangent reversals and extend the grid/domain study with a
+common dimensional load. Strong coupling, physical load closure, and coupled
+cavitation remain unfinished.

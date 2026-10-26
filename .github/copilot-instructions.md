@@ -14,3 +14,7 @@ The signed full-film nonlinear solver and dense pseudo-arclength continuation
 are mathematical verification tools. They do not establish physical EHL load
 closure, coupled cavitation, or strong-compliance robustness. Continue from the
 roadmap and measured diagnostics rather than assuming those goals are complete.
+
+Use `docs/VALIDATION_REPORT.md` for the scientific audit and reproducible CPU
+benchmark hierarchy. Preserve the optional signed full-film NVIDIA solver;
+its mathematical verification does not imply a verified GPU JFO solver.

@@ -109,6 +109,22 @@ def test_pressure_map_keeps_negative_values_and_labels_colorbar():
     plt.close(figure)
 
 
+@pytest.mark.parametrize("peak", [0.0, 8000.0])
+def test_pressure_contours_cover_roundoff_negatives_and_constant_fields(peak):
+    x, y, _, _ = _sample_fields()
+    pressure = np.full((len(y), len(x)), peak)
+    pressure[2:, 2:] = -1e-14 if peak else 0
+    original = pressure.copy()
+    figure, axes = plot_pressure_distribution(x, y, pressure)
+    levels = axes.collections[0].levels
+    assert levels[0] <= pressure.min() / 1e6
+    assert levels[-1] >= pressure.max() / 1e6
+    assert np.all(np.diff(levels) > 0)
+    assert "Full-film" not in axes.get_title()
+    np.testing.assert_array_equal(pressure, original)
+    plt.close(figure)
+
+
 def test_film_map_marks_minimum_at_correct_location_and_units():
     x, y, _, film = _sample_fields()
     figure, axes = plot_film_thickness_distribution(x, y, film)

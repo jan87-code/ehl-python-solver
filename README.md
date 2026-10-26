@@ -236,8 +236,22 @@ presenting it as a converged solution.
 The standalone cavitation prototype conserves mass and demonstrates
 mesh-refined pressure behavior at selected rupture/reformation fronts and
 reduced pressure under a uniform starved inlet. These are dimensionless
-prescribed-film checks only; experimental cavitation validation and
-elastic/load-controlled cavitation remain future work.
+prescribed-film checks. Separate CPU cavitation/elasticity and positive-load
+solvers pass limited numerical benchmarks; independent physical validation
+and domain-independent film heights remain open.
+
+Reproduce the annotated CPU Hertz, analytical cavitation, rigid far-field,
+loaded-grid and separate-boundary studies, including SI NPZ/JSON data:
+
+```bash
+python -m examples.run_scientific_validation --output-directory results/scientific_validation_new
+```
+
+Use one BLAS/OpenMP thread and a fresh output directory. See
+[`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md) for the equation/unit
+audit, exact inputs, independent checks, quantitative discrepancies,
+Linux/PowerShell reproduction and the remaining classical-EHL requirements.
+This runner requires no PyTorch and preserves the signed full-film CUDA path.
 
 The solver does not require plotting or collect snapshots unless
 `plot_every` or `snapshot_iterations` is explicitly set. Generated

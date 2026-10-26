@@ -160,6 +160,16 @@ def main(directory, *, plots=False, target_load_n=0.002):
                     / np.linalg.norm(reference.pressure_pa)
                 ),
             }
+            np.savez_compressed(
+                directory / f"{label}_nested_reference.npz",
+                x_m=problem.x_m,
+                y_m=problem.y_m,
+                pressure_pa=reference.pressure_pa,
+                film_m=reference.film_thickness_m,
+                theta=reference.fractional_film_content,
+                displacement_m=reference.elastic_displacement_m,
+                h0_m=reference.central_film_offset_m,
+            )
             np.testing.assert_allclose(
                 solution.pressure_pa, reference.pressure_pa, rtol=1e-6, atol=1e-4
             )

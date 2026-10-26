@@ -540,3 +540,54 @@ suite 321 passed, including CUDA. With torch imports blocked: 259 passed,
 62 optional skips. With CUDA hidden, selected backend tests: 51 passed,
 31 skipped. No drivers/packages were installed; pre-existing egg-info changes
 and generated benchmarks remain outside the commit.
+
+## Scientific audit, physical interpretation and reproducible figures (2026-10-26)
+
+Audited the latest develop state, including the optional resident signed
+full-film NVIDIA path, and retained all numerical physics unchanged.
+`docs/VALIDATION_REPORT.md` now states the exact conservative SI/scaled JFO
+equations, constraints, deformation/Hertz conventions, finite boundaries,
+solver assumptions and reasons the weak-domain pressure/film shapes cannot
+be compared directly with classical piezoviscous EHL. Accessible NASA target
+tables are identified with precise model/readiness limitations; no reference
+agreement is manufactured for missing viscosity/density laws.
+
+Added a single CPU runner for the independent Hertz/parabolic references,
+rigid point extent/resolution study, monolithic/nested load comparison,
+three loaded grids and seven separate boundary cases. It generates annotated
+field/centerline, conservation/load/Krylov, grid/domain and active-region
+figures with portable SI NPZ fields and finite JSON histories/provenance.
+Fresh-directory and failure checkpoints preserve existing data and distinguish
+failure from converged domain-sensitive behavior. A plotting-only defect
+(automatic contour levels omitting tiny negative roundoff values) is fixed
+without clipping fields; the generic full-film title is corrected.
+
+The 25x37 loaded case independently closes 0.002 N with max mass residual
+2.96e-13, hmin=21.8446984 um at (0.0208333,0) mm and pmax=0.00792941974
+MPa at (-0.222222,0) mm. Coarse monolithic/nested pressure discrepancy is
+8.25e-13 relative. Dry Hertz force/displacement errors and wide analytical
+JFO pressure/content errors decrease under their documented refinements.
+
+The distinct fixed-gap rigid probe separates extent and resolution on nine
+grids through 257x257, using a 70,000-node cap and one BLAS/OpenMP thread.
+All states pass a separate SI flux audit (largest max residual 1.03e-10),
+but doubling extent from 16 to 32 natural lengths still changes force by
+5.51%. Similarity tests independently verify pressure/force/length units.
+No domain-independent physical film-height result is claimed. The maximum
+far-corner rigid slope reaches 0.1753, so unlimited parabolic-domain expansion
+is not automatically a physical remedy.
+
+Next scientific action: quantify the rigid and coupled far-field error
+budget with independently justified boundary treatment and resolved inner
+meshes. Then benchmark SI viscosity/density laws and their derivatives
+before adding them to the conservative monolithic JFO system. Keep the
+existing CPU references and signed full-film CUDA path; a device JFO port
+remains a separate verification milestone. No new drivers/packages or
+simulation output baselines are introduced.
+
+Final acceptance: `ruff check .` clean; `pytest -q` 269 passed, 62 optional
+PyTorch/device skips (63.77 s). The complete runner finishes all five stages
+and produces 96 figures plus 75 SI NPZ files under
+`results/scientific_validation_20261026_final/`; representative field,
+convergence, boundary and matched-reference figures were visually checked.
+No new GPU execution or full physical EHL validation is claimed.

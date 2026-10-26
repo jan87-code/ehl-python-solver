@@ -102,13 +102,24 @@ def plot_pressure_distribution(
     pressure = np.asarray(pressure_pa, dtype=np.float64)
     if pressure.shape != (y.size, x.size):
         raise ValueError("pressure_pa must have shape (ny, nx)")
+    if not np.all(np.isfinite(pressure)):
+        raise ValueError("pressure_pa must contain only finite values")
     fig, ax = plt.subplots(figsize=(8, 5.5), constrained_layout=True)
-    contour = ax.contourf(x * 1e3, y * 1e3, pressure / 1e6, levels=101, cmap="coolwarm")
+    minimum, maximum = float(pressure.min() / 1e6), float(pressure.max() / 1e6)
+    # Automatic level locators can start at zero despite a small negative
+    # roundoff value, leaving unfilled polygons. Include all supplied data.
+    if minimum == maximum:
+        span = max(abs(minimum), 1.0) * np.finfo(float).eps * 128
+        minimum, maximum = minimum - span, maximum + span
+    contour = ax.contourf(
+        x * 1e3, y * 1e3, pressure / 1e6,
+        levels=np.linspace(minimum, maximum, 101), cmap="coolwarm",
+    )
     colorbar = fig.colorbar(contour, ax=ax)
     colorbar.set_label("Pressure [MPa]")
     ax.set_xlabel("Entrainment coordinate x [mm]")
     ax.set_ylabel("Transverse coordinate y [mm]")
-    ax.set_title("Full-film pressure distribution")
+    ax.set_title("Pressure distribution")
     return fig, ax
 
 

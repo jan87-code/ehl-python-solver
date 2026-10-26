@@ -1918,3 +1918,32 @@ is exercised; Linux CUDA/ROCm execution, other devices, arbitrary strong
 coupling, broad continuation robustness and GPU JFO remain unverified.
 The unresolved physical far-field/domain and film-height questions are
 unchanged. Full physical GPU EHL support is not marked complete.
+
+### Scientific audit and reproducible CPU validation hierarchy
+
+`docs/VALIDATION_REPORT.md` consolidates the governing equations, units,
+deformation/Hertz conventions, boundary/coordinate audit, diagnostic plot
+interpretation, exact benchmark settings and numerical-versus-physical
+validation limits. It identifies accessible NASA classical-EHL target
+tables and their missing constitutive/boundary requirements without claiming
+an unmatched isoviscous comparison. It also records the controlled rigid
+point-contact extent/resolution probe through 257x257, with separate SI
+flux audits and dimensional-similarity regressions. Domain independence
+remains open despite small conservative residuals.
+
+`python -m examples.run_scientific_validation --output-directory results/new_validation`
+regenerates Hertz, finite-inlet analytical JFO, rigid point far-field,
+loaded-grid and separately extended-boundary calculations. Figures include
+physical units, orientation, operating conditions, sampled extrema and
+status/residuals; SI NPZ states, matched nested reference fields, JSON
+histories and source/runtime provenance are saved. Existing output
+directories are refused. This benchmark runner needs no PyTorch and does
+not modify the signed full-film CUDA implementation.
+
+The generic pressure contour renderer now explicitly covers the entire
+supplied pressure range, including tiny negative roundoff values. Automatic
+levels previously excluded those values in near-zero cavitated regions,
+leaving white polygons; the generic full-film title was also misleading
+when reused for cavitation. Data are neither clipped nor smoothed by this
+correction. Zero load errors remain exact in the saved data and are shown
+using a symmetric-log axis rather than replaced by an arbitrary floor.

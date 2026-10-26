@@ -2083,3 +2083,26 @@ rows without interpolation. Coarse candidates can conserve mass while failing
 load/field accuracy, and remain explicitly rejected for approximation use.
 Reference mesh changes are reported separately; finite-reservoir approximation
 success is not continuum, infinite-domain or coupled physical validation.
+
+### Conditional film derivative and all-inner source evaluation
+
+The exterior result records its wet/dry set. A prescribed-film directional
+response differentiates arithmetic H^3 mobility by 3 H^2 dH and face film
+by dH, preserving upstream theta and fixed physical supply. The same
+constrained exterior Schur solve reconstructs pressure/content directions
+throughout the full finite reservoir. SI directions use h+epsilon v, v [m]
+and dimensionless epsilon. Independent paired solves verify the derivative
+on unchanged active sets on both uniform and graded grids. It is not a
+generalized derivative at a moving front, nor the Jacobian of a new nonlinear
+coupled solver. Mismatched/nonconverged root films are rejected explicitly.
+
+Bounded direct cell integration now evaluates retained/exterior displacement
+at every retained target, not just sampled center/peak nodes. Uniform
+pressure-direction results match the full FFT; a frozen-film restriction of
+an independently rerun uniform coupled root matches pressure/content/load
+and all 289 inner displacements. Validation report section 9 distinguishes
+this preparatory restriction from solving a new coupled problem. A graded
+coupled solver still needs a consistent film/source map at exterior as well
+as inner nodes, plus active-set/globalization verification. No pressure
+trace, missing-source correction or nonlinear film update is inferred from
+the frozen-root agreement.

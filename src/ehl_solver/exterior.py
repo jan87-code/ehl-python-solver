@@ -23,6 +23,16 @@ class ExteriorSolution:
     retained_mask: np.ndarray
     audit: dict
     history: tuple
+    full_active_set: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class ExteriorTangent:
+    """Direction per unit dimensionless perturbation amplitude; SI pressure [Pa]."""
+
+    pressure_direction_pa: np.ndarray
+    content_direction: np.ndarray
+    linear_info: dict
 
 
 def _mass_operator(x, y, film, parameter, inlet):
@@ -238,7 +248,7 @@ def solve_exterior_response(
             film_scale_m=film_scale_m,
             pressure_scale_pa=pressure_scale_pa,
         )
-        return ExteriorSolution(pressure, content, mask, audit, tuple(history))
+        return ExteriorSolution(pressure, content, mask, audit, tuple(history), full.copy())
     raise RuntimeError("exterior JFO active-set iteration limit reached")
 
 
@@ -276,3 +286,138 @@ def exterior_source_budget(x_m, y_m, solution, e_star_pa, target_points_m):
         "total_displacement_m": total.tolist(),
         "maximum_displacement_partition_error_m": float(abs(wi + we - total).max()),
     }
+
+
+def differentiate_exterior_response(
+    x_m,
+    y_m,
+    film_m,
+    film_direction_m,
+    solution,
+    viscosity_pa_s,
+    speed_m_s,
+    *,
+    length_scale_m,
+    film_scale_m,
+    pressure_scale_pa,
+):
+    """Conditional prescribed-film derivative, with the returned active set fixed.
+
+    h(epsilon)=h+epsilon*film_direction_m. Differentiate original conservative
+    fluxes, solve A dz=-d(div q)/dh dh with zero constraint directions, and
+    condense/reconstruct exterior directions. Physical reservoir and supply,
+    scales, core mask and active set stay fixed. This is NOT a derivative
+    through a front change, nor a coupled-film Newton implementation.
+    """
+    x, y = axis(x_m), axis(y_m)
+    h, dh = np.asarray(film_m, float), np.asarray(film_direction_m, float)
+    if (
+        h.shape != (len(y), len(x))
+        or h.size > 20000
+        or dh.shape != h.shape
+        or not np.all(np.isfinite(h))
+        or not np.all(np.isfinite(dh))
+        or np.any(h <= 0)
+        or solution.pressure_pa.shape != h.shape
+        or solution.fractional_film_content.shape != h.shape
+        or solution.retained_mask.shape != h.shape
+        or solution.retained_mask.dtype != bool
+        or not np.all(np.isfinite(solution.pressure_pa))
+        or not np.all(np.isfinite(solution.fractional_film_content))
+    ):
+        raise ValueError("invalid prescribed-film tangent arrays or node budget")
+    if not all(
+        np.isfinite(v) and v > 0
+        for v in (viscosity_pa_s, speed_m_s, length_scale_m, film_scale_m, pressure_scale_pa)
+    ):
+        raise ValueError("positive finite tangent scales, viscosity and speed required")
+    n = (len(y) - 2) * (len(x) - 2)
+    if (
+        solution.full_active_set is None
+        or solution.full_active_set.shape != (n,)
+        or solution.full_active_set.dtype != bool
+    ):
+        raise ValueError("tangent requires the solver's recorded full active set")
+    audit = flux_audit(
+        x,
+        y,
+        h,
+        solution.pressure_pa,
+        solution.fractional_film_content,
+        viscosity_pa_s,
+        speed_m_s,
+        length_scale_m=length_scale_m,
+        film_scale_m=film_scale_m,
+        pressure_scale_pa=pressure_scale_pa,
+    )
+    if (
+        audit["mass_maximum"] > 1e-8
+        or audit["maximum_complementarity"] > 1e-10
+        or solution.pressure_pa.min() < -1e-10 * pressure_scale_pa
+        or solution.fractional_film_content.min() < -1e-10
+        or solution.fractional_film_content.max() > 1 + 1e-10
+    ):
+        raise ValueError("tangent requires a feasible converged root for the supplied film")
+    X, Y, H, dH = x / length_scale_m, y / length_scale_m, h / film_scale_m, dh / film_scale_m
+    parameter = (
+        12 * viscosity_pa_s * speed_m_s * length_scale_m / (film_scale_m**2 * pressure_scale_pa)
+    )
+    mass, _ = _mass_operator(X, Y, H, parameter, 1)
+    full = solution.full_active_set
+    constraints = hstack([diags((~full).astype(float)), diags(full.astype(float))])
+    matrix = vstack([mass, constraints], format="csr")
+    p = solution.pressure_pa / pressure_scale_pa
+    theta = solution.fractional_film_content
+    d_mobility = 3 * H**2 * dH
+    dqx = -(d_mobility[:, 1:] + d_mobility[:, :-1]) / 2 * np.diff(p, axis=1) / np.diff(X)
+    dqx += parameter * (dH[:, 1:] + dH[:, :-1]) / 2 * theta[:, :-1]
+    dqy = -(d_mobility[1:] + d_mobility[:-1]) / 2 * np.diff(p, axis=0) / np.diff(Y)[:, None]
+    wx, wy = (X[2:] - X[:-2]) / 2, (Y[2:] - Y[:-2]) / 2
+    residual = np.diff(dqx[1:-1], axis=1) / wx + np.diff(dqy[:, 1:-1], axis=0) / wy[:, None]
+    z, info = _condensed_solve(
+        matrix, np.r_[-residual.ravel(), np.zeros(n)], solution.retained_mask[1:-1, 1:-1].ravel()
+    )
+    if not np.all(np.isfinite(z)):
+        raise RuntimeError("nonfinite prescribed-film exterior tangent")
+    dp, dt = np.zeros_like(h), np.zeros_like(h)
+    dp[1:-1, 1:-1] = z[:n].reshape(h.shape[0] - 2, h.shape[1] - 2) * pressure_scale_pa
+    dt[1:-1, 1:-1] = z[n:].reshape(h.shape[0] - 2, h.shape[1] - 2)
+    dt[1:-1, -1] = dt[1:-1, -2]
+    dt[0], dt[-1] = dt[1], dt[-2]
+    return ExteriorTangent(dp, dt, info)
+
+
+def retained_source_displacements(x_m, y_m, solution, e_star_pa):
+    """Direct free-space source accounting at EVERY retained target, bounded.
+
+    Return SI target coordinates and retained/exterior/total displacement [m].
+    At most 2048 targets and 20 million source-target pairs; existing direct
+    source-cell evaluations are batched at 32 targets. No dense kernel is
+    stored and no unequal-cell FFT is used. This evaluates a given pressure,
+    not an elasticity-coupled pressure solve.
+    """
+    from ehl_solver.elasticity_audit import direct_midpoint_displacement
+
+    x, y = axis(x_m), axis(y_m)
+    p, mask = solution.pressure_pa, solution.retained_mask
+    if p.shape != (len(y), len(x)) or mask.shape != p.shape or mask.dtype != bool:
+        raise ValueError("invalid retained-target source fields")
+    indices = np.argwhere(mask)
+    if len(indices) > 2048 or len(indices) * p.size > 20_000_000:
+        raise ValueError("retained displacement exceeds 2048 targets or 20 million pairs")
+    if len(indices) == 0:
+        raise ValueError("no retained targets")
+    points = np.column_stack([x[indices[:, 1]], y[indices[:, 0]]])
+    output = {"target_points_m": points}
+    for name, field in (
+        ("retained_displacement_m", np.where(mask, p, 0)),
+        ("exterior_displacement_m", np.where(mask, 0, p)),
+        ("total_displacement_m", p),
+    ):
+        output[name] = np.concatenate(
+            [
+                direct_midpoint_displacement(x, y, field, e_star_pa, points[k : k + 32])
+                for k in range(0, len(points), 32)
+            ]
+        )
+    return output

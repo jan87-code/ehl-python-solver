@@ -780,3 +780,40 @@ Milestone verification: Ruff clean; complete pytest 300 passed, 62 optional
 device skips (70.68 s). Independent reference/outer-refinement and diagnostic
 flow/front regressions pass. All source hashes and 13-state/five-figure
 manifest checks pass; coarse field-error failures remain visible.
+
+## Exterior coupling prerequisites (2026-10-26)
+
+Continued from 97e38db. Added a conditional prescribed-film exterior tangent
+with the actual recorded wet/dry set, independently checked by paired
+nonlinear solves for inner and upstream exterior film perturbations on uniform
+and graded grids. Analytic force directions are also independently integrated
+and compared. Added bounded direct retained/exterior source evaluation at
+every inner target: 2048-target and 20-million-pair caps, batches of 32,
+no dense kernel and no unequal-cell FFT.
+
+Evidence: `results/exterior_coupling_audit_20261026_verified/`, 13 raw SI
+archives, two figures, perturbed roots/audits, source/runtime hashes and an
+independently rerun unchanged full coupled reference with its histories.
+Uniform direction pressure errors at the last amplitude are 8.29e-8 and
+8.16e-11. At the full coupled reference's frozen film the exterior pressure
+error is 4.36e-15 relative, load matches to reported precision, and all 289
+inner direct displacements match coupled FFT within 7.28e-23 m.
+
+Still unimplemented: a new nonlinear exterior-coupled root and a consistent
+graded source/target film map throughout the exterior. Fixed-active-set
+derivatives do not cover front switches. These are prerequisites, not a
+claim of coupled domain independence or an infinite reservoir formulation.
+
+Next justified action: first verify a bounded, globalized exterior nonlinear
+iteration on uniform finite reservoirs against the full coupled reference.
+Independently audit original flux, load, film positivity and full source
+coupling through active-set changes. Only then port to a verified graded
+full film map, including exterior-target displacements/derivatives. Preserve
+existing coupled/GPU code and all prior numerical limitations. No new
+constitutive law or GPU JFO work is justified by these partial checks.
+
+Milestone verification: Ruff clean; full pytest 304 passed, 62 optional
+device skips (79.99 s). Four new uniform/graded derivative configurations
+pass. All final benchmark acceptance flags, original perturbed-root audits,
+recorded active sets, source hashes and 13-state/two-figure checks pass.
+No nonlinear condensed-exterior coupled root is claimed from this evidence.

@@ -313,3 +313,15 @@ physical reservoir bounds, retains field-error failures, and audits supply,
 fronts and exterior elastic sources. The finest graded load discrepancy is
 0.129% against the finest uniform reference. Reference mesh uncertainty and
 remaining coupled/infinite-domain limitations are documented in report section 8.
+
+Preparatory exterior film-derivative and all-inner elastic-source checks:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_exterior_coupling_audit --output-directory results/exterior_coupling_audit_new
+```
+
+These compare fixed-active-set film directions with paired nonlinear rigid
+solves and restrict a freshly rerun uniform coupled root at its frozen film.
+They verify every retained target's exterior-source contribution; they do
+not introduce a new nonlinear coupled solver. See report section 9.

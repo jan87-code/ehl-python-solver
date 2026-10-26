@@ -1178,3 +1178,138 @@ front-mismatch detection and portable diagnostic JSON. All four uniform
 and nine graded states finish; four graded candidates meet every stated
 reference comparison. Source hashes, manifests and representative error
 and saturation figures were inspected.
+
+## 9. Film-response derivative and all-inner source prerequisites (2026-10-26)
+
+Starting revision: `97e38db03f7c9fa3e5306f66c91f1961fbab755d`.
+**Verified preparatory scope: prescribed-film exterior derivatives on a fixed
+wet/dry set, and elastic-source accounting at every retained target.** The
+unchanged uniform coupled solver supplies an independent reference. No new
+nonlinear condensed-exterior coupling, graded coupled root, or physical
+infinite-domain validation is claimed.
+
+### Conditional film derivative
+
+The exterior result now retains the actual pressure/content active set.
+`differentiate_exterior_response` accepts SI film h [m] and direction v [m],
+with `h(epsilon)=h+epsilon v` and dimensionless epsilon. Scales, reservoir,
+west supply and active set remain fixed. With H=h/h_ref, V=v/h_ref, the
+explicit film derivative of the original conservative face flux is
+
+```
+dq_x = -avg(3 H^2 V) diff(P)/dX + Lambda avg(V) theta_west,
+dq_y = -avg(3 H^2 V) diff(P)/dY.
+```
+
+Divide the flux differences by the original midpoint control widths and
+solve `A dz = -(div(dq), 0_constraints)` with the same full constrained
+exterior condensation. Reconstruct both pressure [Pa per unit epsilon]
+and content directions everywhere, including the exterior. The physical
+inlet content direction is zero. Return the true rowwise linear backward
+error separately from the physical root audit. Reject missing active-set
+records and films that do not independently reproduce a feasible,
+mass-converged base root. Tangent pressures may be signed; they are linear
+directions, not physical pressure fields to clip.
+
+On a 33x33 uniform +/-8L,+/-8Ly rigid problem with dX=0.5 and section-7
+parameters, use smooth SI directions
+`v=H0 exp(-((X-X0)^2+(y/Ly)^2)/2)` for X0=-0.5 and -4. The first acts
+primarily near the contact; the second probes upstream exterior influence.
+For epsilon=0.01,0.003,0.001,0.0003, independently solve both perturbed
+nonlinear JFO problems and compare central differences. Their wet/dry sets
+are explicitly checked against the recorded base set; no change occurs in
+these benchmark pairs. All perturbed roots pass original SI mass/constraint
+criteria, rather than being accepted only for a small derivative difference.
+
+| Direction center X0 | Pressure error at eps=0.01 | Pressure error at eps=0.0003 | Content error at eps=0.0003 | Force-direction error at eps=0.0003 |
+| ---: | ---: | ---: | ---: | ---: |
+| -0.5 | 9.2067e-5 | 8.2857e-8 | 3.7196e-9 | 7.5355e-9 |
+| -4 | 6.9622e-8 | 8.1586e-11 | 3.0977e-9 | 4.4980e-11 |
+
+Errors are relative norms (force is a scalar relative error). Intermediate
+values and every raw plus/minus pressure/content pair are saved. Force
+directions are -0.0004570968134 and -0.00003144694870 N per unit epsilon,
+obtained from the analytic pressure direction by SI quadrature and checked
+against the independently perturbed loads. The exterior content error
+reaches a finite-difference roundoff plateau at the smallest amplitude;
+monotone convergence is not asserted for every quantity. A 1e-5 relative
+last-pair comparison criterion is declared before running.
+
+Four regression configurations repeat both directions on uniform and
+nonuniform graded grids. Pressure/content finite differences retain the
+same active sets and agree within 1e-6. Graded displacement-direction checks
+use direct cells on both perturbed pressure fields; they do not apply a
+uniform FFT to unequal cells. These checks do not establish a derivative
+through a rupture/reformation switch. Generalized directional derivatives,
+feasibility and globalization still need independent coupled verification.
+
+### Every inner target, including the exterior sources
+
+`retained_source_displacements` evaluates the existing exact rectangular-cell
+half-space integral at every retained node, returning separate retained,
+exterior and total contributions. It batches at most 32 targets, caps total
+targets at 2,048 and source-target pairs at 20 million before evaluation,
+and stores no dense influence matrix. The original source/node and response
+budgets remain in effect. This is a bounded direct operator evaluation,
+not a fast nonuniform coupled elasticity algorithm.
+
+For the two uniform tangent benchmarks all 81 retained targets agree with
+the independent full-domain FFT pressure-direction response to maximum
+8.28e-24 m and 2.59e-25 m. Signed pressure directions retain the linear
+half-space convention. Separately, rerun the unchanged uniform monolithic
+coupled benchmark on the fixed 65x65 +/-8L,+/-8Ly reservoir, h0=0.1 um
+and E*=1 GPa, with the original 30-correction cap. It converges in five
+Newton corrections; Q=0.002056143756 N. Its **converged film is then frozen**
+and supplied to the exterior prescribed-film solve, without supplying its
+pressure trace or active set.
+
+The exterior solve independently recovers this frozen-film pressure to
+4.36e-15 relative L2, content to 1.34e-15 maximum discrepancy, and force
+to the recorded quadrature precision. Its original SI max mass defect is
+1.67e-12, relative local/global defects 1.12e-14/2.83e-15 and
+complementarity zero at printed precision. At all 289 inner targets the
+direct retained-plus-exterior source displacement differs from the reference
+coupled FFT field by at most 7.28e-23 m; the largest source-partition
+addition discrepancy is 3.31e-24 m. Exterior pressure/deformation is thus
+retained throughout this frozen-root restriction check.
+
+This is agreement at a known coupled solution's film, **not evidence that
+a new exterior nonlinear iteration can reach that solution**. The uniform
+coupled reference still solves its full physical mesh, and its established
+SI and failure/history checks are preserved. No nonuniform elastic field
+is silently substituted into the coupled solver.
+
+### Reproduction and remaining work
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_exterior_coupling_audit \
+  --output-directory results/exterior_coupling_audit_new
+```
+
+`results/exterior_coupling_audit_20261026_verified/` contains 13 raw SI NPZ
+files, two figures, exact perturbation amplitudes, conditional active-set
+checks, analytic/finite-difference load directions, all original physical
+audits, the independently rerun coupled reference and its complete history,
+all-inner target coordinates/source contributions, and source/runtime hashes.
+Previous runs are retained. The final runner completes and every declared
+preparatory comparison passes.
+
+Next: verify a bounded nonlinear finite-reservoir iteration that updates
+exterior film as pressure changes, initially on uniform grids against the
+unchanged full coupled reference. Keep load, original SI flux, complementarity,
+film feasibility and all-source coupling errors independent. Handle active-set
+changes with verified globalization rather than reusing this conditional
+derivative across a front switch. Graded coupled integration additionally
+requires a verified full source/target film map and its consistent derivatives
+at all required nodes, including exterior targets. Current inner-target
+checks alone do not supply that map. No piezoviscous or GPU JFO work is added.
+
+Milestone verification: `ruff check .` clean; full `pytest -q` **304 passed,
+62 optional device skips** (79.99 s). Four new uniform/graded direction
+regressions verify pressure/content finite differences, nonzero exterior
+response, signed elastic-direction/FFT parity where applicable, direct
+source finite differences on unequal cells, partition closure and rejection
+of absent active sets or mismatched base films. All preparatory benchmark
+criteria, 13-state/two-figure manifest and final source hashes pass. Both
+final diagnostic figures were visually inspected.

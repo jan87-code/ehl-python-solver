@@ -325,3 +325,26 @@ These compare fixed-active-set film directions with paired nonlinear rigid
 solves and restrict a freshly rerun uniform coupled root at its frozen film.
 They verify every retained target's exterior-source contribution; they do
 not introduce a new nonlinear coupled solver. See report section 9.
+
+A separate uniform finite-reservoir exterior/Picard coupling experiment is:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_uniform_exterior_coupling --include-fine \
+  --output-directory results/uniform_exterior_coupling_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.reaudit_exterior_coupling \
+  --input-directory results/uniform_exterior_coupling_new \
+  --output-directory results/uniform_exterior_coupling_audited_new
+```
+
+It cold-starts independently of the full monolithic references, updates film
+at inner and exterior nodes from every pressure source, and retains failures.
+The optional fine case stays within the 20,000-node exterior budget. This is
+uniform-grid prescribed-offset verification; graded coupling and physical
+infinite-domain accuracy remain open. See validation report section 10.
+The fine producer reference fails the stricter local-flow audit despite
+passing the original solver defaults. The reaudit preserves that rejection
+and tightens the independent reference with one additional Newton correction;
+candidate fields are unchanged. Coupled load changes decrease to 1.58%
+under refinement, so the 1% mesh target remains open.

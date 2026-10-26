@@ -1313,3 +1313,176 @@ source finite differences on unequal cells, partition closure and rejection
 of absent active sets or mismatched base films. All preparatory benchmark
 criteria, 13-state/two-figure manifest and final source hashes pass. Both
 final diagnostic figures were visually inspected.
+
+## 10. Separate uniform exterior nonlinear coupling (2026-10-26)
+
+Starting revision: `39b87033f99dbf485d61559ad6aaaa2ccd9f2639`.
+**Verified scope: a separate uniform-grid, prescribed-offset finite-reservoir
+exterior/Picard experiment**, compared against the unchanged monolithic
+coupled solver. The new experiment starts from rigid film and zero pressure;
+no reference field, pressure trace, active set or known coupled film seeds it.
+It is a restricted isoviscous numerical benchmark, not a classical EHL or
+infinite-domain validation.
+
+### Nonlinear pressure, supply and full exterior film
+
+`exterior_coupled.solve_uniform_exterior_coupling` takes the existing
+uniform SI problem, explicit eta [Pa s], Ue [m/s] and a computational cut.
+It verifies that the SI fluid data reproduce the problem's Lambda and
+rejects incompatible flow data or a nonuniform physical source grid.
+For compliance factors 0,0.25,0.5,0.75,1, each outer iteration:
+
+1. Solves the current prescribed-film problem by exterior condensation,
+   updating wet/dry sets and reconstructing pressure/content **everywhere**.
+2. Applies the original full-source zero-padded uniform FFT to all reconstructed
+   pressure, including exterior sources, and updates film at every physical
+   node, including exterior nodes and boundary-node displacement.
+3. Computes original independent SI flux and complementarity on the **exact
+   pressure-coupled film**, not only on the previous inner-solve film.
+4. Accepts a stage only when relative pressure/film iteration defects are
+   <=1e-8, original max continuity <=1e-8, relative local/global balance
+   <=1e-10, existing pressure/content/complementarity/supply tolerances
+   <=1e-10, physical pressure edges are exactly zero and film is feasible.
+   Otherwise relaxes film by the fixed factor 0.5 and continues.
+
+The stage cap remains 100; inner active sets remain capped at 100 and all
+20,000-node/response-memory limits remain unchanged. This is damped Picard
+with compliance continuation, not an Armijo-globalized Newton method. It
+does not reuse the conditional derivative across a front switch. Exhaustion
+or an inner failure raises with complete outer/exterior histories and the
+last candidate; a candidate is not silently labeled converged. A deliberately
+one-iteration stage probe demonstrates this failure retention. No pressure,
+content or film clipping is introduced.
+
+The default old CPU coupled and signed GPU paths are unchanged. The new
+experiment still factors an exterior discretization every step and computes
+full-domain uniform FFT film; it is not advertised as faster or as a reduced
+physical-domain model. Load is measured at prescribed h0, not controlled
+against a target Q. Agreement of force here is an independent reference-error
+check, not a new fixed-load closure result.
+
+### Same finite reservoir and independent reference
+
+Keep x=+/-8L,y=+/-8Ly with section-7 SI inputs, h0=0.1 um, E*=1 GPa,
+ambient outer pressure and flooded west content. Independently rerun the
+old full monolithic solver on every physical mesh before comparing results;
+its cold failures/reference recovery, if any, remain in the saved reference
+history and fields. The exterior iteration is independently cold-started.
+The 33x33 grid is tested with cuts +/-L,+/-Ly and +/-2L,+/-2Ly; the 65x65
+case uses the latter cut. Relative pressure, film and load comparison
+criteria are declared at 1e-8, separately from all physical residual tests.
+All-inner direct source integration independently checks the uniform FFT.
+
+The two 33x33 cut choices give the identical reported load
+0.001938705636271269 N, minimum film 0.110918916722 um and peak pressure
+0.151611589 MPa. Both take 108 outer iterations across five stages, never
+more than 28 in a stage. Their relative monolithic pressure/load errors are
+3.27e-10/1.80e-10, and relative film error 1.09e-13. SI max continuity is
+6.42e-10, relative local/global defects below 8.86e-11/2.36e-12 and
+complementarity zero at printed precision. The arbitrary numerical cut
+therefore no longer changes the coupled answer for this same finite mesh
+and physical reservoir.
+
+At 65x65, the experiment takes 107 total outer iterations, at most 27 per
+stage. Q=0.002056143756122417 N, minimum film=0.111774059248 um and
+peak p=0.162732294 MPa. Relative pressure/load/film discrepancies are
+1.53e-10/7.46e-11/4.99e-14. Original SI max continuity is 6.96e-10,
+relative local/global defects 6.51e-11/1.04e-12 and complementarity zero
+at printed precision. All 289 retained target displacements agree with
+complete direct source integration to 1.99e-23 m. Agreement with a discrete
+root does not remove mesh error: 33->65 still increases coupled load by
+6.0576%. Further refinement is audited separately below.
+
+### Bounded 129x129 refinement and rejected-reference recovery
+
+The optional fine case has 16,641 physical nodes and an inner +/-L,+/-Ly
+cut. It converges in 103 outer iterations, at most 26 in a compliance stage.
+Q=0.002088608691325601 N, minimum film=0.112026973190 um and peak
+p=0.165680049 MPa. Original max continuity is 1.68e-9, relative local/global
+flow defects 7.94e-11/2.05e-12 and complementarity zero at printed precision.
+All 289 retained target displacements agree with complete direct source
+integration to 1.99e-23 m. This case is expensive: a uniform full exterior
+response is rebuilt for every active-set/film iteration. Single-thread CPU
+and algebraic allocation/iteration caps control the experiment; there is no
+production performance claim.
+
+Its initial independent monolithic reference converges in 27 corrections
+under the original defaults, but the separate SI audit finds max mass
+7.97e-9 and relative local defect 3.50e-10. The latter violates this study's
+1e-10 criterion. Accordingly the producer's fine reference and comparison
+are explicitly rejected and its root summary says `failed acceptance`.
+Small pressure/load differences do not override the failed reference audit.
+The candidate fields and original rejected reference/history are all saved.
+
+`examples.reaudit_exterior_coupling` copies and hashes those raw states into
+another fresh output directory. It warms the **unchanged monolithic solver
+only from its own original reference**, tightens mass tolerance to 1e-10,
+and takes one further Newton correction. It never seeds a reference from an
+exterior root. The tightened reference passes: max mass=4.28e-12, relative
+local/global defects=1.98e-14/5.14e-17. No cap or acceptance criterion is
+relaxed. This process repairs the independently computed reference precision,
+not the already saved exterior candidate.
+
+Recomputing the comparisons gives fine exterior pressure/load/film errors
+3.22e-10/1.53e-10/1.07e-13. All four candidates pass against the audited
+independent references. The entire original rejection remains available in
+the copied producer summary and raw NPZ; no failed state is retroactively
+renamed. Exact reconstructed film agrees with the archived candidate film
+at every physical node at reported floating-point precision. These checks
+separate independent-reference quality, physical residuals and field parity.
+
+The coupled same-reservoir load changes shrink from 6.0576% (33->65) to
+1.5789% (65->129), relative to the preceding result. The 1% coupled mesh
+target therefore remains open despite excellent discrete reference parity
+and cut independence. The next uniform exterior halving would have 66,049
+nodes and exceed the current 20,000-node response cap. A naive complete
+elastic source/target map on the finest 19,321-node graded rigid mesh would
+involve 373,301,041 pairs, exceeding the bounded direct evaluator's
+20-million-pair/2,048-target budgets. A verified mapped or multilevel
+source treatment is required before graded nonlinear coupling; the uniform
+FFT must not be applied directly to those unequal cells. No limits are
+silently increased to make a success claim.
+
+### Reproduction and retained evidence
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_uniform_exterior_coupling --include-fine \
+  --output-directory results/uniform_exterior_coupling_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.reaudit_exterior_coupling \
+  --input-directory results/uniform_exterior_coupling_new \
+  --output-directory results/uniform_exterior_coupling_audited_new
+```
+
+The full producer is `results/uniform_exterior_coupling_20261026_refined/`:
+three independent reference states, four exterior-coupled roots and an
+intentional budget-one failure, totalling eight SI NPZ files and two figures.
+The producer deliberately retains the fine reference rejection described
+above. `results/uniform_exterior_coupling_20261026_checked/` is the
+successful independent-reference reaudit: nine SI states, one additional
+comparison figure, all original producer histories/data/input hashes and
+fresh source/runtime provenance. Earlier coarse and diagnostic runs are
+preserved. The failure probe's raw last candidate and complete outer/exterior
+histories demonstrate bounded failure retention without raising any cap.
+Exact zero film defects are retained and shown with a symmetric-log axis.
+
+Next action: implement and independently verify a bounded complete graded
+elastic source/target map, including exterior-target film and consistent
+nonlinear derivatives. Maintain separate coupled mesh and exterior-model
+error budgets; verify front changes/globalization before claiming broad
+robustness. Finite physical-reservoir dependence, the old large-domain
+label-256 precision limitation and classical EHL physical validation remain
+open. No pressure-dependent properties or GPU JFO were added.
+
+Final milestone checks: `ruff check .` clean; full `pytest -q` **306 passed,
+62 optional device skips** (75.11 s). Two new regressions verify independent
+monolithic/exterior nonlinear root parity, original physical acceptance,
+film feasibility, iteration caps, preserved last-candidate failure/history
+and rejection of inconsistent SI flow data. All four final candidates and
+three independently audited references pass; the original fine reference
+rejection remains explicit. Producer/reaudit source hashes, copied input
+hashes, raw field counts and figure manifests were checked. Fine pressure/
+film overlays, iteration/zero-defect histories and audited comparison
+figures were visually inspected. The unresolved coupled mesh target and
+full graded source-map cost remain documented rather than hidden.

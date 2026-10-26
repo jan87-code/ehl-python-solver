@@ -817,3 +817,57 @@ device skips (79.99 s). Four new uniform/graded derivative configurations
 pass. All final benchmark acceptance flags, original perturbed-root audits,
 recorded active sets, source hashes and 13-state/two-figure checks pass.
 No nonlinear condensed-exterior coupled root is claimed from this evidence.
+
+## Uniform exterior nonlinear coupling milestone (2026-10-26)
+
+Continued from 39b8703 with a separate bounded prescribed-h0 Picard
+experiment. Every step recomputes exterior pressure/content and full-source
+uniform FFT film throughout the physical reservoir. The original monolithic
+solver is unchanged and independently cold-started on each physical mesh.
+33x33 cut-1/cut-2 probes give identical load to reported precision; 65x65
+and 129x129 probes independently converge within existing caps. All physical
+local/global/continuity/complementarity and film-feasibility criteria remain
+unchanged. Full histories, last-candidate failure retention and all-inner
+source/FFT audits are retained. No performance acceleration is claimed.
+
+Evidence: producer `results/uniform_exterior_coupling_20261026_refined/`,
+eight SI states and two figures. Its fine monolithic reference passes the
+old solver's stopping tolerances but fails the stricter independent local
+flow audit (3.50e-10 vs 1e-10), and remains explicitly rejected. A separate
+reaudit uses only that independent reference as a warm start, tightens its
+mass solve to 1e-10, and recovers it with one additional Newton correction.
+No exterior root is used to seed the reference, no candidate is recomputed
+or altered, and no tolerance is relaxed. Original rejected data/histories
+are preserved. Authoritative reaudit:
+`results/uniform_exterior_coupling_20261026_checked/`, with nine SI states,
+a reference-comparison figure and input/source hashes.
+
+All four exterior roots pass comparison against the audited independent
+references (pressure/load errors below 4e-10). Total outer iterations are
+108/108/107/103 across five compliance stages, at most 28 in a stage.
+The fine case remains within 20,000 nodes and response work limits; it is
+computationally expensive, not a production acceleration. Mesh load changes
+shrink from 6.06% to 1.58%; the 1% coupled mesh target is still not met.
+Finite-reservoir cut independence does not establish a physical infinite
+point-domain limit or classical EHL accuracy.
+
+Next justified action: verify a bounded full graded source/target film map
+and its nonlinear derivatives, preserving source-cell force and displacement,
+before graded coupling. The finest graded rigid grid has 19,321 nodes;
+a naive complete direct map would need 373,301,041 source-target pairs,
+exceeding the 20-million-pair direct budget and 2,048-target cap. Develop and
+independently benchmark a mapped/multilevel alternative instead of silently
+raising limits or applying the uniform FFT to unequal cells. Coupled mesh
+accuracy needs its own budget; another uniform exterior halving exceeds the
+20,000-node cap. Keep physical-reservoir dependence, old label-256 precision
+limitations and generalized front/globalization work visible. Piezoviscous
+physics and GPU JFO remain deferred.
+
+Final milestone verification: Ruff clean; complete pytest 306 passed,
+62 optional device skips (75.11 s). Independent-root and failure-retention
+regressions pass. All four final candidates and three audited references
+pass original criteria; the original fine reference rejection, raw fields
+and its one-correction recovery remain separately preserved. Producer and
+reaudit hashes/field counts/figures were verified and representative final
+plots inspected. No graded nonlinear or infinite-domain validation claim
+is made from this uniform finite-reservoir experiment.

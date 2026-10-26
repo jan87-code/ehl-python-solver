@@ -2106,3 +2106,23 @@ coupled solver still needs a consistent film/source map at exterior as well
 as inner nodes, plus active-set/globalization verification. No pressure
 trace, missing-source correction or nonlinear film update is inferred from
 the frozen-root agreement.
+
+### Separate uniform exterior/Picard coupling experiment
+
+`exterior_coupled.py` independently cold-starts a prescribed-h0 iteration
+with compliance factors 0,.25,.5,.75,1 and film relaxation .5. Each step
+recomputes the exterior pressure/content response, then applies the unchanged
+full-source uniform FFT to update film at both inner and exterior nodes.
+Physical continuity is evaluated on the exact film from the reconstructed
+pressure. Stage acceptance additionally requires original SI local/global
+conservation, complementarity, supply and film feasibility. Failure retains
+histories and the last candidate. Iteration/node/memory caps are unchanged.
+
+This separate damped-Picard verification is neither globalized Newton nor
+force control. It matches independent full monolithic roots while leaving
+the established coupled solver unchanged. All exterior pressure sources
+contribute to deformation; only physical outer pressure is zero, and elastic
+displacement is not fixed at that boundary. The experiment requires uniform
+physical cells. It cannot be ported to graded grids by applying this FFT to
+unequal sources. Validation report section 10 separates reference parity,
+cut independence and remaining mesh/physical-reservoir limitations.

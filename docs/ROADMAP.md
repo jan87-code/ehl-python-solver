@@ -591,3 +591,71 @@ and produces 96 figures plus 75 SI NPZ files under
 `results/scientific_validation_20261026_final/`; representative field,
 convergence, boundary and matched-reference figures were visually checked.
 No new GPU execution or full physical EHL validation is claimed.
+
+## Far-field/domain error-budget milestone — partial, open (2026-10-26)
+
+Starting at b0e8347, audited pressure/content/supply/outflow/lateral and
+elastic free-space boundary conventions. The flooded west content is fixed;
+the integrated inlet volume flow is an outcome that changes with inlet gap
+and domain placement. No content parameter is altered to force agreement.
+Density remains constant and unspecified, so flow budgets are SI volume
+flows, with mass flows equal to rho0 times those values.
+
+Added a separate rectilinear prescribed-film JFO CPU reference with the same
+arithmetic face coefficients, upwind content and active constraints. It
+matches uniform-grid flooded/starved roots and converges toward the independent
+analytical parabolic limit on nonuniform grids. A bounded direct midpoint-
+cell elasticity audit verifies source units/singular integration and uniform
+FFT padding/cropping/zero-support embedding. Graded displacements are diagnostic
+postprocessing; no graded coupled elasticity or GPU JFO solver is claimed.
+
+The reproducible 27-case study separates four fixed-domain mesh resolutions,
+outer grading, nested all-boundary extensions, individual inlet/outlet/side
+extensions and five unchanged uniform coupled cases. Every prior graded
+domain node is retained; actual snapped SI extents are recorded. The runner
+declares 1% engineering changes, 1e-8 original max continuity, 1e-10 relative
+local/global flow and complementary/admissibility criteria before calculation.
+It preserves states that fail those tests instead of silently accepting them.
+
+Observed progress and remaining limitations:
+
+- Accepted fine-core domain load changes decrease to about 1.17%, compared
+  with the previous 5.51%; the target is not reached. Larger fine candidates
+  at labels 192/256 fail the original continuity threshold (1.53e-8/3.99e-8).
+- A coarse sequence has final changes 0.393%/0.210%, but matched core mesh
+  refinement shifts load by 1.73% and pressure by about 2.6%. No coarse
+  plateau is treated as combined accuracy. Fixed-domain final mesh changes
+  are 0.533% load and 0.646% peak pressure; outer-grading refinement changes
+  load by another 0.366%. No asymptotic order or rigorous total bound is claimed.
+- Extending only the inlet from label 32 to 128 shifts load by 2.074%,
+  transverse extension by 0.333%, and outlet extension only by roundoff.
+  Simultaneous effects need not add linearly.
+- The largest uniform coupled case (129x129, prescribed h0=0.1 um, E*=1 GPa)
+  has Q=0.002328762465 N, hmin=0.112047199 um, pmax=0.162668923 MPa,
+  max mass residual 8.39e-12 and net volume flow 3.24e-27 m^3/s. Nevertheless,
+  its load changes about 13.3% from extent 8 to 16. It is not a fixed-load
+  domain-independent benchmark.
+- A fine 65x65 cold Newton case exhausts the existing cap. Its failed fields
+  and 30-step history are saved; the separate prescribed-offset Picard
+  reference, with tighter mass convergence for the study's relative criterion,
+  recovers it within existing per-stage budgets. No iteration caps or acceptance
+  thresholds are relaxed. Larger-domain far-corner slopes are also inconsistent
+  with blindly assuming a small-slope lubrication far field.
+
+`docs/VALIDATION_REPORT.md` section 5 gives complete assumptions, grids,
+boundary flows, source-truncation and error-budget tables, front brackets,
+failure/recovery evidence and reproduction. The final run is in
+`results/farfield_budget_20261026_final/`: 25 accepted states, 2 explicitly
+residual-rejected candidates, 11 figures and portable SI NPZ/JSON data.
+Representative load/error-budget figures were inspected; source hashes match.
+
+Next action: resolve far-field linear accuracy against the original flux
+residual, and independently justify coupled outer boundary / graded elastic
+treatment with a physical applicability and mesh/domain error budget. Keep
+this milestone open. Pressure-dependent viscosity/density are subsequent
+work only after appropriate domain verification; none is added here.
+
+Verification: `ruff check .` clean; `pytest -q` 282 passed, 62 optional
+PyTorch/device skips (63.66 s). Optional signed full-film CUDA/HIP work and
+the original uniform CPU numerical solver remain preserved. No drivers,
+system packages, result baselines or published history were modified.

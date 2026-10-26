@@ -1947,3 +1947,45 @@ leaving white polygons; the generic full-film title was also misleading
 when reused for cavitation. Data are neither clipped nor smoothed by this
 correction. Zero load errors remain exact in the saved data and are shown
 using a symmetric-log axis rather than replaced by an arbitrary floor.
+
+### Far-field error budget: partial reduction, no domain-independence claim
+
+The follow-up in section 5 of `docs/VALIDATION_REPORT.md` separates fixed-
+domain mesh refinement, nested independent boundary/domain extension,
+free-space elasticity support and actual SI boundary-flow budgets.
+`rectilinear_cavitation.py` adds a prescribed-film CPU diagnostic for graded
+far fields, independently checked against the unchanged uniform solver and
+the analytical parabolic limit. It preserves arithmetic face coefficients,
+upwind content and pressure/content constraints on midpoint control volumes.
+The coupled solver and uniform DC-FFT operator are unchanged; an FFT kernel
+is never applied to unequal cells. `elasticity_audit.py` evaluates bounded
+target-point displacements by direct physical source-cell integration.
+
+The accepted refined domain sequence reduces the previous 5.51% load change
+to roughly 1.17% (1.16% relative to the later state), still above the target.
+Two larger fine-core candidates fail the declared original max-continuity
+criterion and remain explicitly rejected. A coarser sequence has two
+successive changes below 1% but fails the independent mesh error budget.
+Source pressure beyond 16 natural lengths contributes appreciably more to
+load than to center displacement; this is distinct from FFT wraparound and
+from re-solving a smaller fluid domain. The tested single-boundary inlet
+effect dominates the transverse effect; the already-cavitated outlet remains
+insensitive here. Fixed flooded content must not be confused with a fixed
+integrated inlet feed when the parabolic inlet gap/domain expands.
+
+The 27-case runner produces SI fields, source/runtime provenance, explicit
+accepted/rejected audits, front brackets, complete cold-start failure and
+Picard recovery records, and 11 comparative figures with common-coordinate
+overlays. The existing uniform coupled cases still have about 13.3% load
+change from extent 8 to 16; their small film/pressure changes alone cannot
+establish domain independence. Growing far-field slopes also limit physical
+interpretation of the very large parabolic-domain calculation.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_farfield_budget --output-directory results/farfield_budget_new
+```
+
+The report records exact grids/spacings, units, acceptance thresholds,
+quantitative errors and next actions. No constitutive physics or GPU port
+is introduced, and the milestone remains open.

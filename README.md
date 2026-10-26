@@ -253,6 +253,16 @@ audit, exact inputs, independent checks, quantitative discrepancies,
 Linux/PowerShell reproduction and the remaining classical-EHL requirements.
 This runner requires no PyTorch and preserves the signed full-film CUDA path.
 
+The follow-up mesh/domain/boundary/elasticity error budget is reproduced by:
+
+```bash
+python -m examples.run_farfield_budget --output-directory results/farfield_budget_new
+```
+
+It retains failed candidates and uses graded prescribed-film far fields plus
+unchanged uniform coupled references. Domain independence remains open; see
+section 5 of the validation report for the declared criteria and discrepancies.
+
 The solver does not require plotting or collect snapshots unless
 `plot_every` or `snapshot_iterations` is explicitly set. Generated
 `results/` output is ignored by Git.

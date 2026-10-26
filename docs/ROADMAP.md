@@ -659,3 +659,60 @@ Verification: `ruff check .` clean; `pytest -q` 282 passed, 62 optional
 PyTorch/device skips (63.66 s). Optional signed full-film CUDA/HIP work and
 the original uniform CPU numerical solver remain preserved. No drivers,
 system packages, result baselines or published history were modified.
+
+## Reservoir/flux conditioning milestone (2026-10-26)
+
+Starting from 78f83143cdeaebf5d86029b19d8ac102d0615a89, the new
+`examples.run_flux_conditioning` analyzes all 27 preserved far-field states
+and runs bounded same-grid controls, physical-flux corrections and independently
+matched boundary tests. No domain, tolerance or iteration cap is increased.
+
+Completed and numerically verified:
+
+- Separate SI Couette/Poiseuille/net inlet and outward outlet/side budgets,
+  contribution maxima, cancellation, original continuity, wider evaluation
+  and pressure-ULP sensitivity. Point inlet cancellation stays about 3.46,
+  unlike the strongly cancelling analytical 1-D limit. Large h^3 contrast
+  and pressure-state accuracy matter; wider reporting alone is insufficient.
+- Exact nested-cell force identity: the old 1.174% rigid and 13.259% coupled
+  changes comprise about 38%/39% added-area load and 62%/61% shared-domain
+  readjustment, principally peripheral. A same-grid rigid control grows
+  12.904%, showing the large sensitivity already without elasticity.
+- Up to three optional physical-flux corrections lower label-192 continuity
+  from 1.53e-8 to 4.76e-9 under the original 1e-8 criterion; label 256 still
+  fails at 1.71e-8. Default behavior stays unchanged, and raw rejected states
+  are retained separately. Wider residual precision is explicitly checked;
+  states/corrections remain float64. Load changes are only at roundoff.
+- Prescribed-film pressure-edge matching passes an exact nonuniform test,
+  a mesh-refined independent 1-D analytical window and a finite rigid point
+  restriction checked additionally against the original uniform solver.
+  Matched 1-D force errors are below 0.1% on the three 129-node windows;
+  the point trace recovers its reference to roundoff. Neither is a new
+  standalone point far-field law; known exterior load is accounted for.
+- Documented reservoir, supply/starvation and computational-cut distinctions.
+  Preserved coupled CPU, free-space FFT and optional signed full-film GPU code.
+
+Evidence: `results/flux_conditioning_20261026_complete/`, with 41 SI NPZ
+files, 17 figures, raw source-budget JSON/input hashes and current source
+provenance. Existing results are untouched. Report section 6 gives exact
+units, conditions, corrections, controls and reproduction. The original
+section-5 rejections remain historical evidence, not silently relabeled.
+
+Still open: the combined mesh/domain target and physically justified point
+outer response. One recovered sub-1% increment does not establish two
+successive resolved increments; the next candidate remains residual-rejected.
+Large far-field slopes also limit the physical interpretation. Known-trace
+matching borrows exterior information rather than deriving it. No graded
+coupled elasticity or infinite-domain physical validation has been added.
+
+Next development action: derive and benchmark a point-specific outer response
+for explicit physical reservoir/geometry assumptions, including exterior
+pressure/load and free-space elastic sources. Verify mesh effects and
+original SI flux independently before coupling it. Keep the label-256
+algebraic limitation visible. Constitutive laws and GPU JFO remain deferred.
+
+Final checks: `ruff check .` clean; complete `pytest -q` 294 passed,
+62 optional PyTorch/device skips (67.36 s). Twelve new regressions and all
+benchmark stages pass their stated checks; the largest corrected candidate
+remains explicitly rejected rather than counted as domain-validation success.
+Representative final figures and source provenance were inspected.

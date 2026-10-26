@@ -263,6 +263,26 @@ It retains failed candidates and uses graded prescribed-film far fields plus
 unchanged uniform coupled references. Domain independence remains open; see
 section 5 of the validation report for the declared criteria and discrepancies.
 
+Analyze the retained inlet fluxes, explain the load changes, and reproduce
+the bounded conditioning and independently matched-boundary checks with:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_flux_conditioning \
+  --input-directory results/farfield_budget_new \
+  --output-directory results/flux_conditioning_new
+```
+
+Use the fresh output of the preceding far-field runner as input. The analysis
+preserves raw rejected states and generates 17 figures plus SI data/provenance.
+It accounts for the 1.17% rigid and 13.3% coupled load changes and reduces one
+failed physical-flux defect below the original threshold. The largest case
+still fails; matched boundary tests verify restricted analytical/numerical
+references, and a standalone point-contact outer model remains open. See
+section 6 of the validation report. Optional wider-residual correction is
+explicitly unavailable on platforms where `longdouble` equals float64;
+the original float64 solver remains usable.
+
 The solver does not require plotting or collect snapshots unless
 `plot_every` or `snapshot_iterations` is explicitly set. Generated
 `results/` output is ignored by Git.

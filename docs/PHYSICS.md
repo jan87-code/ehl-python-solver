@@ -1989,3 +1989,51 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=sr
 The report records exact grids/spacings, units, acceptance thresholds,
 quantitative errors and next actions. No constitutive physics or GPU port
 is introduced, and the milestone remains open.
+
+### Reservoir matching and physical-flux conditioning
+
+Section 6 of `docs/VALIDATION_REPORT.md` accounts for the remaining 1.17%
+rigid and 13.3% coupled force changes on unchanged nested cells. Added-area
+load contributes about 38%/39%, and pressure readjustment over the shared
+rectangle about 62%/61%. Most readjustment is outside the inner +/-2L,+/-2Ly
+core. On identical uniform grids the rigid control already changes 12.9%,
+so elasticity is not the main origin of the coupled-domain sensitivity.
+This spatial identity does not make nonlinear boundary effects additive.
+
+The inlet component condition `(|q_C|+|q_P|)/|q_C+q_P|` is about 3.46 in
+the large 2-D point cases, with maximum face condition below 10. Catastrophic
+component cancellation is not observed there. The h^3 range nevertheless
+reaches 2.51e15. Wider reevaluation of a stored float64 state barely changes
+the failed residual, while one pressure ULP can change that defect by about
+1e-8. These are diagnostics of mobility/state sensitivity, not matrix
+condition numbers or proofs of an unavoidable accuracy floor.
+
+The rectilinear **prescribed-film** reference offers at most three opt-in
+physical-flux defect corrections, accepted only when the original independent
+float64 SI flux defect decreases and the same constraints hold. States and
+linear corrections remain float64; only residual evaluation uses explicitly
+wider arithmetic. Requests raise when wider precision is unavailable. The
+label-192 original defect falls from 1.53e-8 to 4.76e-9; label 256 remains
+rejected at 1.71e-8. Loads change only at roundoff. The default is zero
+corrections, and the coupled solver and its tolerances remain unchanged.
+
+Optional nonnegative SI pressure-edge data in that reference distinguish a
+computational cut from a physical ambient reservoir. Known positive-pressure
+edges are wet; west content must be one if its pressure is positive. Exact
+nonuniform linear-pressure tests, an independent analytical infinite-width
+matched-window limit and a finite point-reference restriction verify the
+boundary assembly. The 1-D comparison restores omitted force per width
+[N/m] by independent quadrature; the point comparison restores known outside
+force [N] from its larger finite reference. Neither invents a point outer law
+or omits exterior deformation from a coupled solution. Default pressure
+edges stay ambient. Moving an ambient inlet inward, prescribing supply, or
+changing content represents a different physical reservoir/feed problem.
+
+In the 1-D full region, constant q=Ue hc gives q_C=Ue h and
+q_P=Ue(hc-h); component cancellation grows like h/hc as the inlet retreats.
+This independently derived limit has no transverse leakage, unlike the
+point case, and cannot prescribe its outer pressure. A finite dimensioned
+reservoir is a valid stated model; a physical infinite-domain point limit
+remains unverified, especially outside small-slope lubrication assumptions.
+Grading limits resource cost but does not supply missing outer pressure,
+load or elastic sources. Nonuniform FFT coupling remains prohibited.

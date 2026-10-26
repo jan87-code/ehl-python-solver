@@ -2,7 +2,8 @@
 
 This verification path supports graded far fields, not coupled elasticity.
 Never apply the translation-invariant DC-FFT kernel to these unequal cells.
-Pressure zero on all edges, uniform west content, positive-x entrainment.
+Default pressure is zero on all edges, with uniform west content and +x
+entrainment. Optional prescribed pressure edges are verified separately.
 """
 
 import warnings
@@ -83,6 +84,7 @@ class RectilinearSolution:
     fractional_film_content: np.ndarray
     iterations: int
     audit: dict
+    refinement_history: tuple = ()
 
 
 def solve_rectilinear_cavitation(
@@ -97,6 +99,8 @@ def solve_rectilinear_cavitation(
     pressure_scale_pa,
     inlet_content=1.0,
     maximum_iterations=100,
+    boundary_pressure_pa=None,
+    flux_refinement_steps=0,
 ):
     """SI interfaces; H=h/h_ref, P=p/p_ref, X=x/L, Y=y/L internally.
 
@@ -104,6 +108,11 @@ def solve_rectilinear_cavitation(
     Divide face-flow differences by each interior midpoint control width.
     The inherited active-set tolerance is 1e-10 for P and theta. No clipping.
     At most 70000 nodes; sparse solves use positive diagonal equilibration.
+    Optional nonnegative SI Dirichlet data are used only on edge nodes;
+    positive-pressure edges are fully filled. None preserves zero edges.
+    Up to three opt-in physical-flux defect corrections may use a wider
+    residual dtype, with float64 states/corrections. Availability is checked
+    explicitly; original float64 SI audits must improve before acceptance.
     """
     x, y = axis(x_m), axis(y_m)
     h = np.asarray(film_m, dtype=np.float64)
@@ -127,6 +136,25 @@ def solve_rectilinear_cavitation(
         or maximum_iterations < 1
     ):
         raise ValueError("maximum_iterations must be a positive integer")
+    if (
+        not isinstance(flux_refinement_steps, int)
+        or isinstance(flux_refinement_steps, bool)
+        or not 0 <= flux_refinement_steps <= 3
+    ):
+        raise ValueError("flux_refinement_steps must be an integer from zero to three")
+    if flux_refinement_steps and np.finfo(np.longdouble).nmant <= np.finfo(float).nmant:
+        raise RuntimeError("wider physical-flux residual arithmetic is unavailable")
+    boundary = np.zeros(h.shape)
+    if boundary_pressure_pa is not None:
+        supplied = np.asarray(boundary_pressure_pa, dtype=np.float64)
+        if supplied.shape != h.shape or not np.all(np.isfinite(supplied)) or np.any(supplied < 0):
+            raise ValueError(
+                "boundary pressure must be nonnegative finite SI data of shape (ny,nx)"
+            )
+        boundary[[0, -1]] = supplied[[0, -1]]
+        boundary[:, [0, -1]] = supplied[:, [0, -1]]
+        if np.any(boundary[1:-1, 0] > 0) and inlet_content != 1:
+            raise ValueError("a positive-pressure inlet must be fully filled")
     H = h / film_scale_m
     X, Y = x / length_scale_m, y / length_scale_m
     parameter = (
@@ -153,12 +181,14 @@ def solve_rectilinear_cavitation(
                     rows.append(k)
                     cols.append(k + dj * (nx - 2) + di)
                     values.append(-coefficient)
+                else:
+                    rhs_mass[k] += coefficient * boundary[j + dj, i + di] / pressure_scale_pa
             rows.extend([k, k])
             cols.extend([k, n + k])
             values.extend([diagonal, parameter * 0.5 * (H[j, i] + H[j, i + 1]) / wx])
             west = parameter * 0.5 * (H[j, i] + H[j, i - 1]) / wx
             if i == 1:
-                rhs_mass[k] = west * inlet_content
+                rhs_mass[k] += west * inlet_content
             else:
                 rows.append(k)
                 cols.append(n + k - 1)
@@ -185,23 +215,62 @@ def solve_rectilinear_cavitation(
         if np.any(switch_dry | switch_wet):
             full[switch_dry], full[switch_wet] = False, True
             continue
-        pressure, content = np.zeros(h.shape), np.ones(h.shape)
-        pressure[1:-1, 1:-1] = p.reshape(ny - 2, nx - 2) * pressure_scale_pa
-        content[1:-1, 1:-1] = theta.reshape(ny - 2, nx - 2)
-        content[1:-1, 0] = inlet_content
-        content[1:-1, -1] = content[1:-1, -2]
-        content[0], content[-1] = content[1], content[-2]
-        audit = flux_audit(
-            x,
-            y,
-            h,
-            pressure,
-            content,
-            viscosity_pa_s,
-            speed_m_s,
-            length_scale_m=length_scale_m,
-            film_scale_m=film_scale_m,
-            pressure_scale_pa=pressure_scale_pa,
-        )
-        return RectilinearSolution(pressure, content, iteration, audit)
+
+        def fields_and_audit(z):
+            pressure, content = boundary.copy(), np.ones(h.shape)
+            pressure[1:-1, 1:-1] = z[:n].reshape(ny - 2, nx - 2) * pressure_scale_pa
+            content[1:-1, 1:-1] = z[n:].reshape(ny - 2, nx - 2)
+            content[1:-1, 0] = inlet_content
+            content[1:-1, -1] = content[1:-1, -2]
+            content[0], content[-1] = content[1], content[-2]
+            content[boundary > 0] = 1  # Prescribed wet Dirichlet edges, not unknown clipping.
+            audit = flux_audit(
+                x,
+                y,
+                h,
+                pressure,
+                content,
+                viscosity_pa_s,
+                speed_m_s,
+                length_scale_m=length_scale_m,
+                film_scale_m=film_scale_m,
+                pressure_scale_pa=pressure_scale_pa,
+            )
+            return pressure, content, audit
+
+        pressure, content, audit = fields_and_audit(state)
+        traces = []
+        for correction in range(flux_refinement_steps):
+            from ehl_solver.flux_diagnostics import face_components
+
+            residual = face_components(
+                x, y, h, pressure, content, viscosity_pa_s, speed_m_s, dtype=np.longdouble
+            )[-1]
+            q_ref = film_scale_m**3 * pressure_scale_pa / (12 * viscosity_pa_s * length_scale_m)
+            rhs = np.r_[
+                -np.asarray(residual.ravel() * length_scale_m / q_ref, dtype=float),
+                np.where(full, 1 - state[n:], -state[:n]),
+            ]
+            delta = _solve_active_system(matrix, rhs, True)
+            trial = state + delta
+            tp, tt, ta = fields_and_audit(trial)
+            feasible = (
+                trial[:n].min() >= -1e-10
+                and trial[n:].min() >= -1e-10
+                and trial[n:].max() <= 1 + 1e-10
+                and ta["maximum_complementarity"] <= 1e-10
+            )
+            improved = feasible and ta["mass_maximum"] < audit["mass_maximum"]
+            traces.append(
+                {
+                    "step": correction + 1,
+                    "before": audit["mass_maximum"],
+                    "trial": ta["mass_maximum"],
+                    "accepted": bool(improved),
+                }
+            )
+            if not improved:
+                break
+            state, pressure, content, audit = trial, tp, tt, ta
+        return RectilinearSolution(pressure, content, iteration, audit, tuple(traces))
     raise RuntimeError("rectilinear active-set iteration limit reached")

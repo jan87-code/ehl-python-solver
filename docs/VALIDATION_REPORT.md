@@ -621,3 +621,243 @@ states pass the declared audits and two remain explicitly rejected.
 The maximum direct-versus-FFT sampled displacement discrepancy in accepted
 coupled cases is 2.32e-23 m. Representative load and error-budget figures
 were inspected; recorded Python source hashes match the tested sources.
+
+## 6. Reservoir boundaries and physical-flux conditioning (2026-10-26)
+
+Starting revision: `78f83143cdeaebf5d86029b19d8ac102d0615a89`.
+**Outcome: the two reported load changes are quantitatively accounted for;
+one original continuity rejection is recovered, but point-contact domain
+independence remains open.** No new domain enlargement, iteration-cap change,
+constitutive law, nonuniform coupled elasticity or GPU implementation is used.
+The original 27 states, including both rejected candidates, are retained.
+
+### What the existing boundary problem represents
+
+Zero gauge inlet pressure places an ambient reservoir at a specified finite
+distance. West theta=1 prescribes flooded content, not its integrated supply.
+The inlet gradient and gap determine the unrestricted resulting volume flow.
+Moving that reservoir changes the physical boundary problem. The east pressure
+is also ambient; copied east content is output extrapolation for west-upwind
+transport. Ambient side pressures permit lateral pressure-driven leakage;
+there is no transverse advective flux. Boundary budgets use interior midpoint
+control volumes, as in section 5. Constant density remains unspecified;
+reported m^3/s become kg/s only after multiplication by a specified rho0.
+
+A finite reservoir with explicit physical dimensions is a legitimate model,
+but convergence on its mesh does not demonstrate an infinite-domain limit.
+Likewise, prescribing a feed or reducing inlet content defines a separate
+supply/starvation experiment. Neither is a truncation-error correction to the
+same flooded problem. Existing starved-inlet tests are preserved.
+
+For the independent one-dimensional parabolic reference, smooth rupture
+selects hc and a constant flux q=Ue hc [m^2/s]. In the full region,
+q_C=Ue h and q_P=Ue(hc-h), hence the cancellation condition is
+`(|q_C|+|q_P|)/|q| = 2 h/hc - 1`. The analytical finite-inlet solution
+approaches a finite flux as the inlet retreats: at -256L it is approximately
+1.22575e-10 m^2/s for the section-5 h0/Rx/eta/Ue. Its cancellation condition
+grows from 105 at -8L to 106933 at -256L; the direct float64 component sum
+then differs from the analytical flux by 3.68e-12 relative. This is a
+mathematically meaningful **infinite-width** reference, with no lateral
+leakage. It neither supplies a point-contact boundary law nor establishes
+physical validity of arbitrarily large parabolic gaps/slopes.
+
+### Point-contact inlet flow and numerical sensitivity
+
+`flux_diagnostics.py` separately evaluates arithmetic-face Couette and
+Poiseuille terms in SI, on the saved original `(ny,nx)` fields. The original
+independent `flux_audit` remains the acceptance test. Positive inlet values
+below denote incoming flow; all other boundary budgets retain the outward
+west/east/south/north convention. Full component maxima, outlet/side flows,
+local/global defects and roundoff diagnostics are saved for every original
+case, including the coupled and residual-rejected cases.
+
+| Fine-core label | Couette inlet [m^3/s] | Poiseuille inlet [m^3/s] | Net inlet [m^3/s] | Inlet cancellation condition | h^3 max/min |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 32 | 5.144316e-10 | -2.833173e-10 | 2.311143e-10 | 3.45175 | 9.7669e9 |
+| 64 | 4.871920e-9 | -2.685294e-9 | 2.186627e-9 | 3.45611 | 8.7910e11 |
+| 128 | 3.545495e-8 | -1.954554e-8 | 1.590941e-8 | 3.45710 | 4.6628e13 |
+| 192 | 1.106519e-7 | -6.100228e-8 | 4.964962e-8 | 3.45731 | 4.5439e14 |
+| 256 | 2.601301e-7 | -1.434120e-7 | 1.167181e-7 | 3.45741 | 2.5119e15 |
+
+Cancellation is moderate in these 2-D fields: the maximum individual x-face
+condition at label 256 is 9.8783. Its maximum Couette, x-Poiseuille and
+y-Poiseuille magnitudes are 1.30055e-5, 5.06721e-6 and 2.99279e-6 m^2/s.
+The large changing inlet flow and lateral leakage distinguish this problem
+from the constant-flux one-dimensional limit. Catastrophic subtraction of
+Couette and Poiseuille terms is therefore not supported as the main cause
+of the observed 2-D load changes.
+
+Large mobility contrast still makes pressure/linear accuracy consequential.
+At label 256, reevaluating the **same float64 state** with wider arithmetic
+changes the maximum continuity defect only from 3.98654e-8 to 3.98651e-8;
+the maximum evaluation difference anywhere is 1.40052e-10. Merely reporting
+a wider residual does not repair the root. At the largest-defect node
+(x=-9.641475 mm,y=0.102774 mm), changing stored pressure by one ULP changes
+the dimensionless defect by 1.03894e-8. This is a sensitivity experiment,
+not a proof that no better float64 state exists. The face-balance epsilon
+estimate is a heuristic, not a rigorous error bound or a sparse condition
+number. Existing diagonal equilibration remains in use; the h^3 range is
+reported explicitly rather than mislabeled as the matrix condition number.
+Separate section-5 core/outer-grading mesh errors remain part of the budget.
+
+### Bounded correction against the original physical flux
+
+The prescribed-film rectilinear solver gains an opt-in
+`flux_refinement_steps=0..3`, default zero. After its active set settles,
+it evaluates the physical SI flux divergence in explicitly wider arithmetic,
+solves a correction using the same equilibrated float64 constrained matrix,
+and stores float64 pressure/content. Each trial must preserve the existing
+admissibility/complementarity tolerances and strictly reduce the original
+**float64 independent SI** maximum continuity defect. Rejected trials and
+the raw starting fields remain recorded; no clipping or regularization is
+introduced. The active-set limit stays 100. This is distinct from the earlier
+matrix-residual refinement experiments in section 5.
+
+| Same original grid | Original max continuity | After correction | Existing 1e-8 criterion |
+| --- | ---: | ---: | --- |
+| all_128 | 4.22176e-9 | 1.54903e-9 | passes |
+| all_192 | 1.53078e-8 | 4.75990e-9 | now passes |
+| all_256 | 3.98654e-8 | 1.70676e-8 | still rejected |
+
+The last label-256 trial does not improve the audit and is rejected. Relative
+local/global defects and complementarity retain the existing criteria. For
+the recovered label 192 they are 4.22e-12, 1.33e-16 and zero respectively.
+Relative load changes caused by the corrections are below 8.3e-15, far too
+small to explain the percent-level domain sensitivity. The original rejected
+label-192 state is not retroactively relabeled: the corrected variant is a
+separate saved state. The recovered 128->192 load change is about 0.391%,
+but the preceding change remains 1.174% and label 256 still fails. The
+combined multi-increment mesh/domain target is not met.
+
+Here `np.longdouble` has 63 fraction bits versus float64's 52; it is not
+assumed to be IEEE binary128. Platforms without wider precision explicitly
+reject a forced correction request; the runner records its unavailability
+and the precision-specific regression skips. Default float64 operation and
+all other independent tests remain available on those platforms.
+
+### Exact accounting of the 1.17% and 13.3% load changes
+
+On nested grids with unchanged shared cells, SI trapezoidal integration gives
+the exact discrete identity
+`Q_new-Q_old = (Q_new-Q_new_on_old_rectangle) +
+(Q_new_on_old_rectangle-Q_old)`.
+The first term is added-area load; the second is pressure readjustment over
+the old rectangle. There is no field interpolation or continuum-tail estimate.
+
+| Comparison | Old/new Q [N] | Change [N] | Added area | Shared-area readjustment |
+| --- | --- | ---: | ---: | ---: |
+| Rigid fine 64->128 | 0.002653662258 / 0.002684826537 | 3.116428e-5 | 37.816% | 62.184% |
+| Coupled uniform 8->16 | 0.002056143756 / 0.002328762465 | 2.726187e-4 | 39.459% | 60.541% |
+
+These are respectively 1.17439% and 13.25874% relative to the old force.
+Only 0.0575% and 3.3277% of the respective **force changes** arise from
+readjustment within the common inner |x|<=2L, |y|<=2Ly core. Most change
+is peripheral pressure/load, explaining why core extrema alone look stable.
+The identity defects are zero at the reported floating-point precision.
+This is a spatial accounting, not an additive causal decomposition of
+nonlinear boundary effects.
+
+An additional rigid solve on each **identical** coupled 8/16 uniform grid,
+with the same h0, fluid, geometry and boundary assumptions but no displacement,
+gives Q=0.002138508624/0.002414472343 N: growth is already 12.90449%.
+Both rigid controls pass independent SI audits. Elasticity reduces absolute
+load by about 3.85%/3.55%, and alters the growth to 13.26%; it is not the
+principal origin of this sensitivity. The previously validated free-space
+FFT, direct source-cell/embedding checks and separate source-truncation
+diagnostic remain unchanged. None of these controls discards an elastic
+tail in a purported coupled subdomain solution.
+
+### Matched boundaries: verified scope and remaining limitation
+
+The separate rectilinear reference now accepts optional nonnegative SI
+`boundary_pressure_pa` edge data. Positive-pressure edges have theta=1;
+a positive-pressure west inlet cannot be combined with starved content.
+The original ambient-edge defaults are unchanged. An exact constant-film,
+linear-pressure nonuniform test checks all boundary RHS contributions and
+physical face fluxes independently before the following comparisons.
+
+1. **Independent analytical infinite-width limit.** Fix the original physical
+   reservoir at -8L, hmin=20 um, Rx=0.01 m, eta=0.04 Pa s, Ue=0.425 m/s
+   and L=0.632455532 mm. Compute windows starting at -0.5L, -L and -2L,
+   ending at +3L, with nine y rows spanning +/-4L. Their inlet and transverse
+   pressure traces come from the original analytical solution. Independent
+   quadrature restores the omitted upstream force per width. On 129 x nodes,
+   reconstructed force errors are 0.00646%, 0.01840% and 0.09046%.
+   At inlet -L, 65/129/257-node pressure errors decrease from 0.1466% to
+   0.02199% to 0.00833%; force errors decrease from 0.1116% to 0.01840%
+   to 0.00648%. Every case passes the original physical audits. Force units
+   here are **N/m**, not point-contact N. Replacing the inlet by ambient
+   pressure and using its own consistent analytical transverse traces
+   instead changes the reservoir; differences from the original total force
+   are 96.93%, 78.59% and 38.65%, not discretization errors of the old problem.
+2. **Finite rigid point-contact numerical reference.** Take the audited
+   129x129 uniform rigid +/-16L,+/-16Ly reference and solve its exact
+   65x65 inner +/-8L,+/-8Ly window with its known pressure trace. Relative
+   pressure discrepancy is 4.97e-16. Window load is 0.002306848668 N;
+   adding the known outside 0.000107623675 N recovers the full
+   0.002414472343 N. The independent window max continuity defect is
+   3.27e-12. Ambient pressure on that same inner boundary instead yields
+   0.002138508624 N. A regression additionally obtains the larger reference
+   from the original uniform cavitation solver, independently of the new
+   boundary assembly.
+
+These establish that matching a computational cut to the **same** outer
+problem reduces boundary error, and that moving an ambient reservoir is
+different. They do not provide a standalone analytical point-contact outer
+solution: the finite point test borrows its trace and outside load from a
+larger finite reference. A coupled version would also need exterior elastic
+displacement/source accounting. The one-dimensional formula cannot simply
+be copied into a laterally leaking point model. Graded meshes control cost
+and retain separate mesh errors; they supply neither missing exterior
+pressure nor a physical infinite-domain law. No translation-invariant FFT
+is applied to unequal cells, and no coupled boundary model is replaced.
+
+Consequently the remaining uncertainty separates into: finite-reservoir
+placement and peripheral load/readjustment; independently measured core and
+outer-grading discretization; large-mobility algebraic/state accuracy;
+exterior elastic sources (separately checked, not the same as fluid boundary
+error); and the small-slope/parabolic model's applicability. The already
+reported far-corner slopes of 0.735/1.428 at labels 128/256 prevent treating
+unlimited formal expansion as verified lubrication physics. These results
+do not prove that a physically justified point far-field limit is impossible;
+they show why the current computations do not establish the requested target.
+
+### Reproduction and retained evidence
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_flux_conditioning \
+  --input-directory results/farfield_budget_20261026_final \
+  --output-directory results/flux_conditioning_new
+```
+
+On a fresh checkout, first run the section-5 budget into a new directory
+and pass that directory with `--input-directory`. PowerShell uses the same
+environment setup as section 4. The verified output is
+`results/flux_conditioning_20261026_complete/`: 27 preserved original states,
+two new same-grid rigid controls, three corrected variants, eight analytical
+window cases and one finite point matching case, totalling 41 SI NPZ files
+and 17 figures. Source-budget JSON, input archive hashes, runtime versions
+and current Python source hashes identify all reused/new data. Intermediate
+development runs are also preserved. Generated results remain outside Git.
+The figure manifest includes component/net flow, cancellation, original
+continuity/ULP sensitivity, correction traces, force accounting, boundary and
+mesh comparisons, common-window pressure/film, saturation and extrema.
+
+Next action: derive and independently verify a point-specific outer response
+with a stated physical reservoir/geometry, accounting for exterior load and
+elastic sources, before integrating it into coupled solves. Retain separate
+mesh and original SI-flux acceptance checks; label 256 remains a numerical
+blocker. Do not advance to pressure-dependent constitutive laws or GPU JFO
+on the strength of these diagnostic successes alone.
+
+Verification: `ruff check .` clean; full `pytest -q` **294 passed,
+62 skipped** (67.36 s). Twelve added regressions cover pressure-edge SI
+fluxes, known and exact cancellation, nested-cell force identity, unchanged
+root/physical-defect improvement, invalid inputs, analytical matched-boundary
+mesh refinement, unavailable wider precision and independent finite point
+matching. The skips are optional PyTorch/device coverage on this host; no
+new GPU execution claim is made. All benchmark stages finish; original and
+corrected residual-rejected states remain explicit. The 17-figure manifest,
+41 NPZ files and current source hashes were checked. Representative boundary,
+force-accounting and physical-defect figures were visually inspected.

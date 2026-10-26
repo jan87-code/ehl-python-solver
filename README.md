@@ -78,10 +78,32 @@ fields are not copied back to CPU.
 
 `DeviceFullFilmEvaluator(problem, gpu)` from `ehl_solver.device` snapshots a
 CPU bordered problem for device-resident nonlinear residual and analytic
-complete JVP **evaluation**. Recreate it after changing load, compliance or
-other problem parameters. SciPy ILU/GMRES, Schur recovery, both line searches,
-continuation and JFO cavitation remain CPU-only. A complete coupled GPU solve
-has not been demonstrated; no end-to-end solver speedup is claimed.
+complete JVP evaluation. Recreate it after changing compliance or geometry;
+the resident continuation driver manages target-load changes explicitly.
+The optional `device_krylov`, `device_bordered` and `device_newton` modules
+now provide resident float64 GMRES, frozen-film preconditioning, Schur/full
+bordered recovery, dual-line-search Newton and adaptive signed-load stepping.
+The NumPy/SciPy solver remains the default reference. JFO cavitation and
+physical positive-load EHL validation are not covered by this GPU path.
+
+```python
+from ehl_solver.device import DeviceFullFilmEvaluator
+from ehl_solver.device_newton import solve_device_full_film_load, continue_device_load
+
+evaluator = DeviceFullFilmEvaluator(problem, gpu)  # problem uses SI geometry/scales
+# initial_state = row-major interior dimensionless P followed by h0/h_ref.
+state_gpu = as_float64(initial_state, gpu)  # One initial upload.
+solution = solve_device_full_film_load(evaluator, state_gpu)
+path = continue_device_load(evaluator, solution, next_signed_load_n)
+```
+
+Complete signed full-film calculations through 513x513 have converged on
+CUDA and passed independent CPU Reynolds/load checks. This demonstrates a
+mathematical GPU Newton calculation, not a complete physically validated GPU
+EHL solver. All iterative fields and Krylov bases stay resident; Python
+receives scalar decisions/diagnostics. GPU failures never fall back to CPU.
+The DST preconditioner inverts an explicitly defined mobility-scaled
+Dirichlet Laplacian surrogate; it does not emulate SciPy ILU.
 
 ```powershell
 $env:OPENBLAS_NUM_THREADS="1"
@@ -99,6 +121,28 @@ elasticity difference normalized by CPU peak was 8.46e-16; allocated/reserved
 PyTorch peaks were 166.94/202 MiB across the benchmark. See `docs/PHYSICS.md`
 for all grids, transfer/setup costs, independent checks and limits.
 GPU tests skip without PyTorch/CUDA; failures on an available GPU fail tests.
+
+For Newton/Krylov benchmarks (same thread settings), use:
+
+```bash
+python -m examples.benchmark_device_krylov --compare --sizes 33 65 129 --repeats 3 --max-krylov-steps 640 --output-directory results/newton_cuda_new
+```
+
+At 65x65/129x129 the measured setup-inclusive speedups over the preserved
+NumPy/SciPy solver are 7.32x/20.87x; at 33x33 CUDA is slower. These include
+caching and preconditioner changes. Use `--matched-torch-cpu` to compare the
+identical cached algorithm on CPU. Both solvers use 1e-10 nonlinear/load
+tolerances in this benchmark. Larger CPU attempts are bounded and failed
+linear solves are reported without speedup claims. See PHYSICS.md for the
+matched comparison, memory, iteration counts and all remaining limits.
+
+With identical algorithms at 513x513, PyTorch CPU/CUDA solve times are
+6.947/2.103 s (3.30x), or 2.78x including device setup and transfers in a
+warmed process. The first tested setup-inclusive win for that comparison is
+257x257; the original reference comparison first wins at 65x65. These are
+workload-specific observations. Peak allocated/reserved memory is about
+330/390 MiB. CPU-only operation still needs no PyTorch; Linux GPU/ROCm
+execution and broad strong-coupling robustness remain unverified.
 
 ## GitHub
 ```bash

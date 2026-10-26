@@ -1669,3 +1669,252 @@ accuracy, CPU/CUDA timings, uncached CPU timings, transfers and memory peaks.
 The measured local run is results/cuda_20261026_a2000_final (untracked).
 Windows execution is verified here; Linux GPU execution and ROCm remain open.
 No full coupled GPU execution or end-to-end solver speedup has been established.
+
+## Resident signed Newton/Krylov verification (2026-10-26)
+
+This increment supersedes the preceding operator-only execution limitation.
+It demonstrates complete resident *signed full-film mathematical* load solves,
+not GPU JFO or physically validated positive-load EHL. The NumPy/SciPy solver,
+pressure sign, SI scales, (ny,nx) axis order, conservative centered Reynolds
+stencil, elastic kernel and nonlinear equations are unchanged.
+
+### Transfer audit and baseline
+
+At 97a35f1 there was no GPU Newton driver: the reference used NumPy fields,
+SciPy ILU/GMRES, CPU Schur corrections, CPU dual line searches and scalar
+convergence checks. It performed no CPU/GPU transfers because it did no GPU
+calculation. Before changes, solve-only CPU walls were 232.117/4565.424 ms on
+33/65 square grids, each with three corrections, default restart 80 and
+1e-7 Reynolds/load tolerances. Those are retained baseline observations,
+not the baselines for the tighter, matched-tolerance speedups below.
+
+| Stage | Resident path | Transfers/synchronizations |
+| --- | --- | --- |
+| Setup | CPU integrated kernel; device spectrum, geometry, load weights and initial state | One-time uploads |
+| Residual and frozen-state analytic JVP | torch fields, padded FFTs, conservative face operations | Scalar finite/film predicates |
+| GMRES | Device basis, Hessenberg, rotations and triangular solves | Scalar norms/stopping decisions |
+| Preconditioner | Device Jacobi or DST-I scaled Laplacian inverse | No full-vector/matrix transfer |
+| Schur/full-bordered correction | Device vectors, dot products and reconstructed correction | Scalar denominator/true-residual checks |
+| Feasibility and Armijo | Device film increments, trial state and residual | Scalar feasible step, slope and merit |
+| Newton/continuation | Device accepted state; Python scalar control | Scalar residual/load/film/history data |
+| Independent final audit | Explicit state/field export after timing | Final CPU comparison only |
+
+Tests prohibit Tensor.cpu and Tensor.numpy during resident GMRES, bordered
+correction and complete Newton execution. There is no bridge into SciPy
+inner iterations and no CPU fallback after a device failure. CUDA availability
+is selected explicitly; invalid/runtime device operations propagate.
+
+### GMRES and frozen-film preconditioning
+
+`device_gmres` implements real float64 nonsymmetric restarted left-preconditioned
+GMRES. It uses two classical Gram-Schmidt passes (CGS2), accumulated device
+Givens rotations and a device triangular solve. Only scalar norms leave the
+device. Its max_iterations counts total Arnoldi steps; SciPy maxiter instead
+counts restart cycles. Explicit termination distinguishes convergence,
+iteration limits, Arnoldi/preconditioner breakdown and nonfinite calculations.
+The returned solution is accepted only if a newly evaluated original residual
+satisfies ||b-Ax|| <= max(atol,rtol*||b||). Hessenberg/preconditioned estimates
+only trigger true checks. Restart boundaries also recompute true residuals.
+Absolute estimated preconditioned histories are retained; these differ in
+normalization from SciPy's relative pr_norm callback histories.
+
+Basis admission estimates 16*N*(m+5)+32*(m+1)^2 bytes, where m is the effective
+restart. This includes temporary headroom beyond the stored basis. It must
+fit a default 1 GiB cap and half of free device memory. Elasticity retains
+its separate workspace guard. Neither guard guarantees vendor workspace or
+availability under concurrent device use; actual allocator peaks are below.
+
+The Jacobi strategy uses the exact signed/scaled frozen-film Reynolds
+diagonal, independently checked against SciPy assembly. The laplacian strategy
+defines k=H^3, S=diag(sqrt(k_interior)) and the positive zero-Dirichlet
+five-point negative Laplacian L with the original dimensionless dx,dy.
+It applies the exact inverse of B=-S L S / reynolds_residual_scale:
+`B^-1 b = -reynolds_residual_scale * S^-1 L^-1 S^-1 b`.
+This is an explicit surrogate for the actual arithmetic-face-conductance
+variable-coefficient Reynolds block. It omits elastic/entrainment derivatives
+and is neither ILU nor a claimed exact inverse of the Reynolds block.
+
+L is inverted with two-dimensional DST-I. The unnormalized transform is
+implemented using odd extensions and rFFT imaginary parts; its square gives
+4*(ny_interior+1)*(nx_interior+1) times the input in two dimensions.
+Eigenvalues are
+`4*sin(pi*i/(2*(nx_interior+1)))^2/dx^2`
+plus the analogous y term. Independent SciPy DST, dense surrogate inversion,
+and original sparse face-operator tests verify transform/sign/scaling/indexing.
+No sparse matrix, ILU factor or Krylov basis is exported from CUDA.
+
+### Bordered and nonlinear safeguards
+
+The pressure solves retain A*x=-R_p and A*y=b, where b is the h0 column.
+With force row g, the Schur denominator is -g.y,
+delta_h0=(-R_load-g.x)/(-g.y), and delta_p=x-y*delta_h0. Unsafe scaled Schur
+denominators, failed pressure solves or inaccurate reconstructed corrections
+trigger recorded full-bordered device GMRES with block preconditioning.
+All attempted Krylov diagnostics are retained. Reconstructed corrections are
+checked using the complete analytic JVP plus original residual. Effective
+linear tolerance is capped at 1e-2, and the bordered accuracy ceiling follows
+the reference's min(1e-2,max(1e-7,2*rtol)) default. Device GMRES enforces the
+requested original-equation tolerance directly; it does not relax tolerances
+for parity. Tiny denominators used in relative-residual normalization are
+machine-underflow guards, not pressure/film regularization.
+
+The separate resident Newton implementation preserves the CPU formulas:
+merit is half the sum of squared scaled Reynolds RMS and load residual;
+forcing starts at 1e-2 then uses min(1e-2,max(1e-4,0.9*ratio^1.5)). The exact
+film direction first limits the common pressure/h0 step using fraction-to-
+boundary 0.99; directional-derivative Armijo (default 1e-4) then backtracks.
+Non-descent recovery and inaccurate-linear-solve Armijo recovery each have
+the reference's bounded tighter-Krylov retries. Film must remain strictly
+above the original floor. There is no clipping or implicit h0 raise.
+Final force is recomputed with nested device trapezoids, independently of
+the load-gradient residual evaluation.
+
+Adaptive device load continuation retains the reference growth/halving and
+load-resolution rules. Only accepted roots warm-start later attempts;
+rejected states, nonlinear/Krylov diagnostics and last accepted roots remain
+available. Candidate residual/film/target metadata are checked before
+acceptance. Unexpected device exceptions propagate and restore the last
+accepted evaluator load. GPU compliance/pseudo-arclength continuation is
+not implemented by this load driver.
+
+Independent tests cover nonsymmetric dense/SciPy linear systems, restart,
+zero RHS/exact starts, happy and failed breakdown, scaled preconditioners,
+memory/iteration limits and propagated runtime errors. Complete corrections
+are compared with dense Jacobians, residual differences and CPU Schur solves,
+including forced full-bordered recovery. Newton tests cover zero compliance,
+100 MPa weak and 10 MPa moderate cases, and gamma=0.15 at 1 MPa as a stronger
+exploratory case. Direct spatial elasticity, whole-face flux divergence and
+SI trapezoidal force independently check final small-grid fields. Tests
+also cover both line-search stages, rejected/exhausted Armijo trials, tighter
+linear recovery, continuation in both force directions, injected retry,
+exhaustion and false-success rejection. These limited cases do not establish
+robust full-compliance convergence on the known 1 MPa branch.
+
+### Benchmark inputs and timing scope
+
+Windows 11, Python 3.12.9, NumPy 2.5.4, torch 2.11.0+cu128, CUDA 12.8,
+driver 596.71, RTX A2000 Laptop GPU (4096 MiB); BLAS/OpenMP threads are one.
+The benchmark uses x=[-0.5,0.75] mm, y=[-0.5,0.5] mm; Rx=10 mm, Ry=20 mm,
+E*=100 MPa, gamma=1, L=0.5 mm, h_ref=20 um, p_ref=21250 Pa and Lambda=12.
+Each grid's signed target is the independently solved rigid-film force at
+h0=20 um; initial pressure is the rigid solution at h0=18 um. The 513 target
+is -0.002724790847933 N. This negative target and signed pressure make the
+case mathematical. Initial pressure/target preparation is common and excluded.
+The Reynolds residual scale is 100, load residual scale is abs(target_load_n),
+and strict film floor is 1e-12 m. Reported scaled RMS values use these scales.
+
+Standalone linear solves use rtol=1e-8, atol=0 and restart 40. CPU maxiter
+cycles are mapped to the same maximum Arnoldi-step budget as the GPU.
+All nonlinear/load tolerances in comparison runs are 1e-10. Linear timings
+are synchronized wall medians of three calls after one warmup, except the
+explicitly bounded large CPU attempts described below. Full Newton walls are
+one measured solve in a warmed process, including its repeated preconditioner
+builds, all Krylov work, scalar checks and line searches. Per-iteration time
+is the full wall divided by four accepted Newton corrections. Setup-inclusive
+walls add evaluator/kernel construction, initial upload and final state
+download. CUDA context/library initialization and independent CPU audits
+remain outside those walls; these are not cold process-launch measurements.
+
+### Preserved NumPy/SciPy reference comparison
+
+| Grid | CPU / CUDA pressure GMRES [ms] | CPU / GPU Arnoldi steps | CPU / CUDA Newton [ms] | Setup-inclusive GPU [ms] | Setup-inclusive speedup |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 33x33 | 23.413 / 54.949 | 5 / 13 | 282.955 / 314.470 | 424.188 | 0.67x (slower) |
+| 65x65 | 569.624 / 54.254 | 30 / 13 | 3440.043 / 309.947 | 469.907 | 7.32x |
+| 129x129 | 2977.015 / 57.718 | 195 / 13 | 11939.597 / 498.240 | 572.027 | 20.87x |
+
+All three CPU and GPU nonlinear runs take four corrections. Total CPU/GPU
+Newton Krylov counts are 20/46, 140/46 and 684/50 respectively. GPU mean
+Newton walls are 78.618, 77.487 and 124.560 ms. GPU solve-only speedups over
+the preserved reference are 0.90x, 11.10x and 23.96x; standalone GMRES ratios
+are 0.43x, 10.50x and 51.58x. These combine hardware, cached FFT/state fields,
+and a different verified preconditioner. They are not hardware-only gains.
+Nonlinear residual histories consequently differ within the same forcing
+and convergence criteria; matching every inexact trajectory is not claimed.
+
+At 129, an initial 160-step CPU budget stopped at true relative residual
+2.69e-7; increasing the budget to 640 allowed convergence in 195 steps.
+The final comparison uses 640 for both backends. At 257/513 the retained
+160-step CPU attempts stop at residuals 2.61e-3/2.74e-1, with measured walls
+36.758/91.019 s. Those unsuccessful attempts are not speedup baselines.
+Full NumPy/SciPy Newton is bounded to grids <=129 in this benchmark; no
+complete reference-runtime comparison exists here at 257/513.
+
+At 33/65/129 the final CUDA pressure differs from the converged original
+CPU reference by 7.99e-13/2.49e-12/1.90e-11 relative L2; h0 differences are
+1.01e-18/1.70e-17/2.29e-16 m. The standalone pressure-solve differences are
+at most 2.28e-9 relative L2 and the reconstructed bordered-correction
+differences at most 1.48e-8, with the same 1e-8 linear stopping tolerance.
+
+### Identical cached algorithm on torch CPU and CUDA
+
+To isolate device effects, a separate sequential run uses the same cached
+JVP, DST preconditioner, CGS2 GMRES and Newton policies on both devices.
+Both pressure solves take 13 steps, and full solves take four corrections.
+
+| Grid | CPU / CUDA GMRES [ms] | CPU / CUDA Newton [ms] | Warm solve speedup | Setup-inclusive CUDA [ms] |
+| --- | ---: | ---: | ---: | ---: |
+| 65x65 | 26.385 / 57.957 | 155.556 / 342.536 | 0.45x (slower) | 523.383 |
+| 129x129 | 65.656 / 57.112 | 436.722 / 396.362 | 1.10x | 471.981 |
+| 257x257 | 220.194 / 88.802 | 1448.538 / 755.151 | 1.92x | 845.364 |
+| 513x513 | 1103.041 / 312.562 | 6947.224 / 2103.297 | 3.30x | 2496.381 |
+
+Matched pressure agreement is within 3.11e-16 relative L2. The first tested
+warm-solve win is 129, but its 10% margin is small and vanishes when device
+setup/transfers are included. First tested setup-inclusive win is 257
+(1.71x); 513 gives 2.78x including setup. Reference-solver gains start at 65.
+These are workload/algorithm/session observations, not universal crossover
+sizes. Laptop scheduling/clocks and allocator/FFT-plan state cause timing
+variation; the benchmark makes no automatic backend selection.
+
+### Preconditioner, transfer and memory observations
+
+| Grid | CPU ILU build/apply [ms] | CUDA surrogate build/apply [ms] | H2D / D2H state [ms] | Peak allocated / reserved [MiB] |
+| --- | ---: | ---: | ---: | ---: |
+| 33x33 | 8.294 / 0.069 | 211.142 / 0.692 | 0.075 / 0.077 | 9.46 / 22 |
+| 65x65 | 35.165 / 0.265 | 161.042 / 0.686 | 0.055 / 0.094 | 13.34 / 26 |
+| 129x129 | 125.076 / 0.788 | 86.854 / 1.000 | 0.062 / 0.110 | 28.55 / 48 |
+| 257x257 | not measured in final matched run | 190.562 / 0.664 | 0.108 / 0.161 | 88.24 / 108 |
+| 513x513 | not measured in final matched run | 220.610 / 23.799 | 1.423 / 0.330 | 329.85 / 390 |
+
+Build is a single first-use observation including field reconstruction;
+apply is a warmed median. The first three rows are the preserved-reference
+run; large rows are the final matched run. Large retained CPU attempts
+separately measure ILU build/apply at 635.233/4.569 ms (257) and
+2744.446/20.977 ms (513). Allocated/reserved peaks cover live benchmark
+fields, preconditioners and Krylov/Newton work, not just the basis. Reserved
+pool memory and vendor plans can persist; driver/non-PyTorch allocations
+are excluded. The observed 4 GiB machine completes all cases without OOM.
+
+At 513 the GPU h0 is 19.9013602695 um and minimum film 19.8745823867 um.
+Independent original CPU equations give scaled Reynolds RMS 9.82e-14,
+scaled load error 2.04e-14 and nested-trapezoid device force error 4.34e-19 N.
+Final load errors, film minima and residual histories are recorded per grid.
+These mathematical closure checks add no experimental film-height evidence.
+
+Reproduce with the same thread settings (PowerShell equivalents in README):
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+python -m examples.benchmark_device_krylov --compare --sizes 33 65 129 \
+  --repeats 3 --max-krylov-steps 640 --output-directory results/newton_small_new
+python -m examples.benchmark_device_krylov --compare --sizes 257 513 \
+  --repeats 1 --max-krylov-steps 160 --output-directory results/newton_budget_new
+python -m examples.benchmark_device_krylov --compare --skip-cpu-linear \
+  --matched-torch-cpu --sizes 65 129 257 513 --newton-max-size 0 \
+  --repeats 3 --max-krylov-steps 160 --output-directory results/newton_matched_new
+```
+
+Output directories must be new. The runner checkpoints linear diagnostics,
+records failed CPU attempts explicitly, and saves summary.json plus per-grid
+JSON and final NPZ fields after complete solves. Current retained runs are
+results/device_krylov_baseline, device_krylov_final_small,
+device_krylov_compare_large and device_krylov_final_matched_cpu. Generated
+files remain untracked. Extra exploratory runs are not performance baselines.
+
+CPU without torch remains verified. GPU tests skip gracefully without torch
+or CUDA; runtime calculation errors on available devices fail. Windows CUDA
+is exercised; Linux CUDA/ROCm execution, other devices, arbitrary strong
+coupling, broad continuation robustness and GPU JFO remain unverified.
+The unresolved physical far-field/domain and film-height questions are
+unchanged. Full physical GPU EHL support is not marked complete.

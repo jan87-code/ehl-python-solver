@@ -52,8 +52,11 @@
     evaluation audit, including compliance and force row; CPU solver unchanged.
   - [x] Synchronized 33/65/129/257/513 CUDA timings, transfers and PyTorch
     memory peaks on the Windows RTX A2000 Laptop GPU.
-  - [ ] Verified resident GPU preconditioner/Krylov and complete nonlinear solve;
-    device JFO, ROCm coverage and Linux GPU execution remain open.
+  - [x] Resident float64 GMRES, verified frozen-film surrogate/Jacobi,
+    Schur/full-bordered recovery and complete signed full-film Newton/load
+    stepping on documented mathematical cases, including 513x513 execution.
+  - [ ] Device JFO/complementarity and physically validated GPU EHL;
+    broad strong-coupling, ROCm coverage and Linux GPU execution remain open.
 
 Do not check off a box without reproducible evidence (tests or documented benchmark output).
 
@@ -486,3 +489,54 @@ backend/elasticity/device suite has 30 passed and 10 skipped. The initial
 sandbox run could not access pytest's existing Windows temporary directory;
 the final complete CUDA run used approved host access. Generated results and
 pre-existing tracked egg-info modifications are excluded from this milestone.
+
+## Resident Newton/Krylov mathematical milestone (2026-10-26)
+
+Starting from 97a35f1, added optional torch float64 restarted GMRES with
+CGS2 reorthogonalization, device Hessenberg/Givens/triangular operations,
+true unpreconditioned residual checks, explicit breakdown/budget/failure
+diagnostics and a basis-memory guard. max_iterations counts Arnoldi steps,
+unlike SciPy's maxiter restart cycles. No field/basis exports or CPU fallback
+occur in inner iterations. A frozen state linearization reuses state fields.
+
+GPU Jacobi exactly matches the reference frozen-film diagonal. The separate
+DST inverse exactly solves a documented mobility-scaled Dirichlet Laplacian
+surrogate, independently checked by dense solves. It is not an ILU clone or
+the exact variable-coefficient Reynolds inverse. Device Schur reconstruction
+and full-bordered recovery retain the CPU mathematical equations and accuracy
+ceilings. The resident Newton path retains inexact forcing, strict film
+feasibility, directional Armijo, bounded tighter-Krylov recovery and adaptive
+signed-load retries, with failed diagnostics and last accepted states retained.
+The original NumPy/SciPy numerical solver is unchanged.
+
+Complete CUDA signed-load calculations converge through 513x513 in four
+Newton corrections, with independently recomputed original CPU residuals.
+Final pressure agreement on matched CPU-reference 33/65/129 runs is within
+1.90e-11 relative L2; largest h0 difference is 2.29e-16 m. Both nonlinear/load
+tolerances are 1e-10. At 513x513 the independent scaled Reynolds RMS is
+9.82e-14 and scaled load error below 2.04e-14. This does not establish physical
+nonnegative-pressure EHL or cure the existing branch/domain limitations.
+
+Reference-solver setup-inclusive speedups at 65/129 are 7.32x/20.87x;
+33 is slower on GPU. Failed bounded CPU 257/513 linear attempts have no
+claimed speedup or full CPU Newton comparison. PHYSICS.md separates reference
+and identical-algorithm comparisons, iteration counts, transfers and memory.
+GPU preconditioning, kernel caching and state-linearization caching contribute
+to the reference speedups; they are not hardware-only speedups.
+
+Next: expand strong-coupling/failure and continuation coverage on larger
+meshes, profile launch/scalar synchronization, test Linux CUDA/ROCm, and
+independently benchmark device JFO before claiming GPU physical EHL support.
+The controlled rigid far-field physical verification remains a separate open
+roadmap task; this GPU increment does not close it.
+
+The identical cached algorithm on PyTorch CPU/CUDA at 513x513 measures
+6.947/2.103 s (3.30x solve time, 2.78x including device setup/transfers in
+a warmed process); first tested setup-inclusive win is 257x257. Matched
+pressure parity is within 3.11e-16 relative L2 and peak allocated/reserved
+memory is 329.85/390 MiB. Reference-solver and identical-algorithm crossover
+sizes are deliberately distinguished. Final checks: Ruff clean; complete
+suite 321 passed, including CUDA. With torch imports blocked: 259 passed,
+62 optional skips. With CUDA hidden, selected backend tests: 51 passed,
+31 skipped. No drivers/packages were installed; pre-existing egg-info changes
+and generated benchmarks remain outside the commit.

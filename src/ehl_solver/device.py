@@ -1,8 +1,8 @@
-"""Device-resident evaluation of the signed mathematical full-film equations.
+"""Device-resident signed full-film equations shared by audits and device solvers.
 
-This is an operator audit path, not a CUDA Newton/Krylov solver. SciPy ILU,
-GMRES, Schur recovery and dual line searches stay in the CPU reference solver.
-No transfer bridge into those inner iterations is provided.
+The optional resident GMRES/Newton path is in device_krylov/device_newton;
+the NumPy/SciPy reference remains separate. No host-vector bridge into SciPy
+inner iterations is provided.
 """
 
 import math
@@ -31,6 +31,7 @@ class DeviceFullFilmEvaluator:
             "film_scale_m", "pressure_scale_pa", "compliance_factor", "film_floor_m",
             "dx", "dy", "reynolds_parameter", "reynolds_residual_scale",
             "target_load_n", "load_residual_scale_n",
+            "dx_m", "dy_m",
         ):
             setattr(self, name, getattr(problem, name))
         self.geometry = as_float64(problem.rigid_geometry_m.copy(), self.backend)
@@ -87,7 +88,19 @@ class DeviceFullFilmEvaluator:
         if not math.isfinite(compliance_direction):
             raise ValueError("compliance_direction must be finite")
         v = self._vector(direction)
-        p, film, w = self.state_fields(state)
+        return self._jacobian_fields(v, self.state_fields(state), compliance_direction)
+
+    def linearize(self, state):
+        """Freeze state fields once for repeated analytic Krylov products."""
+        fields = self.state_fields(state)
+
+        def matvec(direction):
+            return self._jacobian_fields(self._vector(direction), fields, 0.)
+
+        return matvec
+
+    def _jacobian_fields(self, v, fields, compliance_direction):
+        p, film, w = fields
         dp = self._pressure(v[:-1])
         dw = self.elasticity(dp * self.pressure_scale_pa)
         h = film / self.film_scale_m

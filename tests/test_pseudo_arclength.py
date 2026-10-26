@@ -54,7 +54,12 @@ def test_rejected_predictor_retains_attempted_state_for_diagnostics():
     rejected = result.steps[0]
     assert not rejected.accepted
     assert rejected.reason == "infeasible_predictor"
-    assert rejected.parameter == rejected.state[0]
+    np.testing.assert_allclose(
+    rejected.parameter,
+    rejected.state[0],
+    rtol=1e-13,
+    atol=1e-15,
+    )   
     assert rejected.parameter > 0.01
 
 

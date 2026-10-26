@@ -1540,3 +1540,132 @@ the original equation on the 129x89 case; a separate dense solve verifies
 the complete recovered linear vector. Existing full-film, front, starvation,
 elasticity and positive-load tests remain in force. Domain dependence is a
 physical/boundary question distinct from this now-improved algebraic accuracy.
+
+## Optional CUDA operator verification (2026-10-26)
+
+`ElasticityOperator` retains the existing analytically cell-integrated kernel:
+the rectangular source integral of 1/r divided by pi E*, including its
+singular self-cell. NumPy constructs this kernel once; torch uploads it once
+and caches its complex128 spectrum in the operator object. Float64 pressure
+in Pa gives positive gap-increasing displacement in m; there is no extra
+cell-area multiplier. Axis order is (ny,nx), x along entrainment.
+For the (2ny-1,2nx-1) lag kernel, linear convolution needs padding at least
+(3ny-2,3nx-2). The cached path rounds each length up with SciPy next_fast_len,
+then extracts indices [ny-1:2ny-1,nx-1:2nx-1]. Default backward-normalized
+rfft2/irfft2 retain the reference normalization. Larger padding changes no
+discrete coefficient or wraparound convention. The original uncached NumPy
+and torch functions remain available.
+
+The default memory guard estimates 128 bytes per padded grid point for
+real/complex arrays and workspace. It requires this estimate to fit both
+1 GiB and half of current free CUDA memory, before kernel allocation.
+At 513x513 the padded shape is 1540x1540 and estimate is 303,564,800 bytes
+(289.50 MiB). It is a conservative admission guard, not a guarantee about
+cuFFT plans, driver allocations, concurrent processes or multiple operators.
+Spectrum lifetime is object-owned; release unused operators. PyTorch's FFT
+plan and allocator caches are separate. No device error falls back to CPU.
+
+The optional backend of reynolds_residual preserves exactly
+div(H**3 grad(P))-Lambda*dH/dX-S on interior nodes: arithmetic H cubed face
+conductance, adjacent pressure differences and centered entrainment gradient.
+The scalings remain X=x/L, Y=y/L, H=h/h_ref, P=p/p_ref and
+Lambda=12 eta Ue L/(h_ref**2 p_ref). All boundary values participate without
+being overwritten. This is the existing full-film residual, not a port of
+JFO's upwind content equation. Rigid parabolic film construction also supports
+resident tensors, with SI coordinates, radii and gap. Validation checks
+finite pressure and strictly positive film; scalar predicates synchronize
+CUDA but do not export full fields.
+
+DeviceFullFilmEvaluator snapshots a signed full-film bordered problem's
+parameters, geometry and load gradient, uses zero boundary pressure, and
+evaluates the complete scaled nonlinear residual plus analytic JVP. The JVP
+includes elastic pressure-to-film changes, h0, optional compliance direction,
+mobility derivative 3H**2 dH, entrainment and the force row. Film feasibility
+is strictly h>film_floor_m. Snapshot parameters must be refreshed explicitly
+after changing the CPU problem. This audit path does not change the CPU
+solver. SciPy sparse assembly/factorization, ILU, GMRES, Schur recovery,
+line searches and continuation remain CPU operations. There is no transferred
+inner-Krylov bridge, GPU JFO implementation or complete GPU nonlinear solver.
+
+Independent tests cover odd/even and anisotropic grids, signed/zero/edge
+pressure, direct scipy.signal.convolve2d, repeated spectrum reuse, and dry
+Hertz center-displacement refinement at 33/65/129. Complete face-flux arrays
+independently reproduce Reynolds divergence with nonzero boundary pressure
+and a manufactured source. All small-grid Jacobian columns (including h0 and
+force), joint compliance directions and residual finite differences are
+checked against the CPU equations. Invalid/nonfinite/infeasible states raise.
+Resident-call tests prohibit Tensor.cpu/numpy exports; injected FFT errors
+propagate. CPU tests also run with torch imports deliberately unavailable.
+
+### Measured component performance
+
+Windows 11, Python 3.12.9, NumPy 2.5.4, torch 2.11.0+cu128, CUDA runtime
+12.8, driver 596.71, RTX A2000 Laptop GPU, 4096 MiB. OPENBLAS_NUM_THREADS
+and OMP_NUM_THREADS are both one. Five warmups precede 15 repetitions;
+reported times are synchronized wall medians in milliseconds. CPU baselines
+below use the same cached, padded operator as CUDA. Standalone Reynolds
+uses identical precomputed H on each device. Allocation, scalar validity
+checks and Python launches are included; initial setup and field transfers
+are separate. These are component evaluations, not solved EHL cases.
+
+| Grid | DC-FFT CPU / CUDA [ms] | CPU/CUDA | Reynolds CPU / CUDA [ms] | CPU/CUDA |
+| --- | ---: | ---: | ---: | ---: |
+| 33x33 | 0.173 / 0.215 | 0.80 | 0.076 / 0.890 | 0.09 |
+| 65x65 | 0.606 / 0.282 | 2.15 | 0.157 / 0.972 | 0.16 |
+| 129x129 | 4.069 / 0.534 | 7.62 | 0.443 / 0.864 | 0.51 |
+| 257x257 | 18.595 / 2.208 | 8.42 | 1.856 / 0.883 | 2.10 |
+| 513x513 | 84.802 / 8.990 | 9.43 | 20.910 / 1.256 | 16.65 |
+
+| Grid | Complete residual CPU / CUDA [ms] | CPU/CUDA | Complete JVP CPU / CUDA [ms] | CPU/CUDA |
+| --- | ---: | ---: | ---: | ---: |
+| 33x33 | 0.296 / 1.788 | 0.17 | 0.497 / 2.437 | 0.20 |
+| 65x65 | 0.819 / 1.816 | 0.45 | 1.636 / 5.678 | 0.29 |
+| 129x129 | 4.574 / 2.042 | 2.24 | 8.941 / 2.592 | 3.45 |
+| 257x257 | 21.422 / 3.762 | 5.69 | 40.244 / 5.851 | 6.88 |
+| 513x513 | 111.921 / 11.540 | 9.70 | 213.863 / 21.440 | 9.97 |
+
+Ratios below one mean slower on CUDA. All components are slower at 33x33;
+Reynolds alone is slower through 129x129. FFT gains begin at 65x65, while
+complete residual/JVP gains against cached CPU begin at 129x129 here.
+The original uncached CPU residual/JVP at 513x513 measure 241.098/467.405 ms;
+using those as baselines would mix caching/padding gains with device gains.
+Desktop scheduling, laptop clocks and thermal state cause substantial timing
+variation (an earlier 513 FFT median was 33.049 ms). These observations are
+not hardware-independent crossover rules or guaranteed speedups.
+
+| Grid | One field H2D / D2H [ms] | GPU elasticity setup [ms] | Peak allocated / reserved [MiB] |
+| --- | ---: | ---: | ---: |
+| 33x33 | 0.031 / 0.026 | 102.733 | 0.69 / 2 |
+| 65x65 | 0.039 / 0.046 | 196.586 | 2.72 / 4 |
+| 129x129 | 0.047 / 0.045 | 74.203 | 10.46 / 24 |
+| 257x257 | 0.096 / 0.104 | 82.953 | 41.79 / 72 |
+| 513x513 | 0.253 / 0.293 | 342.570 | 166.94 / 202 |
+
+Transfers use ordinary pageable NumPy memory, include allocation and are not
+overlapped. Setup includes CPU kernel generation/upload and the initial
+spectrum FFT; it is measured once and not a median. Memory columns are
+maximum PyTorch allocated/reserved peaks over component timing runs with
+resident benchmark fields and two GPU spectra. They exclude allocations
+outside PyTorch's allocator; reserved memory can persist between operations.
+The runner clears allocator cache between grids, never inside timed calls.
+
+Across the five grids, max(abs(GPU-CPU))/max(abs(CPU)) is at most 8.46e-16
+for elasticity, 5.95e-16 for Reynolds, 3.51e-15 for the complete nonlinear
+residual and 4.40e-16 for complete JVP. The independent 33x33 direct spatial
+elasticity error is 1.36e-15 by the same peak normalization. These are observed
+float64 errors on the benchmark fields, not universal bounds or pointwise
+relative tolerances near zeros. The signed operator audit remains mathematical
+and adds no physical film-height or positive-load/cavitation validation.
+
+Reproduce on Windows using the README PowerShell thread settings, or on Linux:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python -m examples.benchmark_cuda \
+  --output-directory results/cuda_new --warmup 5 --repeats 15
+```
+
+The new directory contains checkpointed summary.json with metadata, per-grid
+accuracy, CPU/CUDA timings, uncached CPU timings, transfers and memory peaks.
+The measured local run is results/cuda_20261026_a2000_final (untracked).
+Windows execution is verified here; Linux GPU execution and ROCm remain open.
+No full coupled GPU execution or end-to-end solver speedup has been established.

@@ -9,6 +9,8 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.sparse import coo_matrix, csr_matrix
 from scipy.sparse.linalg import cg, spsolve
 
+from ehl_solver.backend import Backend, as_float64, make_backend
+
 
 def _validated_film(
     film: ArrayLike,
@@ -16,25 +18,28 @@ def _validated_film(
     dy: float,
     reynolds_parameter: float,
     source: ArrayLike | None,
+    backend: Backend | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    h = np.asarray(film, dtype=np.float64)
+    backend = make_backend() if backend is None else backend
+    xp = backend.xp
+    h = as_float64(film, backend)
     if h.ndim != 2:
         raise ValueError("film must be a 2-D array with shape (ny, nx)")
     if min(h.shape) < 3:
         raise ValueError("film must have at least 3 cells per axis")
-    if not np.all(np.isfinite(h)) or np.any(h <= 0):
+    if not bool(xp.isfinite(h).all()) or bool((h <= 0).any()):
         raise ValueError("film must contain only finite, positive values")
     if not math.isfinite(dx) or dx <= 0 or not math.isfinite(dy) or dy <= 0:
         raise ValueError("dx and dy must be finite and positive")
     if not math.isfinite(reynolds_parameter) or reynolds_parameter < 0:
         raise ValueError("reynolds_parameter must be finite and nonnegative")
     if source is None:
-        manufactured_source = np.zeros_like(h)
+        manufactured_source = xp.zeros_like(h)
     else:
-        manufactured_source = np.asarray(source, dtype=np.float64)
+        manufactured_source = as_float64(source, backend)
         if manufactured_source.shape != h.shape:
             raise ValueError("source must have the same shape as film")
-        if not np.all(np.isfinite(manufactured_source)):
+        if not bool(xp.isfinite(manufactured_source).all()):
             raise ValueError("source must contain only finite values")
     return h, manufactured_source
 
@@ -91,6 +96,8 @@ def parabolic_point_contact_film(
     minimum_film_m: float,
     radius_x_m: float,
     radius_y_m: float,
+    *,
+    backend: Backend | None = None,
 ) -> NDArray[np.float64]:
     """Return the rigid parabolic point-contact film thickness in metres.
 
@@ -99,12 +106,14 @@ def parabolic_point_contact_film(
     ``h = h_min + x**2/(2*Rx) + y**2/(2*Ry)``. It represents prescribed rigid
     surfaces only; no pressure-induced deformation is included.
     """
-    x = np.asarray(x_m, dtype=np.float64)
-    y = np.asarray(y_m, dtype=np.float64)
+    backend = make_backend() if backend is None else backend
+    xp = backend.xp
+    x = as_float64(x_m, backend)
+    y = as_float64(y_m, backend)
     parameters = (minimum_film_m, radius_x_m, radius_y_m)
     if x.ndim != 2 or y.shape != x.shape:
         raise ValueError("x_m and y_m must be same-shaped 2-D coordinate arrays")
-    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+    if not bool(xp.isfinite(x).all()) or not bool(xp.isfinite(y).all()):
         raise ValueError("x_m and y_m must contain only finite coordinates")
     if not all(math.isfinite(value) and value > 0 for value in parameters):
         raise ValueError("minimum film and radii must be finite and positive")
@@ -234,6 +243,8 @@ def reynolds_residual(
     dy: float,
     reynolds_parameter: float,
     source: ArrayLike | None = None,
+    *,
+    backend: Backend | None = None,
 ) -> NDArray[np.float64]:
     """Return the conservative Reynolds-equation residual on interior cells.
 
@@ -252,16 +263,22 @@ def reynolds_residual(
     Face values of ``H**3`` use arithmetic interpolation, pressure gradients
     use adjacent grid values, and divergence uses opposing face fluxes.
     The returned residual is dimensionless.
+
+    An explicit torch backend returns a float64 tensor on its selected device.
+    Field validation synchronizes scalar predicates; arrays are never copied
+    back to the host. This ports the centered full-film stencil, not JFO upwinding.
     """
-    p = np.asarray(pressure, dtype=np.float64)
+    backend = make_backend() if backend is None else backend
+    xp = backend.xp
+    p = as_float64(pressure, backend)
     h, manufactured_source = _validated_film(
-        film, dx, dy, reynolds_parameter, source
+        film, dx, dy, reynolds_parameter, source, backend
     )
     if p.ndim != 2:
         raise ValueError("pressure must be a 2-D array with shape (ny, nx)")
     if p.shape != h.shape:
         raise ValueError("pressure and film must have the same shape")
-    if not np.all(np.isfinite(p)):
+    if not bool(xp.isfinite(p).all()):
         raise ValueError("pressure must contain only finite values")
 
     interior = (slice(1, -1), slice(1, -1))

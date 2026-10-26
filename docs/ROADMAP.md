@@ -46,6 +46,14 @@
 - [ ] Density- and pressure-dependent viscosity
 - [ ] Shear thinning and thermal EHL when isothermal validation passes
 - [ ] Optional CUDA / ROCm benchmarks, parity tests and profiling
+  - [x] Explicit PyTorch CUDA cached DC-FFT elasticity, full-film Reynolds
+    residual and rigid film geometry with float64 CPU/direct/Hertz/flux checks.
+  - [x] Device-resident signed full-film residual and complete analytic JVP
+    evaluation audit, including compliance and force row; CPU solver unchanged.
+  - [x] Synchronized 33/65/129/257/513 CUDA timings, transfers and PyTorch
+    memory peaks on the Windows RTX A2000 Laptop GPU.
+  - [ ] Verified resident GPU preconditioner/Krylov and complete nonlinear solve;
+    device JFO, ROCm coverage and Linux GPU execution remain open.
 
 Do not check off a box without reproducible evidence (tests or documented benchmark output).
 
@@ -437,3 +445,44 @@ resolution / dimensional-similarity study using this accurate linear path.
 Verification: `ruff check .` clean; `pytest -q` 249 passed, 4 optional
 PyTorch skips. Bounded single-thread rigid probes complete through 39,321
 nodes; the regression also checks the independently recomputed mass stencil.
+
+## Optional CUDA operator milestone (2026-10-26)
+
+The explicit CUDA request supersedes earlier GPU deferrals for this increment.
+Added object-owned cached DC-FFT elasticity, optional device Reynolds/rigid
+geometry operations and a separate signed full-film evaluator. The latter
+ports the complete scaled nonlinear residual and analytic state/compliance
+JVP, including load quadrature. It does not bridge transferred vectors into
+SciPy inner iterations or modify the reference Newton algorithm. Kernel
+construction/upload occurs once; arrays remain resident between calls.
+Workspace estimates are limited to 1 GiB and half of free VRAM by default.
+
+Independent spatial convolution, edge/no-wrap/signed/zero cases, Hertz
+refinement, whole-face flux divergence, full Jacobian columns, CPU residual
+differences, strict feasibility, device residency and propagated FFT failures
+cover the new paths. The complete CPU suite is also exercised with PyTorch
+imports disabled. Windows CUDA execution is verified here; Linux execution
+remains for CI/another host. Physical and domain limitations are unchanged.
+
+All requested grids through 513x513 fit. Against cached NumPy at 513x513,
+DC-FFT is 9.43x faster, Reynolds 16.65x, nonlinear residual evaluation 9.70x,
+and JVP evaluation 9.97x. At 33x33 all are slower on GPU. Peak allocated/
+reserved memory is 166.94/202 MiB. Maximum peak-normalized elasticity and
+coupled-residual errors are 8.46e-16 and 3.51e-15. PHYSICS.md records full
+timings, transfer/setup costs, methodology and reproduction. No full GPU
+solver milestone is checked off.
+
+Next CUDA work: profile scalar validation/launch overhead and design a
+verified device preconditioner/Krylov path only with complete bordered,
+Schur, true-residual, feasibility and dual-line-search regressions. Do not
+replace SciPy with repeated full-vector transfers. The physical roadmap
+still needs the controlled rigid far-field extent/resolution study before
+material or physical film-height claims.
+
+Final verification: `ruff check .` clean; `pytest -q` 279 passed with CUDA
+available (31.17 s). With torch imports blocked, 259 passed and 20 optional
+tests skipped (28.00 s). With CUDA hidden but torch installed, the selected
+backend/elasticity/device suite has 30 passed and 10 skipped. The initial
+sandbox run could not access pytest's existing Windows temporary directory;
+the final complete CUDA run used approved host access. Generated results and
+pre-existing tracked egg-info modifications are excluded from this milestone.

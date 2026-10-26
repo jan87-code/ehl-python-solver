@@ -2060,3 +2060,26 @@ is not updated; no nonuniform coupled elasticity or infinite-domain boundary
 law is claimed. Resource caps and original SI acceptance criteria remain
 explicit. Partition independence on one mesh is distinct from mesh accuracy
 or insensitivity to moving the physical reservoir.
+
+### Graded exterior at fixed physical reservoir
+
+The section-8 benchmark holds the same ambient reservoir at +/-8L,+/-8Ly,
+retains an exactly uniform [-2,2] core and independently varies core spacing
+and outer geometric growth. Final outer cells end at the prescribed physical
+bounds; the reservoir is not snapped outward. A 139x139 graded prescribed-film
+response agrees with an independent 257x257 uniform reference to 0.129% full
+load, 0.056% core pressure and 0.065% total center displacement. Its exterior
+source force and exterior center displacement differ by 0.177% and 0.139%
+on matched core source-cell supports. Both retained and exterior pressure
+are included; no nonuniform FFT or elastic feedback is introduced.
+
+The native boundary flux audits surround midpoint cells whose outer faces
+move with the edge cell width. They remain the conservative acceptance test.
+A separate diagnostic at the same physical section x=-L,y=+/-Ly measures
+supply changes consistently across meshes using nodal flux and centered
+pressure differences. It never replaces the original face residual. Core
+front comparisons match transition kinds/counts and brackets on shared y
+rows without interpolation. Coarse candidates can conserve mass while failing
+load/field accuracy, and remain explicitly rejected for approximation use.
+Reference mesh changes are reported separately; finite-reservoir approximation
+success is not continuum, infinite-domain or coupled physical validation.

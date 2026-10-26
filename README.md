@@ -300,3 +300,16 @@ It solves exterior pressure/content and accounts for exterior load and
 selected-target elastic sources. Numerical cuts match an independent larger
 rigid reference; the physical reservoir remains fixed. See section 7 of the
 validation report for the formulation, limits and outstanding mesh/coupling work.
+
+The separate fixed-reservoir outer-mesh budget is:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_exterior_mesh --output-directory results/exterior_mesh_new
+```
+
+It independently refines uniform references and graded exteriors at identical
+physical reservoir bounds, retains field-error failures, and audits supply,
+fronts and exterior elastic sources. The finest graded load discrepancy is
+0.129% against the finest uniform reference. Reference mesh uncertainty and
+remaining coupled/infinite-domain limitations are documented in report section 8.

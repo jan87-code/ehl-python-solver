@@ -1010,3 +1010,171 @@ flooded/starved reference parity, moving cuts and complete elastic-source
 partition/FFT parity, and invalid-core/iteration-exhaustion behavior. All
 three benchmark cuts pass the declared original SI and reference criteria.
 Source hashes match; source-budget and cut-comparison figures were inspected.
+
+## 8. Graded finite-reservoir exterior approximation (2026-10-26)
+
+Starting revision: `f5ab34f89522518f6e3ee5887151f5c71b1001dd`.
+**Outcome: a bounded graded prescribed-film exterior response meets the
+specified 1% errors against an independently refined finite-reservoir
+reference.** This improves a computational exterior approximation at fixed
+physical boundaries. It establishes neither an infinite-domain limit nor
+coupled nonlinear EHL validation.
+
+### Independent reference resolution versus outer grading
+
+Keep exactly the physical section-7 reservoir and operating parameters:
+x=+/-8L, y=+/-8Ly, h0=0.1 um, Rx=10 mm, Ry=20 mm, eta=0.04 Pa s,
+Ue=0.001 m/s, ambient physical pressure edges and west content one.
+The original uniform JFO solver supplies references at four resolutions.
+Each has independent SI mass/constraint audits. Uniform FFT supplies
+reference diagnostic displacements at the center and (-0.5L,0), E*=1 GPa.
+It does not alter the prescribed rigid film.
+
+| Uniform dX | Grid | Q [N] | Peak p [MPa] | Center displacement [nm] |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.5 | 33x33 | 0.002004831810 | 0.171983644 | 11.335207793 |
+| 0.25 | 65x65 | 0.002138508624 | 0.188248017 | 12.328255651 |
+| 0.125 | 129x129 | 0.002179107398 | 0.193009914 | 12.687998177 |
+| 0.0625 | 257x257 | 0.002189795408 | 0.194208742 | 12.776453129 |
+
+Successive load changes are 6.668%, 1.898% and 0.4905% relative to the
+preceding mesh. The final pressure and center-displacement changes are
+0.6211% and 0.6972%. The finest original SI max mass defect is 3.10e-11.
+The uniform reference has 66,049 nodes, within the previous 70,000-node
+benchmark budget. Its last centerline rupture bracket is
+[13.975425,16.770510] um. These observed changes quantify reference
+uncertainty; they are not a proven continuum error bound. Another uniform
+halving would require 263,169 nodes, outside this study's resource budget.
+No such calculation or stronger continuum-accuracy claim is made.
+
+The new study retains a uniform normalized [-2,2] core with dX=0.25,
+0.125 or 0.0625. Outer widths grow geometrically by 1.2, 1.1 or 1.05;
+the last cell ends at the **same physical** +/-8 boundaries, rather than
+snapping the reservoir outward. These are distinct fixed-domain mesh
+approximations. Condensation retains the inner +/-L,+/-Ly nodes; exterior
+film, pressure and content are solved afresh, with no reference trace.
+Every comparison uses the same model and supply assumption.
+
+Before solving, the runner declares original max mass 1e-8, relative
+local/global defects and complementarity/admissibility 1e-10. Separate
+comparison tolerances are 1% for full load, shared-core pressure L2, peak
+pressure, total center/upstream displacement and a diagnostic fixed-section
+volume flow. Front kinds/counts must match on shared physical core y rows;
+node-bracket separation must be within two local core cells, using the
+unchanged theta<1-1e-8 diagnostic. Core pressure and fronts use actual
+shared coordinates, without field interpolation. Rigid minimum film remains
+prescribed at 0.1 um at the origin; its invariance is not physical film-height
+validation.
+
+| Core dX | Outer growth | Grid | Load discrepancy [%] | Shared-core pressure discrepancy [%] | Center displacement discrepancy [%] | Field criteria |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 0.25 | 1.2 | 37x37 | 3.8593 | 3.7424 | 4.2918 | fail |
+| 0.25 | 1.1 | 43x43 | 3.0017 | 3.4318 | 3.8514 | fail |
+| 0.25 | 1.05 | 51x51 | 2.6337 | 3.3024 | 3.6626 | fail |
+| 0.125 | 1.2 | 59x59 | 1.7578 | 1.1048 | 1.3103 | fail |
+| 0.125 | 1.1 | 71x71 | 0.9487 | 0.8233 | 0.9264 | pass |
+| 0.125 | 1.05 | 85x85 | 0.6759 | 0.7256 | 0.7894 | pass |
+| 0.0625 | 1.2 | 99x99 | 1.0119 | 0.4074 | 0.4940 | fail |
+| 0.0625 | 1.1 | 115x115 | 0.3546 | 0.1465 | 0.1746 | pass |
+| 0.0625 | 1.05 | 139x139 | 0.1287 | 0.0559 | 0.0648 | pass |
+
+All nine cases pass the physical mass/constraint audits. Their largest max
+mass, relative local and relative global defects are 1.27e-11, 1.08e-13
+and 2.90e-14; complementarity is zero at printed precision. Low residuals
+therefore do **not** rescue the five field-error failures. All front
+comparisons pass; the finest matches transition count/kind on 65 shared
+y rows, and its brackets overlap the reference brackets on every such row.
+These are bracket comparisons, not a subcell front error estimate.
+
+At fixed finest core, reducing outer growth from 1.2 to 1.1 and 1.05
+changes Q from 0.002167636852 to 0.002182030760 to 0.002186978056 N.
+At fixed growth 1.05, refining the core separately changes Q from
+0.002132121840 to 0.002174994814 to 0.002186978056 N. The final respective
+outer/core changes are approximately 0.227%/0.551%. Independent controls
+show why grading and core discretization must both be budgeted. They do not
+justify adding observed errors as a rigorous total bound or asserting an
+asymptotic convergence order.
+
+### Supply, exterior force and deformation
+
+The native conservative outer boundary budgets lie on midpoint faces.
+Their physical positions change when the last mesh cell changes even though
+the reservoir nodes stay fixed. Those flows and exact face positions are
+saved, but differences are not mislabeled as supply at an identical section.
+For a common physical comparison the runner separately evaluates flux at
+x=-L across y=[-Ly,Ly], using central pressure differences, nodal h/theta
+and SI trapezoidal integration. This **diagnostic** section flux is not a
+replacement for conservative face acceptance. Its stencil is uniform on all
+studied cores and its units/sign are independently tested.
+
+The finest uniform diagnostic net flow is 2.336034794e-14 m^3/s; the finest
+graded result differs by 0.00611%. Its Couette/Poiseuille components are
+saved separately. Inlet content is never tuned to obtain this agreement.
+Physical outer and internal-cut conservative budgets also remain available.
+
+At the finest matched core spacing, retained/exterior source-cell supports
+at the cut are identical between uniform and graded models, allowing a
+separate exterior comparison. The uniform exterior source force is
+0.001450091928 N; the finest graded value is 0.001447523972 N, a 0.1771%
+discrepancy. Exterior center displacement is 4.120756304 nm versus
+4.115025068 nm, a 0.1391% discrepancy. These also pass the declared 1%
+comparison. For coarser core spacings the cut cells have different widths;
+the runner records exterior partitions but deliberately does not claim
+like-for-like component errors on those different supports. Total load
+and total target displacement comparisons remain meaningful throughout.
+
+The finest graded peak is 0.194161953 MPa (0.0241% discrepancy); its total
+center displacement is 12.768173992 nm and upstream displacement differs
+by 0.0602%. Complete half-space response at the selected targets includes
+both retained and exterior pressure sources. Reference totals use the
+uniform FFT; graded totals use direct physical cell integration. No
+translation-invariant FFT is applied to the nonuniform pressure field.
+No deformation is fed back into the rigid prescribed film.
+
+### Resource evidence, reproduction and next action
+
+The 139x139 approximation uses 19,321 total nodes versus 66,049 reference
+nodes, within the exterior solver's unchanged 20,000-node limit. The last
+response has 161 columns, 2,178 retained pressure/content unknowns and
+35,360 exterior unknowns. Its estimated dense work is 60,135,424 bytes,
+within 64 MiB; sparse factor storage is additional. Eight active sets are
+needed, below the unchanged cap of 100. Timings are recorded for provenance
+and bounded-cost review, not as a general acceleration claim.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_exterior_mesh \
+  --output-directory results/exterior_mesh_new
+```
+
+The authoritative run is `results/exterior_mesh_20261026_verified/`:
+four independent uniform states, nine graded candidates, 13 SI NPZ files,
+five figures, source/runtime hashes, histories, source partitions, front
+checks and explicit physical-audit versus field-error acceptance flags.
+Earlier development output, including a checkpoint interrupted by a fixed
+NumPy-boolean JSON serialization error, is preserved. The final runner
+completes; regression coverage verifies portable JSON front diagnostics.
+
+This is an independently verified exterior discretization for a **finite**
+point reservoir, providing pressure/supply/load and diagnostic exterior
+elastic-source accounting. The finer reference still has measurable mesh
+uncertainty. Physical reservoir dependence and the section-6 large-domain
+label-256 limitation are not erased by changing the problem to this explicit
+finite reservoir. No coupled model has been replaced.
+
+Next justified action: verify all inner-target elastic displacements and
+film-dependent exterior response/derivatives against a full uniform coupled
+finite-reservoir reference, with controlled source/mesh errors. Only then
+consider integrating the response into the nonlinear JFO solver. Further
+reference refinement needs a bounded alternative to the next 263,169-node
+uniform mesh, rather than silently raising resource limits. Piezoviscous
+physics and GPU JFO remain deferred.
+
+Milestone checks: `ruff check .` clean; full `pytest -q` **300 passed,
+62 optional device skips** (70.68 s). Two added regressions independently
+check fixed-reservoir outer refinement against the original uniform solver,
+load/pressure/displacement convergence, common-section SI flow units,
+front-mismatch detection and portable diagnostic JSON. All four uniform
+and nine graded states finish; four graded candidates meet every stated
+reference comparison. Source hashes, manifests and representative error
+and saturation figures were inspected.

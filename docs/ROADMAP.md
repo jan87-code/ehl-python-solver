@@ -746,3 +746,37 @@ device skips (70.66 s). Four new regressions pass; all three benchmark cuts
 pass original SI and independent-reference criteria. Source hashes and final
 figures were checked. This verified finite-reservoir step precedes the next
 outer-mesh approximation study.
+
+## Fixed-reservoir graded exterior milestone (2026-10-26)
+
+Continued after f5ab34f with independent uniform references at dX=.5,.25,
+.125,.0625 on the same +/-8L,+/-8Ly physical reservoir, then nine graded
+response candidates with separate core spacing and outer-growth controls.
+The finest 139x139 candidate, within the unchanged 20,000-node/64 MiB dense
+work caps, differs from the independent 257x257 reference by 0.129% load,
+0.056% shared-core pressure, 0.065% total center deformation, 0.177% exterior
+source force and 0.139% exterior center deformation. A fixed physical supply
+section differs by 0.00611%; 65 shared core rows have overlapping matching
+front brackets. Original SI mass/constraint checks pass on all nine cases,
+but five fail the separate field-error criteria and remain explicitly flagged.
+
+Evidence: `results/exterior_mesh_20261026_verified/`, 13 raw SI states,
+five figures and complete audit/history/source/mesh data. Report section 8
+separates original conservative faces from the fixed-section diagnostic and
+records reference mesh uncertainty. The last uniform load change is 0.4905%,
+not a rigorous continuum error bound. Existing results, including incomplete
+development checkpoints, are preserved. No coupled JFO/FFT/GPU code changed.
+
+Next development action: independently verify displacement at all required
+inner targets and the film-dependent exterior response/derivatives against a
+full uniform coupled finite-reservoir reference before integrating it. Keep
+reference, exterior/core mesh and nonlinear errors distinct. A further uniform
+halving needs 263,169 nodes, beyond the 70,000-node reference-study budget;
+use a verified bounded alternative rather than increasing limits silently.
+Physical infinite-domain validation and the old large-domain label-256 issue
+remain open. Constitutive physics and GPU JFO remain deferred.
+
+Milestone verification: Ruff clean; complete pytest 300 passed, 62 optional
+device skips (70.68 s). Independent reference/outer-refinement and diagnostic
+flow/front regressions pass. All source hashes and 13-state/five-figure
+manifest checks pass; coarse field-error failures remain visible.

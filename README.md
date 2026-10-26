@@ -288,3 +288,15 @@ The solver does not require plotting or collect snapshots unless
 `results/` output is ignored by Git.
 
 See `docs/PHYSICS.md`, `docs/MATLAB_LESSONS.md`, `docs/ROADMAP.md`.
+
+The finite point-reservoir exterior response can be reproduced independently:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_exterior_response --output-directory results/exterior_response_new
+```
+
+It solves exterior pressure/content and accounts for exterior load and
+selected-target elastic sources. Numerical cuts match an independent larger
+rigid reference; the physical reservoir remains fixed. See section 7 of the
+validation report for the formulation, limits and outstanding mesh/coupling work.

@@ -2037,3 +2037,26 @@ reservoir is a valid stated model; a physical infinite-domain point limit
 remains unverified, especially outside small-slope lubrication assumptions.
 Grading limits resource cost but does not supply missing outer pressure,
 load or elastic sources. Nonuniform FFT coupling remains prohibited.
+
+### Discrete finite-reservoir exterior response
+
+`exterior.py` condenses exterior pressure **and** transported content for each
+JFO active set. It computes the Schur response of the full constrained
+prescribed-film system, reconstructs exterior fields and updates their wet/dry
+sets. Only the physical outer boundary is ambient/flooded; the numerical cut
+has neither a new pressure condition nor a prescribed feed. Its response is
+affine only while the active set and film stay fixed. No reference pressure
+trace is supplied to this solver. The independent original uniform solver
+checks the fixed-reservoir benchmark in validation report section 7.
+
+Exterior pressure contributes explicitly to SI load and to diagnostic
+cell-integrated half-space displacement. Retained/exterior source masks
+partition whole midpoint source cells, including interface cells; this differs
+from a geometric integral up to the inner node rectangle. The total source
+load equals full trapezoidal load when physical edge pressures are zero.
+Target displacements use direct source-cell integration and agree with the
+uniform zero-padded FFT in independent regressions. The rigid prescribed film
+is not updated; no nonuniform coupled elasticity or infinite-domain boundary
+law is claimed. Resource caps and original SI acceptance criteria remain
+explicit. Partition independence on one mesh is distinct from mesh accuracy
+or insensitivity to moving the physical reservoir.

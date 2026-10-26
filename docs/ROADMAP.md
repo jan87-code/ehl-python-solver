@@ -716,3 +716,33 @@ Final checks: `ruff check .` clean; complete `pytest -q` 294 passed,
 benchmark stages pass their stated checks; the largest corrected candidate
 remains explicitly rejected rather than counted as domain-validation success.
 Representative final figures and source provenance were inspected.
+
+## Finite-reservoir response milestone (2026-10-26)
+
+Implemented a prescribed-film 2-D exterior response beginning at e666ff9.
+The full pressure/content constraints are condensed per active set; exterior
+pressure, supply and cavitation are computed without importing the larger
+reference trace. The fixed physical ambient reservoir is +/-8L,+/-8Ly,
+65x65 with dX=0.25 and the established h0=0.1 um point geometry/fluid.
+Cuts at labels 1/2/3 recover independent uniform JFO pressure/load to roundoff,
+with maximum original mass defect 1.79e-12. Source-cell partitions retain
+exterior force and selected-target elastic deformation, independently checked
+against uniform FFT. No coupled solve or driver/system change is made.
+
+Evidence: `results/exterior_response_20261026/`, four SI field files, four
+figures and a provenance/audit/history JSON. Numerical cut independence is
+verified for this finite problem; continuum/physical far-field validation
+remains open. Cost is bounded by 20,000 nodes, 100 active sets, 256 response
+columns and 64 MiB estimated dense response work, plus sparse factor storage.
+No acceleration claim is made; an exterior system is still factored.
+
+Next action: retain the same physical reservoir and inner nodes while testing
+controlled graded exterior approximations against an independently resolved
+uniform reference. Measure mesh, pressure/load, supply/front and exterior
+source errors separately. Do not integrate into coupled JFO until these pass.
+
+Milestone verification: Ruff clean; full pytest 298 passed, 62 optional
+device skips (70.66 s). Four new regressions pass; all three benchmark cuts
+pass original SI and independent-reference criteria. Source hashes and final
+figures were checked. This verified finite-reservoir step precedes the next
+outer-mesh approximation study.

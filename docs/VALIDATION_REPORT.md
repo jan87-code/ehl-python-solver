@@ -861,3 +861,152 @@ new GPU execution claim is made. All benchmark stages finish; original and
 corrected residual-rejected states remain explicit. The 17-figure manifest,
 41 NPZ files and current source hashes were checked. Representative boundary,
 force-accounting and physical-defect figures were visually inspected.
+
+## 7. Finite point-reservoir exterior response (2026-10-26)
+
+Starting revision: `e666ff96dcbccd9399aa7a6c384017e8b035ddd0`.
+**Verified scope: a rigid, prescribed-film discrete exterior response for
+an explicitly dimensioned finite reservoir.** It computes exterior pressure
+and content without supplying the larger reference's pressure trace. It
+removes numerical-cut dependence for that same finite physical problem;
+it does not remove physical reservoir dependence or establish an infinite
+point-contact limit. The coupled JFO/FFT and signed GPU solvers are unchanged.
+
+### Formulation and physical data
+
+`exterior.solve_exterior_response` assembles the conservative midpoint
+mass equations independently of the original uniform JFO implementation.
+It uses the existing arithmetic mobility/film faces, west-upwind content,
+ambient pressure on the physical outer edges and prescribed west content.
+The prescribed-film, constant-property model and SI conventions of section 1
+apply. The only new inner rectangle is a computational partition: no pressure
+or incoming-content value is imposed there.
+
+For each trial wet/dry active set, retain the **full** pressure/content
+constrained system `A z=b`, partitioned into inner I and exterior E equations
+and unknowns. Factor the equilibrated sparse exterior block and compute
+
+```
+z_E = A_EE^-1 b_E - A_EE^-1 A_EI z_I,
+S = A_II - A_IE A_EE^-1 A_EI,
+S z_I = b_I - A_IE A_EE^-1 b_E.
+```
+
+Only interface columns communicate with the exterior, so the dense response
+is restricted to those columns. The response is affine for a fixed active
+set, not a globally linear cavitation law. Start with wet nodes, reconstruct
+both pressure and transported content over the whole exterior, update active
+sets there and inside, and reject cycling/exhaustion/nonfinite states.
+Exterior cavitation is solved, not guessed from a reference. Keeping the
+content constraints and their upstream coupling prevents an artificial
+flooded reservoir from appearing at the inner inlet. Flooded and 0.9-content
+regressions independently agree with the original uniform JFO solver; the
+latter is a separate supply problem, not a truncation-error adjustment.
+
+States, factorization and response use float64. Positive row/column
+scalings alter only linear coordinates. There is no clipping, regularization
+or widened stopping tolerance. Limits are 20,000 total nodes, 100 active
+sets, 256 response columns and a 64 MiB estimated dense-work cap checked
+before response allocation. RHS columns are solved in batches of at most 16.
+Sparse factors incur additional storage; the recorded budget is not a claim
+of total process peak memory. Rebuilding an exterior factor per active set
+also costs work: condensation is not claimed to accelerate the present solve.
+
+### Independent rigid benchmark and supply/conservation
+
+Fix h0=0.1 um, Rx=10 mm, Ry=20 mm, eta=0.04 Pa s, Ue=0.001 m/s,
+L=44.72135955 um, Ly=63.24555320 um, p_ref=2.14662526 MPa and Lambda=1.
+Use a **fixed** physical reservoir x=+/-8L, y=+/-8Ly, i.e.
++/-0.357770876 mm and +/-0.505964426 mm. The full 65x65 grid has
+spacing 0.25L,0.25Ly. Every physical pressure edge is ambient; west theta=1.
+The larger reference is independently solved by `solve_cavitating_reynolds`;
+its fields are compared after solving, never passed into the exterior solver.
+The computed load is 0.002138508623897257 N. This finite reservoir has
+maximum rigid corner slope approximately 0.0438; physical applicability is
+still an explicit model assumption, not certified by a chosen slope cutoff.
+
+| Inner cut +/-label L,Ly | Retained pressure/content unknowns | Reference pressure relative L2 discrepancy | Original max continuity | New ambient reservoir at cut: Q [N] |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 162 | 5.13e-16 | 1.68e-12 | 0.000210919740 |
+| 2 | 578 | 6.92e-16 | 1.54e-12 | 0.000861158114 |
+| 3 | 1250 | 5.58e-16 | 1.78e-12 | 0.001332591641 |
+
+All three response solves recover the full load to roundoff, with maximum
+content discrepancy 1.67e-15. All take seven active sets, independently
+finding over 1,400 dry exterior nodes. The largest dense-work estimate here
+is 9.30 MB. Original SI relative local/global defects are below 1.88e-14
+and 2.47e-15; complementarity is zero at printed precision. Pressure edges,
+west supply and feasibility retain the section-5 tolerances. Comparison
+criteria were set before solving to 1e-8 relative pressure/load error, in
+addition to original max continuity 1e-8 and relative local/global and
+complementarity/admissibility 1e-10. These are discrete reference-parity
+criteria, not continuum mesh accuracy claims.
+
+The outer reservoir volume flow is approximately 3.833948386e-12 m^3/s
+incoming, with east/south/north outflows 2.353192609e-12,
+7.403778885e-13 and 7.403778885e-13 m^3/s. For the label-2 cut the
+incoming internal west flow is instead 1.113328581e-13 m^3/s; its outgoing
+east/south/north flows are 7.784944859e-14, 1.674170477e-14 and
+1.674170477e-14 m^3/s. This smaller inner supply is computed by the
+exterior response. It is not prescribed equal to the physical inlet supply.
+The independent interior-control-volume flux budget closes to 1.46e-28
+m^3/s. Both outer and internal budgets are saved. Front brackets and raw
+pressure/content fields are retained for each cut.
+
+### Omitted load and exterior elastic sources
+
+Reconstructed exterior pressure is used in the load, rather than adding a
+borrowed scalar tail. `exterior_source_budget` partitions **source cells**
+by their retained/exterior node masks. With zero physical pressure edges,
+interior midpoint-cell areas equal nonzero trapezoidal nodal weights. Cells
+centered at the cut straddle its node rectangle; this disjoint source
+partition is explicitly different from integrating up to that rectangle.
+For diagnostic E*=1 GPa, direct rectangular-cell integration evaluates the
+same half-space 1/(pi E* r) operator at two targets. No FFT is used on unequal
+cells, and this calculation does not change the rigid film.
+
+| Cut | Exterior source load [N] | Exterior center displacement [nm] | Total center displacement [nm] |
+| ---: | ---: | ---: | ---: |
+| 1 | 0.001338361443 | 3.584026139 | 12.328255651 |
+| 2 | 0.000689488603 | 1.213645841 | 12.328255651 |
+| 3 | 0.000361483741 | 0.487461024 | 12.328255651 |
+
+The retained plus exterior loads reproduce total force; displacements add
+with maximum partition discrepancy below 5e-24 m. A separate regression
+compares the complete uniform-grid displacement at both targets to the
+validated zero-padded FFT. Thus a numerical cut neither discards exterior
+mechanical pressure nor silently fixes its deformation to zero. This is
+selected-target source verification, **not an integrated coupled exterior
+elastic model**. Coupling would require film-dependent exterior response,
+all required target displacements and their consistent nonlinear derivatives.
+
+### Reproduction, limitations and next action
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_exterior_response \
+  --output-directory results/exterior_response_new
+```
+
+`results/exterior_response_20261026/` contains four raw SI NPZ files,
+source/runtime provenance, active-set histories, internal/outer flux audits,
+load/deformation partitions and four figures. Existing directories are
+refused; checkpoints retain incomplete/failure status. The default reference
+requires no previous generated dataset. The experiment is a partition test
+on the same physical mesh, deliberately separate from continuum refinement.
+
+The response is point-specific through the full 2-D geometry, lateral
+pressure flow and exterior cavitation. It provides a finite physical
+formulation without a guessed pressure trace, but still computes an
+exterior discretization. Next test: approximate that exterior on graded
+meshes at **fixed physical reservoir bounds**, retaining the same inner
+nodes, and separately quantify pressure, load, supply, front and diagnostic
+elastic-source errors against a resolved larger uniform reference. Require
+those errors and mesh changes to pass before considering coupled integration.
+
+Milestone checks: `ruff check .` clean; complete `pytest -q` **298 passed,
+62 optional device skips** (70.66 s). Four added regressions cover independent
+flooded/starved reference parity, moving cuts and complete elastic-source
+partition/FFT parity, and invalid-core/iteration-exhaustion behavior. All
+three benchmark cuts pass the declared original SI and reference criteria.
+Source hashes match; source-budget and cut-comparison figures were inspected.

@@ -2484,3 +2484,100 @@ independently cold-initialized repaired-root parity, physical-data/boundary/
 film rejection, actual active lookahead recovery and safeguarded fallback
 under an injected selected-model linear failure. Skips are optional device
 coverage; all production calculations here are NumPy/SciPy CPU float64.
+
+## 20. Regeneration after missing archives (2026-10-27)
+
+Starting revision: bb01c3264e8e8821a0cb1e1bbc6f22d4723dae3b.
+The original production results and pending factor-three checkpoint were
+not present in the recovered Linux workspace. They were not relabeled or
+reconstructed by interpolation. Fresh runs use the registered Circular200N
+case and unchanged NumPy/SciPy float64 equations, physical +/-3a reservoir,
+Roelands/Dowson-Higginson laws and original acceptance tolerances.
+
+A fresh prescribed-offset 33x49 solve at h0=.5 um returns
+Q=1.9700562924117646 N. Local-elastic-preconditioned force continuation
+then targets 2/4/8/10/20/40/80/120/160/200 N, with at most 12 attempts per
+target, initial increment min(2,max(.25,.2*Q_seed)) N, and the existing
+30-Newton/10-Krylov-cycle limits. All 44 accepted states pass the separate
+saved-field mass/complementarity/boundary/force/full-source-film audit and
+original-directional Armijo/history checks. Maximum true linear residual
+is 1.749e-9. The final 200 N offset is -4.630558908223391 um, reproducing
+the earlier published root. This fresh path explicitly uses the existing
+local preconditioner at all loads; it does not replay the earlier frozen-
+preconditioner failure histories.
+
+The existing `examples.run_load_refinement` then generates explicitly
+unaccepted nested guesses and repairs them with the unchanged default
+30-correction budget and safeguarded active lookahead. The regenerated
+65x97 root again closes 200 N, with nine corrections/18 linear models.
+Its independent saved-state/globalization audit passes; maximum true linear
+error is 8.243e-10. Minimum/central film and peak pressure reproduce the
+section 19 values. The raw field and matched-centerline figures were
+inspected: alternating pressure variation is still visible, and the 1%
+mesh criterion remains false. Equation convergence is not physical accuracy.
+
+Recovery artifacts, exact reproduction scripts for the fresh seed and
+load path, runtime/source hashes, NPZ fields and audit figures are preserved
+under `results/recovered_200n_20261027/` in the original project checkout.
+A `sha256.json` manifest covers copied artifacts; outputs remain untracked
+and no existing baseline was overwritten. The source scripts refuse to
+reuse their output directories. Run them only with fresh output paths, using
+one BLAS/OpenMP thread and `PYTHONPATH=src:.`. Subsequent refinement/audit
+commands use the existing examples from section 19 with the regenerated
+load directory as their input. Paths recorded inside original summaries
+refer to the generation directory, before the archival copy.
+
+Pointwise density-tangent cell Peclet diagnostics use
+Ue*h*abs(d(rho)/dp)*dx/(2*mobility), mobility=rho*h^3/(12*eta),
+on cells with p>.1*pmax. Median values are 42020.4 (33x49) and
+8889.33 (65x97); maxima are 4.560e7 and 2.172e7. These are coefficient
+ranges, not a full coupled stability analysis: they omit nonlocal elastic
+film derivatives, viscosity-gradient terms and active-front effects. They
+show that the earlier smooth low-pressure probe is not representative of
+the loaded local transport regime. No stencil or fluid-law change follows
+from this diagnostic alone. The saved JSON retains the exact state paths
+and explicitly restricted scope.
+
+A complete bordered discrete-JVP check at the accepted 33x49 and 65x97
+200 N roots uses alternating x pressure, 1 MPa base amplitude, supported
+where p>.1*pmax, with zero content/offset perturbation. Both signs retain
+exact nonlocal-film feasibility. Centered residual differences at amplitudes
+.01/.001/.0001 have best relative complete-JVP errors 1.127e-9 and
+5.802e-10 respectively; smaller steps increasingly show cancellation.
+The archived reproduction script and JSON record all three errors and
+source/runtime hashes. This tests those derivative directions, not full
+spectra, conditioning, cavitation-front accuracy or coupled stability.
+
+### Bounded 97x145 outcome: rejected, not a third-grid solution
+
+The fresh factor-three repair exhausted the unchanged 30-correction budget.
+All 240 linear models have true residuals <=2.607e-10, and the independently
+recomputed full-source film equals the saved film. Direct center/peak source
+integration differs from FFT by <=2.542e-21 m. However, original mass_maximum
+is .0643674, relative local balance .440414, relative global balance .0294992
+and complementarity .107005. Force is 200 N, but force preservation alone
+cannot make this a root. The unaccepted initialization, failed partial NPZ,
+complete history, final offset and independent failure audit are all retained.
+No third-grid film value enters a matched-load convergence comparison.
+
+Every correction tried eight active models. Accepted steps repeatedly shrink
+from about 3e-10 toward 1e-26, interrupted by only three substantial steps
+(.01359, .001095 and .02281). The original-directional Armijo inequalities
+pass when recomputed, but repeated near-roundoff steps provide almost no
+nonlinear progress. This distinguishes accurate linear corrections from
+successful active-constraint globalization; it does not prove that no
+97x145 root exists. All original limits and tolerances remain unchanged.
+
+Next: replay the preserved rejected initialization/history to benchmark
+active-constraint feasibility, model selection and roundoff/stagnation
+handling, with explicit regressions for accepted steps that do not change
+the state or merit meaningfully. Keep the current method as a reference,
+retain failed states, and require original field/force gates before claiming
+third-grid recovery. Then compare accepted matched-force meshes and audit
+conservative transport/pressure-pattern stability. Reservoir and physical
+film-height verification remain separate and open. Do not increase budgets
+or alter material laws to bypass this failure.
+
+Final checks: Ruff clean; full pytest 361 passed, 62 optional device skips
+(285.51 s). No production solver, tolerance, floor or fluid law changed in
+this regeneration/assessment milestone.

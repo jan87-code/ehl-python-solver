@@ -1228,3 +1228,30 @@ skips (269.22 s), with BLAS/OpenMP limited to one thread. The standalone
 four-grid probe completed with runtime/source provenance under
 `/tmp/ehl-transport-consistency-verified/`; no simulation output is committed.
 Production refinement and archive-dependent audits remain unfinished.
+
+## Fresh 200 N source regeneration (2026-10-27)
+
+The previously missing 33x49 source and 65x97 refinement have now been
+regenerated from a cold prescribed-offset solve, rather than inferred from
+documented numbers. All 44 accepted load-continuation roots and the repaired
+65x97 root pass independent saved-state and globalization audits. Fresh
+200 N film/offset values reproduce the earlier reports; pressure variation
+and the failed 1% mesh criterion remain. Source/field hashes and reproduction
+scripts are copied to `results/recovered_200n_20261027/` in the original
+project checkout, preserving the staged HIP work and existing baselines.
+See VALIDATION_REPORT.md section 20 for the exact bounded path and scope.
+
+The fresh 97x145 repair has now exhausted its unchanged 30-correction
+budget and remains rejected: mass_maximum=.0643674, relative local mass
+defect=.440414 and complementarity=.107005, despite exact 200 N force.
+All 240 linear models pass the true correction check (max 2.607e-10),
+but accepted steps repeatedly collapse toward roundoff. Its initialization,
+failed partial fields, full history and independent failure audit are saved.
+A third-grid mesh-convergence claim is therefore still unavailable.
+
+Next: independently verify active-constraint/roundoff stagnation handling
+against this saved failure before tuning preconditioning or transport.
+Preserve the original reference and unchanged physical acceptance gates.
+Only accepted force-closed roots may enter subsequent mesh/domain studies.
+Final verification: Ruff clean; full pytest 361 passed, 62 optional device
+skips (285.51 s). No production numerical changes were made.

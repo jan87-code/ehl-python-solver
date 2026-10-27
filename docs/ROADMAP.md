@@ -1286,3 +1286,45 @@ acceptance gates and existing budgets; do not bypass the failure by clipping.
 Final checks: Ruff clean; full pytest 367 passed, 62 optional device skips
 (310.29 s). Evidence and code snapshots are saved under
 `results/lookahead_selection_20261027/` in the original project checkout.
+
+## Targeted content-bound recovery (2026-10-27)
+
+The final best-candidate 97x145 failure is blocked at physical (y,x) index
+(62,86): theta reaches -1e-10, P=.0167591, and the original accurate Newton
+direction has dD=.354948 (outward across D<=1+1e-10). The old recovery only
+handles proposed negative P/D and therefore misses this upper-D bound.
+A diagnostic single-cell full-film pivot removes the zero step while
+retaining the original slope/true-JVP checks; another nearby content bound
+then becomes limiting. The saved failed state is used only for diagnosis.
+
+Explicit repair now optionally prioritizes earliest affine content blockers
+within the original content tolerance, solves the selected full-film model,
+and retains the previous best-candidate/legacy policies via explicit flags.
+Five analytic cases verify targeted root recovery, simultaneous blockers,
+competing bounds, nonempty-content exclusion and failed-cycle retention.
+No equation, floor, physical gate or iteration budget is changed.
+
+The 65x97 replay remains bitwise identical, with nine corrections/18 models,
+no content pivots and a passing independent archive audit. The 97x145 repair
+now closes 200 N in 28 corrections/141 models within the unchanged budget,
+with nine content-bound pivot proposals. Its independent field/history/
+force/source audit passes: max original mass 2.643e-15, relative local
+balance 6.225e-15, complementarity 1.493e-28 and max true correction error
+9.754e-10. Input arrays are identical to both preserved failed baselines;
+neither rejected partial was reused as an accepted seed.
+
+Matched 65x97->97x145 changes are hmin .162938->.187512 um (+15.08%),
+central film .442995->.396128 um (-10.58%) and peak pressure
+1741.100->1716.684 MPa (-1.402%). Raw centerlines retain cell-scale pressure
+variation. The 1% mesh gate is still false; no continuum order, physically
+resolved pressure spike or film-height accuracy is claimed.
+
+Next: benchmark conservative transport/discrete stability at these accepted
+high-load roots before changing the stencil. Separate reservoir sensitivity
+from mesh error and retain both older recovery policies. Physical validation
+remains open. Evidence/code snapshots, both accepted replays, independent
+audits and the unsmoothed three-grid plot are preserved under
+`results/content_bound_pivots_20261027/` in the original project checkout.
+Final checks: Ruff clean; full pytest 372 passed, 62 optional device skips
+(307.78 s), one BLAS/OpenMP thread. Production equations and budgets are
+unchanged; only bounded model selection has been extended.

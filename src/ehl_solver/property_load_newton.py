@@ -281,6 +281,26 @@ def solve_property_load_newton(
     )
 
 
+def _content_bound_blockers(z, direction, n):
+    """Earliest affine blockers at theta~=0, in interior flattened (y,x) order.
+
+    P,D=1-theta use the existing dimensionless 1e-10 feasibility tolerance.
+    This selects constraints, never modifies state, direction or bounds.
+    """
+    deficit = z[n : 2 * n]
+    margins = np.r_[z[: 2 * n] + 1e-10, 1 + 1e-10 - deficit]
+    velocity = np.r_[-direction[: 2 * n], direction[n : 2 * n]]
+    ratios = np.full_like(margins, np.inf)
+    crossing = (velocity > 0) & (velocity > margins)
+    np.divide(margins, velocity, out=ratios, where=crossing)
+    first = min(1.0, float(ratios.min()))
+    return np.flatnonzero(
+        (deficit >= 1 - 1e-10)
+        & crossing[2 * n :]
+        & (ratios[2 * n :] <= np.nextafter(first, np.inf))
+    )
+
+
 def _solve_property_load_state(
     system,
     z,
@@ -291,6 +311,7 @@ def _solve_property_load_state(
     *,
     active_lookahead=False,
     lookahead_selection="best",
+    content_bound_pivots=False,
 ):
     """Shared Newton engine; callers distinguish audited roots from initial guesses."""
     if lookahead_selection not in ("best", "legacy"):
@@ -370,6 +391,15 @@ def _solve_property_load_state(
                 proposed = full.copy()
                 proposed[predicted[: system.n] < -1e-10] = False
                 proposed[predicted[system.n : 2 * system.n] < -1e-10] = True
+                if content_bound_pivots:
+                    blockers = _content_bound_blockers(z, d, system.n)
+                    blockers = blockers[~full[blockers]]
+                    model["content_bound_pivots"] = blockers.tolist()
+                    if len(blockers):
+                        # Change the blocking constraint before unrelated full-step
+                        # violations; the new model must still pass true-JVP/Armijo.
+                        proposed = full.copy()
+                        proposed[blockers] = True
                 novel = np.packbits(proposed).tobytes() not in seen
                 if slope < 0:
                     # First try the full step; next start at a safe affine bound.
@@ -444,13 +474,8 @@ def _solve_property_load_state(
                             break
                 if accepted:
                     break
-                # Pivot only violating lower complementarity constraints in the
-                # full linear proposal; unchanged merit still governs acceptance.
-                predicted = z + d
-                updated = full.copy()
-                updated[predicted[: system.n] < -1e-10] = False
-                updated[predicted[system.n : 2 * system.n] < -1e-10] = True
-                full = updated
+                # Try the proposed model; original merit governs every acceptance.
+                full = proposed
             if backup is not None and (
                 not accepted
                 or (resolved_lookahead and backup[1]["merit"] < model["trials"][-1]["merit"])

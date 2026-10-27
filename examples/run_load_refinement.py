@@ -25,6 +25,7 @@ def main(
     active_lookahead=True,
     refinement_factor=2,
     lookahead_selection="best",
+    content_bound_pivots=True,
 ):
     if refinement_factor not in (2, 3):
         raise ValueError("refinement factor must be 2 or 3")
@@ -79,6 +80,7 @@ def main(
         "interpolated_guess_accepted": False,
         "active_lookahead": active_lookahead,
         "lookahead_selection": lookahead_selection,
+        "content_bound_pivots": content_bound_pivots,
         "refinement_factor": refinement_factor,
         "matched_loads": [],
     }
@@ -111,6 +113,7 @@ def main(
             guess,
             active_lookahead=active_lookahead,
             lookahead_selection=lookahead_selection,
+            content_bound_pivots=content_bound_pivots,
         )
     except PropertyLoadNewtonError as exc:
         save_json(
@@ -202,6 +205,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-active-lookahead", action="store_true")
     parser.add_argument("--refinement-factor", type=int, choices=(2, 3), default=2)
     parser.add_argument("--lookahead-selection", choices=("best", "legacy"), default="best")
+    parser.add_argument("--no-content-bound-pivots", action="store_true")
     args = parser.parse_args()
     main(
         args.input_directory,
@@ -210,4 +214,5 @@ if __name__ == "__main__":
         not args.no_active_lookahead,
         args.refinement_factor,
         args.lookahead_selection,
+        not args.no_content_bound_pivots,
     )

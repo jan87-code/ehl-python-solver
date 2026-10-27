@@ -2241,3 +2241,30 @@ repair uses `best`; the eight-model and 30-correction caps are unchanged.
 Regression tests isolate final-candidate selection, exact-state/merit
 stagnation, legacy behavior and failure retention. Physical convergence
 still requires the independently audited original field/force gates.
+
+## Targeted near-empty-content pivots (2026-10-27)
+
+In P,D=1-theta variables, the lower content bound is D<=1+1e-10.
+Earlier recovery changed models only for negative proposed P or D; it did
+not handle outward motion at theta~=0. Explicit repair can now identify the
+earliest affine pressure/content blocker when D>=1-1e-10 and the full
+proposal exceeds D<=1+1e-10. Only tied earliest upper-D constraints (within
+one floating-point step in the ratio) are selected. The corresponding new
+model imposes D_new=0 (full film), and is solved and checked with the same
+complete discrete operator. It gets priority over unrelated full-step lower-
+bound violations. No state, direction or bound is clipped or shifted.
+
+This is a model-selection heuristic: the original nonsmooth merit slope,
+strict progress, true linear error, exact positive total film and final
+physical/force checks still govern acceptance. Film feasibility is checked
+separately by the existing line search. Repeated active models stop recovery;
+there are still at most eight models and 30 corrections. Interior flattened
+(y,x) pivot indices are recorded in every enabled model's diagnostics.
+
+`content_bound_pivots=False` or `--no-content-bound-pivots` retains the
+preceding best-candidate reference. To reproduce the older legacy policy,
+combine `--no-content-bound-pivots --lookahead-selection legacy`.
+Warm-root continuation remains unchanged; the new option is enabled only
+by default for explicit unaccepted-guess repair. Analytic bounded-complement-
+arity tests cover root recovery, ties, competing bounds, roundoff and cycling;
+they are algorithm verification, not a physical EHL benchmark.

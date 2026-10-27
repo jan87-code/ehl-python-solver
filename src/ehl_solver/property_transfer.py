@@ -107,6 +107,7 @@ def repair_property_load_guess(
     preconditioner="local",
     active_lookahead=True,
     lookahead_selection="best",
+    content_bound_pivots=True,
 ):
     """Explicitly unaccepted initialization; same original Newton/physical gates.
 
@@ -149,4 +150,5 @@ def repair_property_load_guess(
         True,
         active_lookahead=active_lookahead,
         lookahead_selection=lookahead_selection,
+        content_bound_pivots=content_bound_pivots,
     )

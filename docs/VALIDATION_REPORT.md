@@ -2674,3 +2674,118 @@ Final checks: `ruff check .` clean; full `pytest -q` 367 passed, 62 optional
 device skips (310.29 s), with one BLAS/OpenMP thread. The accepted raw
 centerline figure was inspected; persistent cell-scale variation is not
 smoothed or treated as physical accuracy.
+
+## 22. Targeted near-empty-content model pivots (2026-10-27)
+
+Starting revision: 77510d6789647d4ec3d73303fdec9e968632ed40.
+Diagnosis of the reconstructed rejected 97x145 partial locates the zero
+step at physical (y,x) index (62,86), x=.158107141 mm, y=.237160711 mm.
+Its P=.0167591019 and D=1.0000000001 correspond to theta at its negative
+feasibility tolerance. The original direction has dD=.354948159, making
+the affine feasible step zero. True correction error is 8.903e-11. Selecting
+a full-film constraint only at that cell produces dD=-1.00000000028,
+true error 1.843e-10 and a negative original merit slope. A feasible
+7.792e-12 step passes strict original Armijo; a different nearby content
+constraint then limits progress. This diagnostic is not an accepted root.
+Complete states/directions, selected models and source hashes are retained.
+
+The new recovery identifies the earliest affine pressure/content blocker
+among near-empty-content cells (D>=1-1e-10) and selects D_new=0 at tied
+upper-D blockers. It prioritizes that selected model before unrelated
+full-step lower-bound violations. The true complete correction and original
+nonsmooth directional Armijo remain required, along with exact film
+feasibility and unchanged physical/force gates. No pressure, content, film,
+load or property is projected or rescaled. The eight-model/30-correction
+caps and seen-model cycling guard remain in force.
+
+Five analytic bounded-complementarity cases establish exact feasible-root
+recovery, reference-policy failure, simultaneous blockers, competing bounds,
+nonempty-content exclusion and retained infeasible-cycle failure. Dense
+corrections are independently checked in the toy problems. Existing full
+JVP, bordered Schur/GMRES, load stepping and physical repaired-root parity
+regressions remain applicable. `--no-content-bound-pivots` selects the
+preceding best-candidate method; combine it with `--lookahead-selection
+legacy` for the older final-model/roundoff policy. New outputs record both
+settings and the interior flattened pivot indices.
+
+### Accepted third-grid recovery and independent verification
+
+The 65x97 replay closes 200 N with nine corrections/18 linear models and
+no content-bound pivot proposals. Pressure and film arrays are bitwise
+identical to the earlier accepted root, and its fresh independent audit passes.
+
+The 97x145 replay now closes 200 N in 28 corrections and 141 linear models,
+within the unchanged 30-correction/eight-model budgets. Nine content-bound
+pivot proposals occur at iterations 14 and 19, involving four distinct
+interior cells. Independent history checks verify strict original merit
+decrease, true directional Armijo, one accepted trial per correction and
+lowest verified candidate merit. Maximum true correction error is 9.754e-10.
+The seed pressure/content/film arrays are bitwise identical to the preserved
+failed factor-three initialization; neither failed partial is promoted to a
+warm root. Full material laws and compliance remain active.
+
+The separate saved-state audit independently recomputes SI flux/mass,
+complementarity, exact full-source film, pressure edges, inlet content,
+physical positivity and integrated force. Its original max mass defect is
+2.643e-15, relative local balance 6.225e-15, relative global balance
+5.079e-17 and complementarity 1.493e-28. Integrated force is 200 N at
+printed precision. Center/peak direct source-cell integration differs from
+FFT by at most 2.542e-21 m. Recorded benchmark source hashes match the
+archived source snapshot; a later edit only clarified the recovery comment.
+
+### Three accepted grids, unresolved mesh accuracy
+
+All cases have the same finite physical +/-3a reservoir, SI fluid laws,
+geometry and 200 N target. Grid order is (ny,nx).
+
+| Grid | h0 [um] | Sampled minimum film [um] | Central film [um] | Peak pressure [MPa] |
+| --- | ---: | ---: | ---: | ---: |
+| 33x49 | -4.630558908 | .01960927772 | .3320824786 | 1725.253140 |
+| 65x97 | -4.521772796 | .1629378195 | .4429945326 | 1741.100421 |
+| 97x145 | -4.498402416 | .1875122800 | .3961280370 | 1716.683723 |
+
+At the 1.5 refinement ratio between the latter two grids, minimum film
+changes +15.082%, central film -10.579% and peak pressure -1.402%. The
+combined 1% scalar mesh gate remains false. Sampled minimum locations move
+and central values depend on the persistent grid-scale pressure pattern.
+No asymptotic order or full-field convergence is inferred from these three
+scalar comparisons. The raw three-grid centerlines and independent fine-grid
+pressure/film fields were inspected without smoothing. Force/equation closure
+does not establish a physically resolved pressure spike, mesh accuracy,
+infinite-domain validity or agreement with a film-height correlation.
+
+Evidence is preserved in `results/content_bound_pivots_20261027/` in the
+original project checkout: the initial blocker diagnostic with full states/
+directions, both accepted replays, separate saved-field audits, three-grid
+comparison with hashes and minimum locations, raw figures, exact source
+snapshot, reproduction scripts and SHA-256 manifests. The initial incomplete
+checkpoint and earlier failed baselines remain distinct and unchanged.
+A fresh factor-three run uses:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src:. \
+  python -m examples.run_load_refinement \
+  --input-directory results/regenerated_load_33x49 \
+  --output-directory results/content_pivot_refinement_new \
+  --refinement-factor 3
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src:. \
+  python -m examples.audit_load_directed \
+  --input-directory results/content_pivot_refinement_new \
+  --output-directory results/content_pivot_refinement_audit_new
+```
+
+Use `--no-content-bound-pivots` for the preceding best-candidate method.
+Also select `--lookahead-selection legacy` for the older final-candidate
+policy, or combine `--no-content-bound-pivots --no-active-lookahead` for
+the no-lookahead reference. Keep fresh output directories and the original
+budgets. Generation summaries retain paths from before the archival copy.
+
+Next: independent conservative-transport/discrete-stability benchmarks at
+the accepted high-load roots, followed by separate fixed-spacing reservoir
+sensitivity. Preserve the current stencil as a reference, benchmark any
+alternative before adoption, and do not infer physical film accuracy while
+pressure oscillations and mesh error remain unresolved.
+
+Final checks: `ruff check .` clean; full `pytest -q` 372 passed, 62 optional
+device skips (307.78 s), with BLAS/OpenMP threads set to one. No GPU execution
+or physical EHL validation is claimed by this CPU model-selection milestone.

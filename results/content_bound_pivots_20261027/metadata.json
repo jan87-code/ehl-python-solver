@@ -1,0 +1,7 @@
+{
+  "base_revision": "77510d6789647d4ec3d73303fdec9e968632ed40",
+  "status": "accepted 200 N equation closure on all three grids; 1 percent mesh gate false",
+  "source_snapshot": "source/ contains exact benchmark code; source_final/ contains later comment-only clarification",
+  "input_source_archive": "../recovered_200n_20261027/regenerated_load_33x49/attempt_043/solution.npz",
+  "comparison_scope": "CPU numerical verification, not physical validation"
+}

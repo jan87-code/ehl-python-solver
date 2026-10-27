@@ -1,0 +1,23 @@
+{
+  "best_candidate_refinement_factor2/history.json": "324468948f0a43cca7a4ce52cc17ca787b5335076a17dd207a8d4d68be9f430c",
+  "best_candidate_refinement_factor2/matched_centerlines.png": "c7f354aaf207ab054a3110d2cd2e030190ee2970763dca5c7f1d8e9f4e00c288",
+  "best_candidate_refinement_factor2/solution.npz": "794d54128e19c426d516bf11e8ba2d13a4818b600520d3f826650ae63ae36bfc",
+  "best_candidate_refinement_factor2/summary.json": "c6c90701535c6f159875dfe3461d7ed80cb8ecb83209576931c6a80a4ddc19fe",
+  "best_candidate_refinement_factor2/unaccepted_guess.npz": "e2cb97450e6558ef0f6c8cfb5d7cba6b0d9de15d246779d0e7830cc629040e9b",
+  "best_candidate_refinement_factor2_audit/refined_fields.png": "b9dcb5c8b2c48a02f936e7d6ee4fc4f4e97b0b3171e5e412006e40efdb3180e8",
+  "best_candidate_refinement_factor2_audit/summary.json": "98fd756c436e8d08b1e7bfd433ea25163e96efc3a8a9fd4f44c5b710d5bc6d73",
+  "best_candidate_refinement_factor3/failed_partial.npz": "da00eb914f76ade462277db54087feed79e181748993f62d138bd0d75269070b",
+  "best_candidate_refinement_factor3/failed_partial_audit.json": "a4710abd61bbe3e06f20d6b696d7c20210b00f9716ad97b704b72e127a56a085",
+  "best_candidate_refinement_factor3/failure.json": "e6363a54a10240011ae0f1f741fd1202d9ed1078ed7b9042e8d3a260cc59f4fd",
+  "best_candidate_refinement_factor3/summary.json": "a4a043e1690ded69fc13c5c2f75c9c42281e2370324af46068830cf177b4051b",
+  "best_candidate_refinement_factor3/unaccepted_guess.npz": "a19a462d7ec952e80a52ba2a00b8501367c46359e7c32c4fdf7455d79a246f65",
+  "metadata.json": "b7201131cce0a639103c1b31cb20dfa5420d4fdca8bebfeb45f1d76bbc13d59e",
+  "reproduce_failed_partial_audit.py": "c932a7a667881e93f848e2dff46dc43b9d4138f8cb027498e842e89f483a1316",
+  "source/docs/PHYSICS.md": "69ac15ef7ef26e4864b724da6c6d2cee0fa2b0f225083af03e1241c83b0dcc8a",
+  "source/docs/ROADMAP.md": "0f5cd9e200148a50ad22ae6b95b541a3ae22af54d175bef97893fd6678c7944d",
+  "source/docs/VALIDATION_REPORT.md": "f161527d43067f3817c5c97cdc1ace16449fdab5c68e96be0561349901fb3dd5",
+  "source/examples/run_load_refinement.py": "3cd818982846d387ad80cf6aec371b99f5298d9b49347620822daac32cee47d7",
+  "source/src/ehl_solver/property_load_newton.py": "1a9cb597efa14ab997c5ea59b204b12234ae651bd9a389017254f957c25118df",
+  "source/src/ehl_solver/property_transfer.py": "3918e8b0514af06d17486dfa5bbaef0e2b1bccce06e54a74bb372246435e01e9",
+  "source/tests/test_property_step_selection.py": "6aae394fd22350e8f62f5fd714bb01fea4a8c5853938133eb3abf5e41422ea57"
+}

@@ -1,0 +1,19 @@
+{
+  "load_n": 1.9700562924117646,
+  "audit": {
+    "mass_maximum": 1.7204817596710895e-12,
+    "maximum_si_mass_divergence_kg_m2_s": 6.332785074114611e-09,
+    "relative_local_balance": 9.715409772215005e-11,
+    "relative_global_balance": 1.0020646793352786e-12,
+    "outward_mass_flow_kg_s": [
+      -4.083922989956094e-05,
+      2.1227521774596438e-05,
+      9.80585406252318e-06,
+      9.805854062523172e-06
+    ],
+    "net_mass_flow_kg_s": 8.184709962728853e-17,
+    "summed_cell_mass_defect_kg_s": 8.184314335699348e-17,
+    "maximum_complementarity": 0.0
+  },
+  "offset_m": 5e-07
+}

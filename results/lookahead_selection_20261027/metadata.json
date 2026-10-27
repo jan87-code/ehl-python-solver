@@ -1,0 +1,5 @@
+{
+  "base_revision": "4f140886f9643de14f30656e1988734f9efcb020",
+  "input_source_archive": "../recovered_200n_20261027/regenerated_load_33x49/attempt_043/solution.npz",
+  "scope": "accepted 65x97 parity and rejected 97x145 repair; not physical validation"
+}

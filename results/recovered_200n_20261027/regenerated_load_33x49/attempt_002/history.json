@@ -1,0 +1,302 @@
+[
+  {
+    "iteration": 0,
+    "audit": {
+      "mass_maximum": 2.876284202025147e-16,
+      "maximum_si_mass_divergence_kg_m2_s": 1.0587086762825493e-12,
+      "relative_local_balance": 1.7215365042230959e-15,
+      "relative_global_balance": 8.36355230648588e-17,
+      "outward_mass_flow_kg_s": [
+        -4.0510678535360233e-05,
+        2.0896708575408032e-05,
+        9.806984979976104e-06,
+        9.806984979976104e-06
+      ],
+      "net_mass_flow_kg_s": 6.776263578034403e-21,
+      "summed_cell_mass_defect_kg_s": 3.631750729363428e-21,
+      "maximum_complementarity": 4.527480962775383e-31
+    },
+    "load_n": 2.4000000000000004,
+    "offset_m": 3.8099051944107907e-07,
+    "merit": 6.861063464837051e-06,
+    "models": [
+      {
+        "recovery": 0,
+        "active_changes": 0,
+        "linear_true_residual": 9.970808058036922e-15,
+        "linear_iterations": 11,
+        "krylov_histories": [
+          [
+            0.7907924748894289,
+            0.021446988758703815,
+            0.0003534478195259309,
+            5.1132837766316e-06,
+            7.181590550406547e-08
+          ],
+          [
+            284.6951319346359,
+            2.840213171327103,
+            0.0521226352054838,
+            0.00012989206284918343,
+            1.96935354197127e-06,
+            1.4752491241676085e-07
+          ]
+        ],
+        "used_bordered_fallback": false,
+        "schur_indicator": 0.02283567626794056,
+        "slope": -1.3722126929674103e-05,
+        "trials": [
+          {
+            "alpha": 1.0,
+            "merit": 1.3556270547907234e-14,
+            "reason": "accepted",
+            "accepted": true
+          }
+        ],
+        "fraction_to_boundary": 1.0
+      }
+    ]
+  },
+  {
+    "iteration": 1,
+    "audit": {
+      "mass_maximum": 0.0005226438346545212,
+      "maximum_si_mass_divergence_kg_m2_s": 1.9237583058194823,
+      "relative_local_balance": 0.039836436166262035,
+      "relative_global_balance": 7.809169293877032e-05,
+      "outward_mass_flow_kg_s": [
+        -4.01627456578581e-05,
+        2.0543663365680552e-05,
+        9.80640501419313e-06,
+        9.80640501419313e-06
+      ],
+      "net_mass_flow_kg_s": -6.272263791284752e-09,
+      "summed_cell_mass_defect_kg_s": -6.272263791296198e-09,
+      "maximum_complementarity": 1.565723093116123e-22
+    },
+    "load_n": 3.0,
+    "offset_m": 2.515931948487192e-07,
+    "merit": 1.3556270547907234e-14,
+    "models": [
+      {
+        "recovery": 0,
+        "active_changes": 0,
+        "linear_true_residual": 1.7485004626350799e-09,
+        "linear_iterations": 14,
+        "krylov_histories": [
+          [
+            3651.0200599040404,
+            52.126253731163835,
+            0.8513446025796539,
+            0.030797877091105427,
+            0.0009331548228220161,
+            6.025613086973323e-06,
+            1.6333356712695341e-06,
+            4.923404773930939e-08
+          ],
+          [
+            633.1114193260357,
+            9.678422028889461,
+            0.3057622940750588,
+            0.004845090284329569,
+            0.00015623618916880226,
+            1.834982796381376e-06
+          ]
+        ],
+        "used_bordered_fallback": false,
+        "schur_indicator": 0.04087157402124086,
+        "slope": -2.7112541094559694e-14,
+        "trials": [
+          {
+            "alpha": 1.0,
+            "merit": 1.394653581592861e-16,
+            "reason": "accepted",
+            "accepted": true
+          }
+        ],
+        "fraction_to_boundary": 1.0
+      }
+    ]
+  },
+  {
+    "iteration": 2,
+    "audit": {
+      "mass_maximum": 5.994598874255636e-05,
+      "maximum_si_mass_divergence_kg_m2_s": 0.2206504431842844,
+      "relative_local_balance": 0.0041344964532175,
+      "relative_global_balance": 5.140454091587572e-06,
+      "outward_mass_flow_kg_s": [
+        -4.025271410117078e-05,
+        2.0639120010369166e-05,
+        9.806590129235552e-06,
+        9.806590129235552e-06
+      ],
+      "net_mass_flow_kg_s": -4.138323305116396e-10,
+      "summed_cell_mass_defect_kg_s": -4.13832330507854e-10,
+      "maximum_complementarity": 3.315238989378253e-21
+    },
+    "load_n": 3.000000000000001,
+    "offset_m": 2.846111576570408e-07,
+    "merit": 1.394653581592861e-16,
+    "models": [
+      {
+        "recovery": 0,
+        "active_changes": 0,
+        "linear_true_residual": 4.717654544573715e-10,
+        "linear_iterations": 14,
+        "krylov_histories": [
+          [
+            3295.185483063481,
+            71.38827915053471,
+            1.2324253100277789,
+            0.024629265679091832,
+            0.0008047671483602422,
+            4.418267729586578e-06,
+            1.1581557198625393e-06,
+            3.806962930784772e-08
+          ],
+          [
+            643.7946298397179,
+            6.897076067889226,
+            0.2123770906234503,
+            0.003469444000188142,
+            0.00010456186659272061,
+            7.782631187994218e-07
+          ]
+        ],
+        "used_bordered_fallback": false,
+        "schur_indicator": 0.04145423168667813,
+        "slope": -2.7893071628177956e-16,
+        "trials": [
+          {
+            "alpha": 1.0,
+            "merit": 1.5835441199889224e-20,
+            "reason": "accepted",
+            "accepted": true
+          }
+        ],
+        "fraction_to_boundary": 1.0
+      }
+    ]
+  },
+  {
+    "iteration": 3,
+    "audit": {
+      "mass_maximum": 6.346125183200823e-07,
+      "maximum_si_mass_divergence_kg_m2_s": 0.0023358949673677465,
+      "relative_local_balance": 4.4012275082678564e-05,
+      "relative_global_balance": 1.7385850720644577e-08,
+      "outward_mass_flow_kg_s": [
+        -4.0247251857223935e-05,
+        2.0633819257407076e-05,
+        9.806715600175728e-06,
+        9.80671560017573e-06
+      ],
+      "net_mass_flow_kg_s": -1.3994654010808646e-12,
+      "summed_cell_mass_defect_kg_s": -1.39946539938726e-12,
+      "maximum_complementarity": 1.5007355555297826e-22
+    },
+    "load_n": 3.0,
+    "offset_m": 2.8280753882963933e-07,
+    "merit": 1.5835441199889224e-20,
+    "models": [
+      {
+        "recovery": 0,
+        "active_changes": 0,
+        "linear_true_residual": 1.3292206962146487e-10,
+        "linear_iterations": 13,
+        "krylov_histories": [
+          [
+            1450.7869909334745,
+            60.51374172082508,
+            1.0031482607171467,
+            0.026850348764302152,
+            0.0009748352525827984,
+            3.256327330987159e-06,
+            1.771785212689235e-07
+          ],
+          [
+            639.9201747135332,
+            7.062922248512933,
+            0.2207461583974302,
+            0.0035146896842603256,
+            0.00010439746706827373,
+            8.140998690231247e-07
+          ]
+        ],
+        "used_bordered_fallback": false,
+        "schur_indicator": 0.0413715793765489,
+        "slope": -3.16708823990466e-20,
+        "trials": [
+          {
+            "alpha": 1.0,
+            "merit": 1.6409622636380502e-28,
+            "reason": "accepted",
+            "accepted": true
+          }
+        ],
+        "fraction_to_boundary": 1.0
+      }
+    ]
+  },
+  {
+    "iteration": 4,
+    "audit": {
+      "mass_maximum": 7.657484932732275e-11,
+      "maximum_si_mass_divergence_kg_m2_s": 2.8185829936688833e-07,
+      "relative_local_balance": 4.765098952550824e-09,
+      "relative_global_balance": 1.8263495874243012e-13,
+      "outward_mass_flow_kg_s": [
+        -4.0247233973648144e-05,
+        2.0633801544062626e-05,
+        9.806716214785408e-06,
+        9.806716214785408e-06
+      ],
+      "net_mass_flow_kg_s": -1.4701103832545637e-17,
+      "summed_cell_mass_defect_kg_s": -1.4693114468242303e-17,
+      "maximum_complementarity": 5.285777330331377e-25
+    },
+    "load_n": 3.000000000000001,
+    "offset_m": 2.8280175410727304e-07,
+    "merit": 1.6409622636380502e-28,
+    "models": [
+      {
+        "recovery": 0,
+        "active_changes": 0,
+        "linear_true_residual": 6.007221275851342e-11,
+        "linear_iterations": 13,
+        "krylov_histories": [
+          [
+            140.97552949281845,
+            39.493397409034415,
+            0.7348478750068058,
+            0.024807763173966137,
+            0.0006312621419558542,
+            2.158587996484027e-06,
+            1.0647022379459858e-07
+          ],
+          [
+            639.8808544804573,
+            7.064008974003057,
+            0.22079604102603007,
+            0.00351437754757385,
+            0.00010436394188626453,
+            8.142704219214526e-07
+          ]
+        ],
+        "used_bordered_fallback": false,
+        "schur_indicator": 0.04137121218154086,
+        "slope": -3.281924527249181e-28,
+        "trials": [
+          {
+            "alpha": 1.0,
+            "merit": 3.857169312329265e-36,
+            "reason": "accepted",
+            "accepted": true
+          }
+        ],
+        "fraction_to_boundary": 1.0
+      }
+    ]
+  }
+]

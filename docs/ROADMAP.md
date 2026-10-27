@@ -1133,3 +1133,24 @@ compare grids at force-closed shared targets, and investigate the pressure
 variation/resolution error before a physical 200 N comparison. Do not relax
 force/mass/complementarity/film tolerances, raise the floor, or change fluid
 laws to bypass the measured limitations.
+
+## Pressure-law/local-elastic preconditioning (2026-10-27, complete)
+
+Keep the earlier frozen-property option as the default and add explicit
+material and local-elastic sparse pressure tangents. Independent SI face
+finite differences and dense bordered parity pass; complete equations/JVPs
+are identical across modes. An archived failed 106.375 N correction still
+fails with the old preconditioner, but passes the same true-residual check
+with both new modes. Full-model continuation, restarted only from the
+preserved accepted 100.442 N root, closes 120, 160 and 200 N on 33x49,
+with 11 accepted steps and no rejected force proposals. This establishes
+200 N equation/force closure on that grid, not mesh/physical accuracy.
+The independent saved-state audit passes; full regression verification is
+running. Finish reporting, commit/push this milestone, then independently
+verify finer-grid transfer/repair and a matched 200 N refinement.
+
+Final milestone checks: Ruff clean; full pytest 352 passed, 62 optional
+device skips (261.86 s). Eleven independent archive audits, recorded source
+hashes and raw pressure/film/restart figures pass inspection. The 200 N
+force target now closes; the coarse pressure variation and film-height
+accuracy remain open. Continue with verified finer-grid initialization.

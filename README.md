@@ -415,8 +415,9 @@ retained retries and the current computational/resolution limits.
 
 `ehl_solver.property_load_newton` adds matrix-free load-directed continuation
 with sparse preconditioning and verified bordered corrections. The bounded
-coarse/refined study reaches **100.442 N on 33x49 nodes**; 200 N and mesh
-accuracy remain open. Matched-force comparisons, preserved warm inputs,
+initial coarse/refined study reached 100.442 N. An explicitly selected
+sparse tangent preconditioner now closes **200 N on 33x49 nodes**; mesh and
+physical accuracy remain open (section 18). Matched-force comparisons, preserved warm inputs,
 failed states and reproduction commands are in section 17 of
 `docs/VALIDATION_REPORT.md`. Run `examples.run_load_directed_200n` with the
 specified prior source archives, followed by `examples.audit_load_directed`

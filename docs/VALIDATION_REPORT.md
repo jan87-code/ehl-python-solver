@@ -3,7 +3,7 @@
 Audit history: 2026-10-26 through 2026-10-27. Sections 1–10 retain the
 original incompressible/isoviscous audit; sections 11 onward document
 pressure-dependent NumPy/SciPy CPU developments. The latest bounded
-matrix-free force path reaches 100.442 N on 33x49 nodes; 200 N closure and
+matrix-free force path now closes 200 N on 33x49 nodes;
 mesh/domain accuracy remain open. This report records numerical verification,
 **not complete physical validation of classical piezoviscous EHL**.
 
@@ -2237,3 +2237,112 @@ known offset recovery at matched force, film directions, sparse fine-grid
 construction, accepted merit/force gates, seed rejection, bounded retry
 rollback and retained Krylov failure diagnostics. Optional skips are device
 coverage; no GPU implementation or execution claim is added.
+
+## 18. Verified sparse tangents and first 200 N force closure (2026-10-27)
+
+Starting revision: `1e4f69fac7e5e1a00e903ba89c5fbacd99491bba`.
+**Outcome: the full-material, full-compliance JFO equations close at 200 N
+on the existing 33x49 grid. Physical/mesh accuracy remains unverified.**
+The improvement changes only preconditioning; laws, reservoir, scales,
+source support and all original acceptance criteria remain fixed.
+
+### Independent sparse approximation and archived failure replay
+
+Two explicit preconditioner options supplement the unchanged `frozen`
+default. `material` differentiates rho/eta and rho transport capacity at
+fixed film. `local` also includes only the source-cell self displacement
+in that approximate pressure tangent. The resulting five-point correction
+is assembled sparsely. Full-source nonlocal elasticity and all constitutive
+derivatives remain in the unchanged true matrix-free operator. This is
+not a replacement of physical elasticity by independent local cells.
+Equations and exact coefficients are documented in CONSTITUTIVE.md.
+
+Independent SI central differences check both approximate tangents. Complete
+residual/JVP arrays are identical across all three preconditioners. Dense
+small-grid correction parity checks confirm the same bordered Newton
+problem is solved, with the unchanged true residual criterion <=5e-9.
+No nonlinear/Krylov cap, film floor or acceptance tolerance is relaxed.
+
+`examples.replay_load_linear` loads the archived unconverged linear state
+from section-17's rejected refined attempt 30 at proposed Q=106.375 N.
+The exact archive hash and offset are recorded; it is not used as a physical
+warm root. On this identical state, with ten GMRES cycles/restart 60:
+
+| Preconditioner | True correction accepted | True relative linear residual | Wall time [s] |
+| --- | --- | ---: | ---: |
+| Frozen material/film | no | original failure retained | 9.413 |
+| Material tangent | yes | 6.802e-10 | 1.091 |
+| Material + local self film tangent | yes | 9.713e-10 | .3644 |
+
+These are single-state, single-host timings, not a general performance claim.
+The original failed correction remains rejected; a separate corrected linear
+solve does not retroactively validate its unconverged nonlinear state.
+Full residual/Krylov histories and successful directions are retained under
+`results/load_linear_replay_20261027/`.
+
+### Restart from an accepted root and original physical audit
+
+`examples.run_preconditioned_load` uses `preconditioner=local` explicitly.
+It validates and hashes the last accepted 100.4423828125 N section-17 root,
+then follows bounded force steps to 120, 160 and 200 N. Eleven accepted
+force targets reach those checkpoints with no rejected load attempts. The
+restart uses the same fixed 33x49 physical +/-3a reservoir, SI scales,
+113 GPa convention, 2 m/s entrainment, .04 Pa s ambient viscosity, confirmed
+Roelands law and assumed Dowson-Higginson density. No prior archive is changed.
+
+At 200 N the sampled result is h0=-4.63055890822 um, hmin=.01960927772 um,
+central film=.3320824786 um and peak pressure=1725.253140 MPa. Independent
+SI force integration gives exactly 200 N at printed precision. Original
+maximum dimensionless mass defect is 3.060e-16, relative local defect
+1.256e-14, global defect zero at printed precision and complementarity
+1.403e-30. Full-source film/boundary checks and independent selected-target
+source-cell integration pass. Fields, rather than pressure scaling, supply
+the normal force.
+
+`results/preconditioned_load_20261027/` retains 11 SI archives, complete
+nonlinear/Krylov/globalization histories, input/source/runtime hashes and
+an unsmoothed restart figure. `results/preconditioned_load_20261027_audit/`
+independently reloads all 11 roots, checks original SI fluxes, constraints,
+full-source film, pressure edges/supply, raw force integrals and recorded
+Armijo inequalities. Its 119 linear models have maximum true linear error
+1.036e-9; maximum force error is 2.221e-16 relative. Recorded source hashes
+match the final tested Python sources. No device runtime is involved.
+
+The sampled minimum is far below the supplied .278495 um correlation
+estimate and the central film differs from .477353 um. Neither agreement
+nor disagreement at this resolution is physical validation: section 17
+already demonstrated very large matched-load mesh errors and cell-scale
+pressure variation. Reaching the correct force removes one blocker; it does
+not establish a resolved film or pressure field. No field smoothing, film
+lift or constitutive-parameter change is used to fit the correlation.
+
+### Reproduction and next action
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.replay_load_linear \
+  --input-directory results/load_directed_200n_20261027_final \
+  --output-directory results/load_linear_replay_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_preconditioned_load \
+  --input-directory results/load_directed_200n_20261027_final \
+  --output-directory results/preconditioned_load_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.audit_load_directed \
+  --input-directory results/preconditioned_load_new \
+  --output-directory results/preconditioned_load_audit_new
+```
+
+Existing directories are refused. All reused states are hashed; no raw input
+is overwritten. Next: verify interpolation as an explicitly unaccepted finer-
+grid initial guess, repair it with the original full equations and force gate,
+then compare independently converged 200 N roots at fixed physical bounds.
+An interpolated pressure/content field alone must never become an accepted
+warm root. Preserve the existing 20,000-node and iteration limits.
+
+Final milestone checks: `ruff check .` clean; full `pytest -q` **352 passed,
+62 skipped** (261.86 s). Five new configurations cover independent sparse
+tangents, complete operator invariance and dense bordered correction parity.
+Restart and raw 200 N pressure/film figures were visually inspected;
+cell-scale pressure variation remains visible and is not hidden. Optional
+skips are device coverage; no GPU execution is claimed.

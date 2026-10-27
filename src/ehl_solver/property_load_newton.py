@@ -8,7 +8,7 @@ from copy import copy
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.sparse import bmat, csr_matrix, diags, hstack, vstack
+from scipy.sparse import bmat, coo_matrix, csr_matrix, diags, hstack, vstack
 
 from ehl_solver.backend import make_backend
 from ehl_solver.cavitating_newton import CavitatingNewtonSystem, solve_cavitating_correction
@@ -20,7 +20,10 @@ from ehl_solver.property_warm import PropertyWarmSystem, WarmPropertyRoot
 class PropertyLoadSystem:
     merit_slope = CavitatingNewtonSystem.merit_slope
 
-    def __init__(self, problem, fluid, speed_m_s, target_load_n):
+    def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen"):
+        if preconditioner not in ("frozen", "material", "local"):
+            raise ValueError("preconditioner must be frozen, material or local")
+        self.preconditioner = preconditioner
         if not np.isfinite(target_load_n) or target_load_n <= 0:
             raise ValueError("positive finite SI target load required")
         if np.prod(problem.shape) > 20000:
@@ -78,8 +81,8 @@ class PropertyLoadSystem:
 
     def frozen_matrix(self, z):
         self.sync(z)
-        p, _, film, _, _ = self.base.unpack(z[:-1])
-        r, v, _, _ = self.base.fluid.ratios(p * self.problem.pressure_scale_pa)
+        p, theta, film, _, _ = self.base.unpack(z[:-1])
+        r, v, dr, dv = self.base.fluid.ratios(p * self.problem.pressure_scale_pa)
         h = film / self.problem.film_scale_m
         mass, _ = _frozen_system(
             self.problem.x_m / self.problem.length_scale_m,
@@ -92,6 +95,9 @@ class PropertyLoadSystem:
         )
         # The frozen assembly uses theta; Newton unknowns use D=1-theta.
         mass = mass @ diags(np.r_[np.ones(self.n), -np.ones(self.n)])
+        if self.preconditioner != "frozen":
+            pressure_part = self.tangent_pressure(p, theta, h, r, v, dr, dv)
+            mass = mass + hstack([pressure_part, csr_matrix((self.n, self.n))])
         full = self.full(z)
         block = vstack(
             [
@@ -117,6 +123,49 @@ class PropertyLoadSystem:
             [[block, csr_matrix(column[:, None])], [csr_matrix(row[None, :]), csr_matrix((1, 1))]],
             format="csc",
         )
+
+    def tangent_pressure(self, p, theta, h, r, v, dr, dv):
+        """Sparse extra pressure action at frozen film, optionally cell-self film.
+
+        All coefficients here are preconditioning only. The true operator
+        retains full-source elastic response and the original pressure law.
+        """
+        pref = self.problem.pressure_scale_pa
+        dm = h**3 / v * (dr - r * dv / v) * pref
+        dc = h * dr * pref
+        if self.preconditioner == "local":
+            ny, nx = self.problem.shape
+            compliance = (
+                self.problem.elastic_kernel[ny - 1, nx - 1] * pref / self.problem.film_scale_m
+            )
+            dm = dm + 3 * r * h**2 / v * compliance
+            dc = dc + r * compliance
+        dx, dy = self.problem.dx, self.problem.dy
+        gx, gy = np.diff(p, axis=1) / dx, np.diff(p, axis=0) / dy
+        lam = self.problem.reynolds_parameter
+        ax = -0.5 * dm[:, :-1] * gx + 0.5 * lam * dc[:, :-1] * theta[:, :-1]
+        bx = -0.5 * dm[:, 1:] * gx + 0.5 * lam * dc[:, 1:] * theta[:, :-1]
+        ay = -0.5 * dm[:-1] * gy
+        by = -0.5 * dm[1:] * gy
+        ny, nx = h.shape
+        k = np.arange(self.n).reshape(ny - 2, nx - 2)
+        center = (ax[1:-1, 1:] - bx[1:-1, :-1]) / dx + (ay[1:, 1:-1] - by[:-1, 1:-1]) / dy
+        rows = [k.ravel()]
+        cols = [k.ravel()]
+        values = [center.ravel()]
+        for row, col, val in (
+            (k[:, :-1], k[:, 1:], bx[1:-1, 1:-1] / dx),
+            (k[:, 1:], k[:, :-1], -ax[1:-1, 1:-1] / dx),
+            (k[:-1], k[1:], by[1:-1, 1:-1] / dy),
+            (k[1:], k[:-1], -ay[1:-1, 1:-1] / dy),
+        ):
+            rows.append(row.ravel())
+            cols.append(col.ravel())
+            values.append(val.ravel())
+        return coo_matrix(
+            (np.concatenate(values), (np.concatenate(rows), np.concatenate(cols))),
+            shape=(self.n, self.n),
+        ).tocsr()
 
     def solution(self, z, history=()):
         self.sync(z)
@@ -200,6 +249,7 @@ def solve_property_load_newton(
     maximum_krylov_cycles=10,
     schur_tolerance=1e-10,
     active_recovery=True,
+    preconditioner="frozen",
 ):
     """Bordered force solve; true-JVP-checked Schur/GMRES and bounded globalization.
 
@@ -218,7 +268,9 @@ def solve_property_load_newton(
         or not 1 <= maximum_krylov_cycles <= 10
     ):
         raise ValueError("Newton/Krylov budgets must lie in 0..30 and 1..10")
-    system = PropertyLoadSystem(problem, fluid, speed_m_s, target_load_n)
+    system = PropertyLoadSystem(
+        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner
+    )
     z = verify_seed(system, seed, seed_offset_m)
     history = []
     last = None
@@ -376,6 +428,7 @@ def continue_property_load(
     minimum_increment_n=1e-5,
     maximum_attempts=32,
     callback=None,
+    preconditioner="frozen",
 ):
     """Adaptive SI-force steps; rejected solves never become continuation seeds."""
     if (
@@ -389,7 +442,9 @@ def continue_property_load(
         or (callback is not None and not callable(callback))
     ):
         raise ValueError("invalid bounded load continuation controls")
-    system = PropertyLoadSystem(problem, fluid, speed_m_s, target_load_n)
+    system = PropertyLoadSystem(
+        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner
+    )
     z = verify_seed(system, seed, seed_offset_m)
     current = system.solution(z)
     attempts = []
@@ -419,6 +474,7 @@ def continue_property_load(
                 trial_load,
                 seed=current.solution,
                 seed_offset_m=current.central_film_offset_m,
+                preconditioner=preconditioner,
             )
         except PropertyLoadNewtonError as exc:
             record["reason"] = str(exc)

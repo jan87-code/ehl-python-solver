@@ -312,3 +312,31 @@ checkpoint), with an explicit minimum force increment. Callback-streamed
 histories distinguish accepted states, failed partial Newton iterates and
 Krylov diagnostics. Nonfinite diagnostics are tagged explicitly in JSON,
 not emitted as invalid numeric literals or silently discarded.
+
+## Explicit sparse tangent preconditioners
+
+The unchanged default `preconditioner="frozen"` preserves the earlier path.
+Explicit `material` adds the analytic pressure-law tangent at fixed film;
+`local` additionally uses the source-cell self compliance as a diagonal
+film approximation **inside preconditioning only**. With M=R H^3/V,
+C=R H, and c_self=pref*K_self/href, their extra pressure coefficients are
+
+```
+dM/dP = pref H^3 (R'/V - R V'/V^2) + 3 R H^2 c_self/V,
+dC/dP = pref H R' + R c_self.
+```
+
+Primes are pressure derivatives of ratios per Pa; c_self=0 for `material`.
+Differentiate arithmetic face coefficients using the actual base pressure
+gradients and upstream theta, then assemble the resulting five-point pressure
+block sparsely. The offset column, constraints and force row retain the
+complete analytic action. Every true operator product still includes the
+original Roelands/Dowson-Higginson laws and full-source FFT; there is no
+elastic-source cropping, local-elastic physical model or field alteration.
+
+Independent SI finite differences check each approximate sparse tangent,
+including the source-cell dimensions. Complete operator/residual equality
+across modes and small-grid dense-versus-GMRES correction parity ensure that
+only preconditioning changes. Existing node, Newton, line-search, Krylov and
+true-residual limits remain unchanged; the optional mode never silently
+replaces a failed solve with a looser correction.

@@ -403,3 +403,12 @@ conventions and declared lubricant assumptions. Run
 assessment; the current positive-offset probes do not achieve 200 N.
 See section 15 of `docs/VALIDATION_REPORT.md` for the retained failure,
 mesh evidence and signed-offset continuation required next.
+
+A separate warm signed-offset Newton reference is available in
+`ehl_solver.property_warm` (maximum 400 interior nodes). Reproduce its
+bounded circular branch with `python -m examples.run_signed_200n
+--output-directory results/signed_new`, using `PYTHONPATH=src` and one
+BLAS/OpenMP thread. It crosses zero rigid offset with positive total film;
+the verified branch reaches 8.97 N, while 200 N closure remains open.
+See section 16 of `docs/VALIDATION_REPORT.md` for independent verification,
+retained retries and the current computational/resolution limits.

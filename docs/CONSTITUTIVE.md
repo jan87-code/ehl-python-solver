@@ -231,3 +231,35 @@ the user's reference lubricant at GPa pressure. The existing density model
 uses assumed rho0=850 kg/m^3, a=.6e-9/Pa and b=1.7e-9/Pa. No operating
 temperature was supplied, and none is invented. Supplied Hamrock-Dowson
 film estimates remain correlation targets, not exact solutions.
+
+## Warm signed offsets: bounded analytic reference
+
+The user subsequently confirmed Roelands for the circular case. The existing
+density parameters remain assumed, and the matched ambient-alpha definition
+is explicit. `property_warm.solve_warm_property_offset` takes a positive-gap
+problem template, an independently audited full-material seed, its SI offset
+and a new finite signed offset. It does not change the template constructor
+or its positive-offset cold-start semantics. All new fields call the existing
+free-space FFT with an explicit signed offset override; *total* film must
+exceed the original floor everywhere.
+
+The reference solves interior P=p/pref and D=1-theta. Mass rows are original
+SI mass-flux divergence divided by rho0 href^3 pref/(12 eta0 L^2) and by
+100; complementarity is min(P,D). Its analytic action differentiates both
+rho and eta, h through the full-source FFT, face mobility rho h^3/(12 eta),
+face transport rho h and upwind content. Dense assembly uses this action
+and equilibrates rows/columns; the independently recomputed JVP correction
+must have relative residual <=5e-9. True directional derivatives at min ties
+enter Armijo; pressure/content bounds and exact positive film are checked
+on every trial. Intermediate trials can have mass/complementarity defects;
+only roots passing the original independent physical audit are returned.
+
+At most 400 interior nodes (800 unknowns), 30 Newton corrections and 24
+backtracks bound this reference. It makes no GPU or scalable production
+Newton claim. `continue_warm_property_offset` limits each offset increment
+to half the last minimum total film, halves rejected steps and grows accepted
+steps by 1.5. Its at-most-60-attempt ledger retains only scalar summaries;
+a callback streams complete roots/failures. Retries always start from the
+last audited root. It follows offset with measured force, not a new imposed
+force algorithm, and does not establish global branch uniqueness. Load
+closure remains a separate gate before physical film-height comparisons.

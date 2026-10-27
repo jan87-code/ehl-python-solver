@@ -1030,3 +1030,46 @@ not pressure clipping, force scaling or relaxed acceptance criteria.
 Final readiness checks: Ruff clean; complete pytest 334 passed, 62 optional
 device skips (205.30 s). All retained accepted states and comparison inputs
 were independently re-audited; the overflow candidate remains rejected.
+
+## Warm signed-offset continuation (2026-10-27, verified reference complete)
+
+Roelands is now confirmed by the user. Retain the explicitly matched ambient
+slope and the 113 GPa convention. Density parameters remain assumptions.
+Implement a separate bounded analytic full-material/full-compliance Newton
+reference on at most 400 interior nodes; leave the cold solver unchanged.
+Include pressure-law and full-source FFT derivatives, independently checked
+linear corrections, feasibility and true directional Armijo globalization.
+Require a fresh physical/film audit of every warm seed and accepted root.
+Follow signed offsets with film-limited steps and bounded rollback/retries;
+measure force rather than rescaling pressure. First positive-offset parity
+and a numerical-Jacobian signed-root comparison pass. A verified branch has
+crossed zero offset and exceeded 8 N; the next step encounters a retained
+line-search limitation. Complete the bounded final run and full tests,
+document exact accepted/rejected states and commit/push the verified scope.
+If interrupted, the checkpoints under `results/signed_200n_20261027_final/`
+retain the last accepted root and each failed trial; do not label this 200 N
+closure or physical film-height validation.
+
+Signed-offset reference milestone complete: analytic material/elastic Newton,
+seed auditing, positive total film, true correction and directional Armijo
+checks, bounded rollback/retry continuation and independent signed-root
+agreement are implemented. Full pytest 341 passed, 62 optional device skips
+(267.32 s); Ruff clean. The numerical-Jacobian reference differs by 1.737e-11
+in relative pressure on a saved negative-offset root.
+
+Final evidence: `results/signed_200n_20261027_final/` and
+`results/signed_local_reference_20261027/`. Fifteen accepted steps, nine
+retained failed/retried proposals, 26 total SI archives including the
+independent reference and one inspected figure. Source hashes match.
+The final root is h0=-.3014203907 um, Q=8.9655393334 N, hmin=.1142840090 um,
+pmax=713.916834 MPa; original mass/constraint/source checks pass. The declared
+24-attempt budget ends with seven consecutive accepted small steps after
+line-search retries. It does not reach -5 um or close 200 N. No physical
+branch limit, mesh accuracy or film-height agreement is inferred.
+
+Next action: continue from the audited signed root, independently improve
+active-constraint step handling and replace dense corrections with a bounded
+matrix-free/sparse route for finer-grid checks. Then use audited load-directed
+steps/brackets toward 200 N, keeping force, mesh and physical-domain errors
+separate. The current dense reference is limited to 400 interior nodes;
+33x49 and larger grids are deliberately rejected rather than allocated.

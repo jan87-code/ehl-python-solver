@@ -1858,3 +1858,150 @@ Final checks: `ruff check .` clean; full `pytest -q`: **334 passed,
 No new device execution is claimed. All seven numerical regressions and
 seven independently re-audited accepted forward states pass. The 200 N
 force target and mesh/domain accuracy remain explicitly unachieved.
+
+## 16. Verified warm signed-offset reference (2026-10-27)
+
+Starting revision: `24e3849fb4f00709ca8e0c98d3413fc8817b4805`.
+**Outcome: full-material JFO roots can now cross zero rigid offset with
+positive total film. This removes the cold-start sign restriction on a
+verified small-grid path; 200 N closure and physical accuracy remain open.**
+Roelands is now confirmed by the user. The ambient-alpha matching and 113
+GPa convention remain explicit; density parameters are still assumptions.
+
+### Separate bounded solver and original physical acceptance
+
+`property_warm.PropertyWarmSystem` is a full-compliance, full-material
+prescribed-offset system with interior P=p/pref and deficit D=1-theta. It
+uses the original SI mass flux and full-domain uniform free-space FFT.
+The signed h0 override changes only the rigid offset, leaving geometry,
+fluid, physical reservoir, scales and source support fixed. The existing
+positive-offset problem constructor, cold solver and positive-load controller
+are unchanged. There is no pressure rescaling, field clipping or floor
+replacement. Total film must exceed the original floor on every trial.
+
+The analytic JVP differentiates rho(p), eta(p), full-source elastic film,
+arithmetic face mobility rho h^3/(12 eta), capacity rho h, and west-upwind
+content. Mass rows are SI divergence divided by rho0 href^3 pref/(12 eta0
+L^2) and by 100; complementarity rows are min(P,D). Random smooth-state
+finite differences independently test the complete material/elastic action.
+Directional min derivatives at ties are checked separately.
+
+The explicit dense reference is capped at 400 interior nodes (800 unknowns).
+It uses row/column equilibration and verifies every reconstructed correction
+against a fresh analytic JVP to relative 5e-9. Newton permits at most 30
+corrections and 24 backtracks, with true directional Armijo decrease and
+pressure/content feasibility to the existing 1e-10 tolerance. These are
+bounded small-grid verification tools, not a scalable production Newton or
+bordered force solver. Intermediate iterates may have mass/complementarity
+defects; only a fresh independent SI mass/constraint audit accepts a root.
+Every seed is checked at its declared offset against exact film, displacement,
+original physical residual and boundary data; failed seeds cannot be reused.
+
+`continue_warm_property_offset` proposes at most half the previous minimum
+total film as an offset increment. Rejected Newton trials halve the step;
+accepted steps grow by 1.5. All retries start from the last independently
+audited root. The API caps attempts at 60; the benchmark explicitly uses
+24. Scalar ledgers and callback-streamed fields/histories bound memory and
+preserve both successful and failed work. This is offset continuation with
+measured load, not a new imposed-force closure algorithm.
+
+### Independent numerical references
+
+A positive-offset 7x9 case agrees with the existing independently initialized
+complete nonlinear hybrid reference. Seed identity returns without corrections;
+a changed offset is separately solved. Regression tests cover full derivative
+actions, directional ties, true correction errors, accepted merit descent,
+seed/boundary rejection, strict film feasibility, iteration/resource limits,
+injected retry rollback and retained attempt-budget failure.
+
+On the circular 17x25 case, continuation reaches h0=-.2 um with positive
+film and original mass/complementarity acceptance. A separate finite-difference
+hybrid root, with no analytic JVP from the new solver, agrees locally. It starts
+from a perturbed warm root: this verifies local algorithm agreement, not
+independent branch discovery or uniqueness. This 17x25 signed branch can
+be followed without approaching the film floor. No mesh adequacy or
+convergence is presumed from this single grid.
+
+A saved branch root at h0=-.1158467673 um is independently rerun by
+`examples.verify_signed_reference`. The numerical-Jacobian solve converges
+in 696 evaluations, maximum scaled residual 9.03e-19. Relative pressure
+L2 discrepancy is 1.737e-11, relative film L2 discrepancy 1.174e-14,
+maximum content difference 5.474e-12 and relative force difference
+2.623e-12. Its original maximum dimensionless mass defect is 9.025e-17,
+relative local defect 1.831e-15 and complementarity 9.261e-33. The independent
+reference fields, input archive hash and runtime/source provenance are saved.
+
+### Reproduction
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_signed_200n --output-directory results/signed_200n_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.verify_signed_reference \
+  --input-directory results/signed_200n_new \
+  --output-directory results/signed_local_reference_new
+```
+
+The runner checkpoints every attempted step and refuses existing directories.
+Its initial .5 um root is freshly solved, not borrowed from an earlier output.
+All accepted roots retain raw SI p, theta, h, displacement, density and viscosity,
+complete Newton/line-search histories and center/peak direct cell-integration
+audits. Failed trials retain available partial fields/history under separate
+names and never enter the accepted ledger. Generated arrays remain outside Git.
+
+### Final bounded branch and remaining work
+
+The authoritative run is `results/signed_200n_20261027_final/`, with a
+fresh .5 um seed (Q=1.6980452655 N), 15 accepted offset steps and nine
+rejected/retried trials in the declared 24-attempt budget. Selected roots:
+
+| Signed h0 [um] | Measured Q [N] |
+| ---: | ---: |
+| .4 | 1.9232494000 |
+| .25 | 2.4272709980 |
+| .09126873782 | 3.4049380542 |
+| -.01704943477 | 4.5510306771 |
+| -.1158467673 | 5.9803798328 |
+| -.2070056887 | 7.4824419007 |
+| -.2806234909 | 8.6576112442 |
+| -.3014203907 | 8.9655393334 |
+
+The last root has hmin=.1142840090 um, central film=.3749396587 um and
+peak pressure=713.916834 MPa. These are sampled low-force quantities,
+not a 200 N comparison with the supplied correlation. Across accepted
+steps the largest original dimensionless mass defect is 1.779e-13,
+relative local defect 4.526e-11 and complementarity 8.358e-23. Largest
+verified linear correction residual is 4.804e-12. Direct source-cell
+center/peak displacement discrepancies stay below 4.236e-22 m.
+
+The nine rejected trials exhaust line search near pressure/content bounds;
+recorded trial reasons distinguish infeasibility from Armijo rejection.
+They are not accepted merely because the previous step or a linear solve
+succeeded. Smaller retries subsequently recover seven consecutive accepted
+steps, so these rejected proposals do not establish a physical branch limit.
+The run ends at its declared attempt budget, not loss of positive film or
+proof that larger loads are impossible. It does not reach the requested
+-5 um offset or close 200 N. Physical mesh/domain criteria remain false,
+and the current dense cap prevents applying this reference directly to the
+33x49 mesh. No tolerance or cap is raised to disguise these limitations.
+
+The final branch retains 25 SI archives (seed, 15 roots and nine failed
+partial states) and an inspected branch figure. The separate
+`results/signed_local_reference_20261027/` adds one independent reference
+archive. All recorded source hashes match; its input NPZ hash identifies the
+exact signed root compared. An earlier exploratory run was interrupted after
+checkpointing its trials and is preserved separately, without being labeled
+complete or used as the authoritative final run.
+
+Next justified action: resume from an audited accepted signed root, improve
+active-constraint step handling with independent globalization regressions,
+and implement a bounded matrix-free/sparse correction for finer-grid parity.
+Introduce a load-directed continuation/force bracket only through audited
+roots; retain the actual 200 N force gate before film comparisons. Density,
+modulus conventions and the confirmed Roelands law should not be changed to
+compensate for unresolved numerical continuation or resolution errors.
+
+Final checks: `ruff check .` clean; full `pytest -q`: **341 passed,
+62 skipped** (267.32 s). Seven new regressions and the independent saved-root
+comparison pass. Skips are optional PyTorch/device coverage. No GPU execution,
+200 N force closure, mesh convergence or physical EHL accuracy is claimed.

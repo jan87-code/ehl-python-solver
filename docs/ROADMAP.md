@@ -43,7 +43,10 @@
     pseudo-arclength branch diagnostics/plots are experimental and do not
     resolve strong coupling. Broad continuation robustness and energy
     diagnostics remain unfinished.
-- [ ] Density- and pressure-dependent viscosity
+- [x] Pressure-dependent density and viscosity: verified SI laws, conservative
+  prescribed-film JFO and initial uniform elastic numerical cases.
+  - Published classical-EHL agreement, resolved mesh accuracy and variable-
+    property positive-load control remain open; see the 2026-10-27 milestones.
 - [ ] Shear thinning and thermal EHL when isothermal validation passes
 - [ ] Optional CUDA / ROCm benchmarks, parity tests and profiling
   - [x] Explicit PyTorch CUDA cached DC-FFT elasticity, full-film Reynolds
@@ -910,3 +913,33 @@ mass/load checks. Keep publication matching as subsequent verification.
 Milestone-2 final checks: Ruff clean; full pytest 314 passed, 62 optional
 device skips (87.60 s). All channel/reference and original physical audits
 pass; point mesh accuracy is separately flagged false. Proceed to milestone 3.
+
+Milestone 3 implemented: uniform elastic/material continuation now updates
+full-source FFT film around the pressure-dependent JFO solve. Constant-law
+monolithic parity and a separate complete nonlinear small-grid reference
+pass (pressure disagreement 1.60e-10 relative). Full pytest 316 passed,
+62 optional skips (94.98 s); Ruff clean. Completed 17/33 coupled runs are
+preserved in `results/property_coupling_20261027_verified/`; a bounded 65
+case is being added in `results/property_coupling_20261027_fine/` before
+final documentation/commit. No published-table or mesh-accuracy claim yet.
+If interrupted, finish that benchmark's audits and record its limitations;
+all three physics components are now implemented, independently checked.
+
+All three authorized material milestones are complete as initial numerical
+components. The final 65x65 coupled run in
+`results/property_coupling_20261027_fine/` passes original physical audits:
+pmax=19.7907 MPa, eta/eta0=1.54673, rho/rho0=1.011488,
+Q=.2191838031 N and hmin=.113147175 um. Seven SI archives and seven
+figures retain fields, histories, independent references and a failure probe.
+The last load/peak mesh changes are 7.34%/10.19%; the 1% target is false.
+No publication/strong-load accuracy claim is made. Source hashes/manifests
+and representative final plots were verified. Full pytest 316 passed,
+62 optional device skips (94.98 s); Ruff clean.
+
+Next justified action: benchmark-matched material/geometry/supply selection,
+then independently verified positive-load control and bounded continuation
+for the pressure-dependent coupled model toward a published classical EHL
+case. Keep finite-reservoir and mesh errors separate. Graded elasticity and
+GPU JFO stay off this critical path until measured benchmark errors justify
+them. Do not restart the completed isoviscous far-field investigation or
+require another user prompt between already-authorized increments.

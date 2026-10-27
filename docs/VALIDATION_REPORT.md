@@ -1554,3 +1554,91 @@ skips (87.60 s). Six added configurations cover limit parity, continuum
 channel refinement, complete smooth-flux derivatives, density/transport SI
 units and retained failure. Verified source hashes match; the independent
 reference-convergence figure was inspected. Graded coupling remains deferred.
+
+## 13. Initial pressure-dependent elastic cases, 2026-10-27
+
+Milestone 3 adds a separate uniform, prescribed-offset CPU coupling path.
+Full constitutive strength and full elastic compliance define its returned
+state. Material continuation first solves the rigid pressure-dependent
+problem; compliance continuation then updates film from every source on the
+stated finite physical grid. Acceptance reevaluates original SI mass flow
+on exact coupled film. The old monolithic, isoviscous references and GPU
+implementations are unchanged. Full equations, bounds and failure semantics
+are in `docs/CONSTITUTIVE.md`.
+
+Independent checks precede field interpretation:
+
+- Material-strength zero agrees with the unchanged monolithic JFO/elastic
+  reference: relative pressure/force errors 1.05e-9/3.25e-10.
+- A separate complete nonlinear hybrid-root algorithm on 9x13 cells,
+  x=[-4L,6L],y=[-4Ly,4Ly], starts only from the old isoviscous reference.
+  It converges in 161 evaluations, with original max mass defect 1.66e-13
+  and relative local/global imbalance 4.71e-14/3.25e-16. The new material/
+  elastic Picard result agrees to 1.60e-10 pressure and 8.20e-11 force.
+  This is two algorithms solving the same discrete assumptions, not an
+  independent experimental field comparison.
+- Complete smooth flux directions, law derivatives, channel limit and
+  constant-property parity remain separately verified. The hybrid reference
+  is a bounded small verification algorithm, not a new globally convergent
+  production Newton implementation. No bordered/load-controller change is made.
+- Original SI mass, complementarity and feasibility use the existing
+  tolerances. Exact full-source film and selected direct source-cell
+  displacement are independently checked; force is integrated using both
+  trapezoidal and rectangular-cell arithmetic. The budget-one failure probe
+  retains the actual last candidate and outer/inner histories.
+
+Larger initial grids share h0=.1 um,Rx=10 mm,Ry=20 mm,E*=100 GPa,
+Ue=.1 m/s and the illustrative T=313.15 K fluid, with x=+/-8L,y=+/-8Ly.
+Outer gauge pressure is zero and west content one. These are physical finite
+reservoir assumptions; the study does not move them or claim infinite-domain
+accuracy. At 17/33 nodes the coupled loads are 0.151876716/0.204189265 N,
+minimum sampled films 0.107102987/0.111885032 um and peak pressures
+8.38583/17.9606 MPa. The 33 grid reaches eta/eta0=1.48641 and
+rho/rho0=1.0104571. Both pressure-dependent laws are active in the actual
+coupled mass equations. Original max mass stays below 3.71e-10; relative
+local/global imbalances stay below 8.50e-11/1.07e-12, and complementarity
+is zero at printed precision. Direct peak displacement matches FFT within
+1.66e-23 m; exact field coupling discrepancy is zero at reported precision.
+
+The large initial 17->33 load/peak changes (34.4%/114%) demonstrate that
+these are initial discrete roots, not resolved engineering predictions. The
+bounded 65 grid and its separate mesh/error flags are reported next. Load is
+measured at prescribed offset, not forced to a target, and current results
+do not establish classical EHL film-height agreement or strong-load validity.
+
+The bounded 65x65 coupled case completes in 107 outer iterations across
+five compliance stages, at most 27 in one stage. Q=0.219183803068 N,
+minimum sampled film=0.113147175105 um and peak p=19.790722834 MPa.
+Viscosity rises to 1.5467298 times ambient and liquid density to 1.0114879.
+Original max mass is 9.05e-10, relative local/global mass imbalance
+7.65e-11/9.60e-13 and complementarity zero at printed precision. Independent
+force quadrature differs by 1.65e-15 relative; direct peak deformation differs
+by 1.66e-23 m, with zero reported exact-film coupling discrepancy.
+
+The last 33->65 load/peak changes shrink to 7.34%/10.19%. The independent
+1% mesh target remains false. These results complete the requested initial
+coupled milestone, not mesh-converged or published classical-EHL validation.
+Pressure dependence was added to the equations and independently verified;
+it was not used to relabel the earlier far-field error budget as resolved.
+
+The authoritative run is `results/property_coupling_20261027_fine/`:
+seven SI archives and seven figures, with raw density/viscosity/pressure/
+film/deformation/content, complete outer/material/active-set histories,
+independent monolithic data, original mass budgets and retained failure.
+Earlier completed coarse runs are preserved. Reproduce with
+`python -m examples.run_property_coupling_verification --include-fine
+--output-directory results/property_coupling_new` using single-thread setup.
+Source hashes, acceptance flags, file counts and figure manifest were checked;
+pressure/viscosity contours and pressure/film mesh profiles were inspected.
+
+Milestone-3 checks: Ruff clean; full pytest **316 passed, 62 optional device
+skips** (94.98 s). Two added regressions verify old monolithic limit parity,
+retained failure, full coupled pressure/film/force agreement with a separate
+nonlinear reference and its independent SI admissibility. No drivers, system
+software, old solver implementation or result baseline was modified.
+
+Next: obtain benchmark-matched fluid/geometry/supply data and introduce
+verified positive-load control for the variable-property coupled model,
+with controlled resolution and continuation toward classical pressures.
+Retain the known finite-reservoir/mesh error budget. Published film-height
+agreement is a subsequent milestone; it is not inferred from these roots.

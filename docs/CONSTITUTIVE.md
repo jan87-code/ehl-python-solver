@@ -106,3 +106,50 @@ Point cases retain the finite +/-8L,+/-8Ly reservoir, h0=.1 um, Rx=10 mm,
 Ry=20 mm and Ue=.1 m/s. They demonstrate material pressure dependence,
 not a resolved classical-EHL pressure/film benchmark. Their mesh errors
 remain separately reported; elasticity is not yet included in this milestone.
+
+## Initial uniform elastic feedback
+
+`property_coupled.py` is a separate prescribed-h0 CPU Picard experiment.
+It starts at zero pressure and rigid film, continues the material laws on
+the first rigid solve, then increases elastic compliance through
+0,.25,.5,.75,1. Each inner call closes the pressure-dependent JFO equations;
+all pressure sources on the fixed finite domain enter the existing uniform
+zero-padded FFT. Exact film h0+geometry+gamma*w(p), including boundary-node
+displacement, is independently audited for original SI mass balance before
+stage acceptance. Film iteration is relaxed by .5; returned pressure/content
+are never blended or clipped. Final results use full compliance and full
+material strength; strength zero is an independent isoviscous limit.
+
+The old uniform CPU problem supplies geometry/elasticity and remains
+unchanged. Explicit eta0 and speed must reproduce its Lambda. Uniform cells,
+20000-node and 100-iterations-per-compliance-stage caps remain mandatory.
+Nonlinear failure preserves outer history, last coupled candidate and any
+inner material failure information. Load is measured at prescribed offset;
+no new force-controller or claimed classical-EHL load closure is introduced.
+
+Checks include old monolithic parity at material strength zero, and a
+separate small complete nonlinear algorithm using SciPy hybrid root. The
+latter starts from the old constant-property solution, never from the new
+pressure-dependent Picard root. It solves all pressure/content unknowns
+with exact full-source film on a 9x13 grid; the verification reference is
+capped at 200 interior nodes and 4000 evaluations. Physical mass,
+complementarity and field errors are independently audited, rather than
+accepting only the root solver's status. This benchmark algorithm is not a
+new production/globalized Newton method or a proof through arbitrary fronts.
+
+The small complete reference uses x=[-4L,6L],y=[-4Ly,4Ly]. Larger initial
+mesh cases use x=+/-8L,y=+/-8Ly, h0=.1 um,Rx=10 mm,Ry=20 mm,
+E*=100 GPa and Ue=.1 m/s, with the same illustrative fluid. All bounds are
+finite physical reservoir assumptions, with ambient pressure/flooded west.
+SI load is checked by independent rectangular-cell summation against the
+trapezoidal integral; direct source-cell deformation at the pressure peak
+checks the FFT. Raw density, viscosity, content, pressure, film, deformation,
+Newton-reference data, failure candidates and complete histories are saved.
+
+Reproduce `python -m examples.run_property_coupling_verification --include-fine
+--output-directory results/property_coupling_new` with the standard CPU
+environment. Optional --include-fine adds the bounded 65x65 case. These are
+initial coupled numerical checks. Grid/domain accuracy, realistic strong
+loads and matched published film heights remain separate subsequent work;
+current pressure-dependent fields must not be described as validated
+classical EHL merely because conservation and equation checks pass.

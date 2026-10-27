@@ -365,3 +365,16 @@ python -m examples.run_property_reynolds_verification --output-directory results
 It includes an independent pressure-driven continuum reference and cavitating
 point grids. Physical fluxes are now mass flows; point mesh accuracy remains
 open. Details and dimensionalization are in `docs/CONSTITUTIVE.md`.
+
+Run initial pressure-dependent density/viscosity **coupled** CPU verification:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_property_coupling_verification --include-fine \
+  --output-directory results/property_coupling_new
+```
+
+This cold-starts elastic/material continuation, compares a small case with
+an independent complete nonlinear reference, and reports original mass,
+load, deformation and mesh errors. Density and viscosity are active in the
+coupled solve; classical benchmark agreement remains subsequent work.

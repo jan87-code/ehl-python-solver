@@ -2148,3 +2148,15 @@ independent Kirchhoff pressure-driven channel checks the continuum limit,
 and complete smooth flux derivatives match finite differences. Existing
 isoviscous and GPU paths remain independent; this milestone does not alter
 coupled film or claim physical classical-EHL accuracy.
+
+### Initial compressible/piezoviscous elastic coupling
+
+`property_coupled.py` now couples the pressure-dependent conservative JFO
+solve to full-source uniform FFT film, at prescribed h0 and fixed finite
+reservoir dimensions. Only film iterates are relaxed; final acceptance uses
+unrelaxed material laws and exact pressure-coupled film. Material/compliance
+continuation, independent monolithic limit and small full nonlinear reference,
+physical mass/load and direct elastic checks are in `docs/CONSTITUTIVE.md`.
+No old solver or GPU path is replaced. This initial experiment has no new
+load controller or graded elasticity and does not establish mesh-converged
+classical EHL or experimental fluid accuracy.

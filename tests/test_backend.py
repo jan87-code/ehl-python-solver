@@ -1,3 +1,5 @@
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -14,6 +16,13 @@ def test_numpy_backend():
 def test_unknown_backend():
     with pytest.raises(ValueError):
         make_backend("invalid")
+
+
+def test_hip_backend_does_not_fall_back_when_extension_is_missing():
+    if importlib.util.find_spec("ehl_solver._hip_native") is not None:
+        pytest.skip("Native HIP extension is installed")
+    with pytest.raises(RuntimeError, match="extension is not built"):
+        make_backend("hip")
 
 
 def test_torch_cpu_optional():

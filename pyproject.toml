@@ -16,9 +16,13 @@ gpu = ["torch>=2.4"]
 
 [project.scripts]
 ehl-check = "ehl_solver.cli:main"
+ehl-hardware = "ehl_solver.hardware_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ehl_solver = ["_hip_native.cpp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

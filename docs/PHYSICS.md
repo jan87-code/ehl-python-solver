@@ -40,7 +40,19 @@ does not constitute a coupled EHL solver.
 3. Cell-integrated kernel tests, direct-convolution parity, and Hertz center-displacement grid refinement.
 4. Reynolds manufactured solutions, mass conservation, mesh independence (planned).
 5. Coupled load closure, positivity, residual decay, grid/domain studies (planned).
-6. Reference film-thickness cases and GPU double precision parity (planned).
+6. Reference film-thickness cases, full-profile elasticity, and GPU
+   film-height parity (planned).
 
 ## Computational strategy
-GPU: use PyTorch tensors for both NVIDIA CUDA and AMD ROCm. On ROCm, PyTorch also reports GPUs via `torch.cuda`. A single environment generally uses one GPU-enabled build (CUDA **or** ROCm), not both at once.
+The NumPy implementation is the CPU reference. The existing optional PyTorch
+backend supports PyTorch's `cuda` device label for NVIDIA CUDA or AMD ROCm. A
+separate optional native AMD HIP backend uses C++/HIP and hipFFT directly and
+does not import PyTorch. It computes complex128 transforms on a zero-padded
+full-convolution grid; inverse normalization is by the total padded grid size,
+then the output is cropped from the kernel center. Host arrays remain
+float64/complex128 and are transferred for each convolution; no device-resident
+iterative solver is implemented. The native convolution has been checked
+against NumPy and direct convolution on an RX 6600 XT (`gfx1032`), including
+rectangular, asymmetric, edge and randomized pressure fields. Benchmarks and
+limits are recorded in `docs/ROADMAP.md`; this validates only the convolution/
+elastic-deformation path, not EHL coupling or Reynolds physics.

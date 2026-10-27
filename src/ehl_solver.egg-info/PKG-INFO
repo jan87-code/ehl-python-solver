@@ -15,7 +15,7 @@ Requires-Dist: torch>=2.4; extra == "gpu"
 
 # Python EHL Solver — research starter
 
-**Status: engineering foundation only, NOT a complete EHL solver.** It currently includes analytical Hertz formulas, a generic tested 2-D FFT *linear* convolution utility and optional PyTorch tensor backend. The nonlinear Reynolds/film/load coupled solver is deliberately future work.
+**Status: engineering foundation only, NOT a complete EHL solver.** It currently includes analytical Hertz formulas, a generic tested 2-D FFT *linear* convolution utility, cell-integrated half-space elasticity, and optional PyTorch and native AMD HIP backends. The nonlinear Reynolds/film/load coupled solver is deliberately future work.
 
 ## Quick start (Linux Mint / Ubuntu)
 
@@ -32,7 +32,7 @@ ehl-check --backend numpy
 code .
 ```
 
-## GPU setup
+## PyTorch GPU setup
 First verify compatibility of your specific GPU model, driver, kernel and PyTorch wheel:
 - PyTorch official selector: https://pytorch.org/get-started/locally/
 - AMD ROCm system requirements: https://rocm.docs.amd.com/projects/install-on-linux/en/latest/reference/system-requirements.html
@@ -47,6 +47,100 @@ python -m ehl_solver.cli --backend torch --device cuda
 ```
 
 On AMD ROCm, `cuda` is **still** the PyTorch device name. The CLI explicitly reports if the device is AMD ROCm or NVIDIA CUDA where detectable. If no working supported GPU, `auto` uses CPU.
+
+## Optional native AMD HIP backend
+
+The native backend uses C++/HIP and hipFFT directly. It does not import or
+depend on PyTorch. Standard CPU installs and CI do not require ROCm or `hipcc`;
+the extension is built manually only in an environment with the ROCm SDK. The
+Python interface accepts/returns NumPy `float64` arrays in `(ny, nx)` order.
+Convolution is zero-padded to the full linear-convolution dimensions, uses
+complex128 hipFFT transforms, divides the inverse transform by the padded
+element count, and crops from `(kernel_ny // 2, kernel_nx // 2)`. For
+elasticity, the influence coefficients continue to come from the Python
+cell-integrated kernel, in m/Pa; pressure in Pa therefore returns displacement
+in m.
+
+With the TheRock SDK environment active (for example, the existing
+`~/Projects/GPU-Testing/.venv`) and its `hipcc` on `PATH`, build from the
+repository root:
+
+```bash
+python scripts/build_hip.py \
+  --sdk "$HOME/Projects/GPU-Testing/.venv/lib/python3.12/site-packages/_rocm_sdk_devel" \
+  --arch gfx1032
+```
+
+The command builds an in-place extension for the selected Python interpreter
+and embeds the SDK library directory as its runtime search path. No system
+packages or drivers are changed. Verify it on a GPU with:
+
+```bash
+pytest -q tests/test_hip_backend.py
+python scripts/benchmark_hip.py
+```
+
+Select it explicitly with `make_backend("hip")`; it raises if the extension or
+a HIP device is unavailable and never falls back to CPU. The current native
+interface copies pressure and influence arrays to the GPU and the result back
+for each call; it is not a resident-array iterative solver. The command-line
+smoke check is available as `ehl-check --backend hip --device hip`.
+
+## Hardware detection and adaptive selection
+
+`ehl-hardware` detects CPU instruction flags and reports installed/operational
+NumPy, native HIP, and PyTorch GPU backends. HIP and PyTorch imports, device
+initialization, float64/FFT checks, and optional timing run in disposable child
+processes; a native crash or timeout is reported as a failed probe instead of
+terminating the main process. The HIP native extension reports its GPU
+architecture and live free/total memory. PyTorch provides corresponding device
+properties when its runtime is operational.
+
+Use the command to inspect a proposed selection for a pressure grid in `(ny,
+nx)` order:
+
+```bash
+ehl-hardware --mode auto --shape 257 257
+ehl-hardware --mode cpu
+ehl-hardware --mode hip --device hip --shape 129 129
+ehl-hardware --mode torch --device cuda --json
+```
+
+Auto mode benchmarks the NumPy reference and each validated GPU backend that
+fits the estimated padded-convolution working set. It performs a warm-up and
+repeated synchronized timings, then chooses the shortest measured
+transfer-inclusive cell-integrated elastic-deformation call. GPU estimates
+account for the full padded shape, pressure and influence inputs, convolution
+output and complex128 FFT intermediates, then apply a 1.5x allowance for FFT
+workspaces/allocator overhead. A GPU is excluded if free memory cannot be
+verified or the estimate does not fit; CPU is chosen
+when no GPU has valid benchmark evidence. Measurements are cached under
+`$XDG_CACHE_HOME/ehl-solver/backend-benchmarks.json` (or
+`EHL_BACKEND_CACHE_PATH`) and keyed by hardware, backend/library/Python/NumPy
+versions, precision, shape, convolution layout and repeat count. Delete that
+cache file to force remeasurement.
+
+`select_backend()` is an additional selection API; existing `make_backend()`
+and `Backend` behavior remain available. Modes are `auto`, `cpu`, `hip`, and
+`torch`; explicit `hip`/`cuda` device requests fail rather than silently
+falling back if validation, memory checks or benchmark evidence are missing.
+`torch --device cpu` deliberately selects PyTorch CPU. Detection does not
+import PyTorch or initialize HIP in the main process, but a selected backend
+must be imported by the process that executes existing Python tensor APIs.
+`torch --device auto` selects a verified PyTorch GPU when it fits the memory
+estimate; otherwise it uses PyTorch CPU only when the isolated CPU float64/FFT
+probe passes.
+In particular, do not select a PyTorch backend in an environment where that
+import is known to crash; the selector cannot safely return PyTorch tensors
+without loading PyTorch in the workload process.
+
+The timing policy optimizes one requested convolution workload, not a future
+coupled solver. Measurements incur subprocess startup on uncached selection
+and GPU transfer overhead on each convolution. All implemented transforms
+remain float64/complex128; no reduced-precision path is considered. CPU
+instruction flags are reported for diagnostics, not used to dispatch custom
+SIMD kernels. GPU selection and parity do not validate Reynolds physics,
+load closure, or EHL convergence.
 
 ## GitHub
 ```bash
@@ -64,8 +158,11 @@ Configure SSH authentication with GitHub beforehand, or replace the SSH URL with
 Install VS Code Python, Pylance, Ruff and OpenAI Codex extensions. Select `.venv/bin/python` as interpreter. Codex loads `AGENTS.md` at the repository root. Start with `docs/ROADMAP.md` and ask for one milestone at a time.
 
 ## Modules
-- `backend.py`: minimal NumPy/PyTorch backend selection; GPU is optional
+- `backend.py`: NumPy/PyTorch selection plus explicit optional native HIP selection
 - `convolution.py`: zero-padded full linear convolution with same-shape centered output
+- `_hip_native.cpp`: optional native HIP complex128 convolution and hipFFT implementation
+- `scripts/build_hip.py`: opt-in SDK-based native extension build targeting gfx1032 by default
+- `scripts/benchmark_hip.py`: measured GPU, transfer-inclusive convolution and full elasticity timings
 - `hertz.py`: independent analytical formulas using *effective plane-strain contact modulus* `E_star` (Pa)
 
 See `docs/PHYSICS.md`, `docs/MATLAB_LESSONS.md`, `docs/ROADMAP.md`.

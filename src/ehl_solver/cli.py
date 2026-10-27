@@ -10,8 +10,8 @@ from ehl_solver.hertz import circular_point_contact
 
 def main():
     p = argparse.ArgumentParser(description="EHL numerical foundation smoke test")
-    p.add_argument("--backend", choices=["numpy", "torch"], default="numpy")
-    p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    p.add_argument("--backend", choices=["numpy", "torch", "hip"], default="numpy")
+    p.add_argument("--device", choices=["auto", "cpu", "cuda", "hip"], default="auto")
     args = p.parse_args()
     backend = make_backend(args.backend, args.device)
     signal = np.zeros((7, 9), dtype=np.float64)

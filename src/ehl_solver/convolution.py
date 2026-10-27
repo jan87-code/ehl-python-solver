@@ -13,6 +13,10 @@ def fft_convolve_same(signal, kernel, backend: Backend):
     kernel = as_float64(kernel, backend)
     if signal.ndim != 2 or kernel.ndim != 2:
         raise ValueError("Expected 2-D signal and kernel")
+    if backend.name == "hip":
+        signal = np.ascontiguousarray(signal, dtype=np.float64)
+        kernel = np.ascontiguousarray(kernel, dtype=np.float64)
+        return backend.native.convolve_same(signal, kernel)
     ny, nx = signal.shape
     ky, kx = kernel.shape
     full_shape = (ny + ky - 1, nx + kx - 1)

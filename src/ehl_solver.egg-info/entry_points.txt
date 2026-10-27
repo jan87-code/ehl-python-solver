@@ -1,2 +1,3 @@
 [console_scripts]
 ehl-check = ehl_solver.cli:main
+ehl-hardware = ehl_solver.hardware_cli:main

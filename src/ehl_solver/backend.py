@@ -10,6 +10,7 @@ class Backend:
     xp: object
     device: str
     platform: str
+    native: object | None = None
 
 
 def make_backend(name: str = "numpy", device: str = "auto") -> Backend:
@@ -17,6 +18,19 @@ def make_backend(name: str = "numpy", device: str = "auto") -> Backend:
         if device not in ("auto", "cpu"):
             raise ValueError("NumPy backend supports CPU only")
         return Backend("numpy", np, "cpu", "CPU")
+    if name == "hip":
+        if device not in ("auto", "hip"):
+            raise ValueError("HIP backend supports the HIP device only")
+        try:
+            from ehl_solver import _hip_native
+        except ImportError as exc:
+            raise RuntimeError(
+                "The native HIP extension is not built; see the README HIP build procedure"
+            ) from exc
+        device_count = _hip_native.device_count()
+        if device_count < 1:
+            raise RuntimeError("The HIP runtime reports no available GPU devices")
+        return Backend("hip", np, "hip:0", "AMD HIP/ROCm", _hip_native)
     if name != "torch":
         raise ValueError(f"Unknown backend {name!r}")
     try:
@@ -37,6 +51,6 @@ def make_backend(name: str = "numpy", device: str = "auto") -> Backend:
 
 
 def as_float64(array, backend: Backend):
-    if backend.name == "numpy":
+    if backend.name in ("numpy", "hip"):
         return np.asarray(array, dtype=np.float64)
     return backend.xp.as_tensor(array, dtype=backend.xp.float64, device=backend.device)

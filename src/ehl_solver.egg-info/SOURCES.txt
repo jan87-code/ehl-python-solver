@@ -2,9 +2,14 @@ README.md
 pyproject.toml
 src/ehl_solver/__init__.py
 src/ehl_solver/__main__.py
+src/ehl_solver/_backend_probe.py
+src/ehl_solver/_hip_native.cpp
 src/ehl_solver/backend.py
 src/ehl_solver/cli.py
 src/ehl_solver/convolution.py
+src/ehl_solver/elasticity.py
+src/ehl_solver/hardware.py
+src/ehl_solver/hardware_cli.py
 src/ehl_solver/hertz.py
 src/ehl_solver.egg-info/PKG-INFO
 src/ehl_solver.egg-info/SOURCES.txt
@@ -14,4 +19,7 @@ src/ehl_solver.egg-info/requires.txt
 src/ehl_solver.egg-info/top_level.txt
 tests/test_backend.py
 tests/test_convolution.py
+tests/test_elasticity.py
+tests/test_hardware.py
 tests/test_hertz.py
+tests/test_hip_backend.py

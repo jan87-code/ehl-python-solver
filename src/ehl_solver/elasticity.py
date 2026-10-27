@@ -46,7 +46,7 @@ def cell_integrated_kernel(
 
     ny, nx = grid_shape
     xp = backend.xp
-    if backend.name == "numpy":
+    if backend.name in ("numpy", "hip"):
         x_lags = xp.arange(-(nx - 1), nx, dtype=xp.float64) * dx
         y_lags = xp.arange(-(ny - 1), ny, dtype=xp.float64) * dy
     else:

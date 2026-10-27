@@ -153,3 +153,62 @@ initial coupled numerical checks. Grid/domain accuracy, realistic strong
 loads and matched published film heights remain separate subsequent work;
 current pressure-dependent fields must not be described as validated
 classical EHL merely because conservation and equation checks pass.
+
+## Positive-force control
+
+`property_load.solve_property_at_load(problem, fluid, speed_m_s,
+target_load_n, h0_bracket_m=(lower_m, upper_m))` solves for the SI rigid-gap
+offset h0 with `integral p dx dy = target_load_n > 0`. Coordinates, physical
+reservoir boundaries, radii, E*, fluid, speed, inlet content and all reference
+scales remain fixed. Changing h0 does not regenerate the grid or choose a
+new natural length. The returned h0 is not the sampled minimum film.
+
+This is a bounded nested reference: each uncached force evaluation cold-
+starts the established material/compliance continuation to full coupling.
+Only a separately converged coupled state is eligible. The controller
+recomputes original SI mass/complementarity, full-source film/displacement
+and the pressure force from raw fields, checking the solver's cached load.
+Rejected inner candidates are never supplied as root-function values.
+Pressure is never rescaled to force closure. Existing nonlinear tolerances,
+iteration/node limits, pressure/film feasibility and FFT conventions remain.
+
+Three default offset samples establish a strictly decreasing sampled force
+branch. This is evidence on the selected bracket, not a global uniqueness
+proof. A sampled state already within the required force tolerance can be
+returned, including an endpoint within numerical tolerance; otherwise a
+sign-changing bracket is mandatory. Brent iteration uses audited forces
+only. Relative force error must be <=1e-8 (or a stricter requested value)
+even when offset convergence passes. A deliberately loose offset stopping
+rule is tested to ensure it cannot substitute for force convergence.
+
+Limits: at most 24 distinct force evaluations and 24 scalar root iterations;
+3..7 monotonicity samples. Defaults use offset tolerance 1e-16 m as a
+numerical stopping rule, not physical uncertainty. The scalar cache stores
+probe records only; at most best/last coupled roots are retained. Optional
+`evaluation_callback(record, solution)` streams each complete accepted
+field/history once for reproducibility, including states later revisited
+through the cache without a repeat callback.
+
+`PropertyLoadError` retains accepted evaluations and the last audited state,
+with a separately identified failed offset, inner exception and failed
+coupled candidate. A partial-compliance or otherwise unconverged state is
+not a force solution. Nonbracketing targets, budget exhaustion, nondecreasing
+sampled response and failed physical/force audits are explicit errors.
+Callback failure also stops with diagnostics. There is no automatic bracket
+expansion or relaxation of criteria to obtain a root.
+
+The present prescribed-offset solver starts from a positive rigid gap.
+Accordingly this initial load API explicitly requires positive h0 brackets.
+An actual liquid film may remain positive with signed h0 in other regimes;
+that branch requires a separately verified warm-start/nonlinear extension.
+A failed positive bracket is not proof that a physical solution is absent.
+The method's cost is multiple cold coupled solves; no acceleration claim is
+made. Strong-load, signed-offset and global branch robustness remain open.
+
+Reproduce known-offset recovery, an imposed 0.10 N target, a different
+bracket for the same target, a fixed-load mesh comparison and retained
+failure with `python -m examples.run_property_load_verification
+--include-refinement --output-directory results/property_load_new` under
+single-thread CPU settings. The verified numerical experiment is
+`results/property_load_20261027/`. Load closure does not establish film or
+pressure mesh accuracy, domain independence or experimental validation.

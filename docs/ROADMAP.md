@@ -943,3 +943,37 @@ case. Keep finite-reservoir and mesh errors separate. Graded elasticity and
 GPU JFO stay off this critical path until measured benchmark errors justify
 them. Do not restart the completed isoviscous far-field investigation or
 require another user prompt between already-authorized increments.
+
+## Pressure-dependent load control (2026-10-27, complete)
+
+Authorized next milestone: prescribe positive force and solve the gap offset
+for the new pressure-dependent JFO/elastic model. Start with a bounded nested
+scalar root around independently converged prescribed-offset solutions,
+holding SI domain/scales/fluid fixed. Every force evaluation must pass fresh
+mass, complementarity, film/source and force-integration checks; failures
+must retain diagnostics and never become successful root evaluations.
+Benchmark known-offset recovery against the separate complete nonlinear
+reference, then a distinct imposed force and bracket/failure/budget checks.
+Current prescribed-offset solver cold-starts from positive rigid gaps, so
+this first load controller will explicitly require positive offset brackets;
+negative-offset/strong-load branches remain subsequent work, not silently
+clamped. Preserve previous results and commit/push after complete checks.
+
+The milestone is complete: `solve_property_at_load` uses bounded bracketed
+force control with fresh physical audits and retained failed candidates.
+A separate complete nonlinear reference recovers the known 100 nm offset
+(relative error 1.57e-10). Two brackets independently reach 0.10 N at
+h0=123.885855 nm on 9x13; the same force on 13x17 gives h0=160.621945 nm.
+All final relative force errors are below 5.77e-12. The 29.65% offset mesh
+change remains an accuracy limitation; force closure is not mesh validation.
+Evidence: `results/property_load_20261027/`, 35 accepted force probes,
+41 SI NPZ archives, three figures and a separately retained failed probe.
+Source hashes and representative plots were checked. Ruff is clean; full
+pytest: 327 passed, 62 optional device skips (188.72 s).
+
+Next justified action: use the user's selected physical benchmark to match
+fluid law, geometry, load, entrainment and supply, then perform bounded
+fixed-force mesh/domain studies. Positive offset brackets are currently
+required; signed-offset or strongly loaded branches need separate verified
+continuation if the benchmark requires them. No classical EHL or physical
+film-height accuracy claim follows from the present load-control milestone.

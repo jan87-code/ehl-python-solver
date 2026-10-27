@@ -1642,3 +1642,96 @@ verified positive-load control for the variable-property coupled model,
 with controlled resolution and continuation toward classical pressures.
 Retain the known finite-reservoir/mesh error budget. Published film-height
 agreement is a subsequent milestone; it is not inferred from these roots.
+
+## 14. Pressure-dependent positive-load control, 2026-10-27
+
+Starting revision: `b491970e5a9b07e6c6ed1f7f77eb0bf03e8a0f0d`.
+**Outcome: a bounded nested positive-force controller closes the new
+pressure-dependent JFO/elastic equations on verified positive-offset cases.**
+This is numerical verification of load control, not an experimental or
+mesh-converged classical EHL result. No published test case is assumed.
+
+`property_load.solve_property_at_load` changes h0 only. SI grid/domain,
+geometry, E*, fluid, entrainment, flooded inlet and all nondimensional
+scales stay fixed. Each force probe is a cold material/elastic continuation
+solve; independently recomputed physical/film/force audits precede scalar
+root acceptance. Initial samples must show a decreasing force response.
+A sampled tolerance match is valid; otherwise a bracketed Brent solve is
+required. Relative force error <=1e-8 remains mandatory independently of
+scalar offset stopping. No pressure scaling, clamps, automatic domain or
+bracket expansion, tolerance relaxation or GPU execution is used.
+
+The public API bounds uncached force evaluations at 24, scalar iterations
+at 24 and monotonicity samples at 3..7. Existing 20,000-node and 100-iteration
+nonlinear stage/active-set caps remain. Memory retains scalar probe records
+and best/last full roots; a callback streams complete probe arrays/histories.
+Failed inner states are separately retained and never treated as a force
+value. Signed offsets require a further verified initialization/branch
+extension; the present cold-start model explicitly supports positive
+brackets. Failure here does not establish global physical nonexistence.
+
+### Independent recovery and imposed force
+
+Use eta0=.04 Pa s,rho0=850 kg/m^3,z=.68 at assigned T=313.15 K,
+Rx=10 mm,Ry=20 mm,E*=100 GPa,Ue=.1 m/s and the prior fixed scales.
+The first 9x13 physical grid spans x=[-4L,6L],y=[-4Ly,4Ly]. An independent
+complete nonlinear reference at h0=100 nm supplies its force; no reference
+field seeds the load controller. Its template offset is deliberately 110 nm,
+and the controller's bracket is [80,130] nm, so the known offset is not an
+initial sample. That recovery tests pressure/content, elastic film and force
+against another nonlinear algorithm, not solely scalar root convergence.
+
+| Numerical case | Target Q [N] | Solved h0 [nm] | Sampled hmin [nm] | Peak pressure [MPa] | Relative force error | Force probes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Independent known-offset recovery | reference force | 100.000000016 | 107.968092 | 12.448450 | 8.62e-16 | 9 |
+| Imposed force, 9x13, bracket [80,160] nm | 0.10 | 123.885854559 | 131.125194 | 9.944147 | 9.44e-15 | 9 |
+| Same force/grid, bracket [100,150] nm | 0.10 | 123.885854559 | 131.125194 | 9.944147 | 4.17e-16 | 8 |
+| Same force/domain, refined 13x17 | 0.10 | 160.621945032 | 174.083051 | 7.561251 | 5.77e-12 | 9 |
+
+Known-offset relative error is 1.58e-10 and independent pressure relative
+L2 discrepancy 3.81e-11. Different brackets for the imposed 0.10 N target
+agree in h0 to 1.56e-14 relative. All returned states pass original mass,
+local/global balance, complementarity and film feasibility. Final max mass
+is below 4.19e-10; direct spatial peak displacement differs from full-source
+FFT by at most 1.66e-24 m. Force values are recalculated from raw pressure,
+not imposed by rescaling it. Reported numerical digits are reproducibility
+information, not physical uncertainty estimates.
+
+### Fixed-force mesh uncertainty and retained failures
+
+Refinement holds the same physical bounds and force but changes h0 by
+29.65%, minimum sampled film by 32.76% and peak pressure by -23.96%.
+The sampled extrema also depend on these nonnested coarse grids. Thus force
+closure alone cannot establish mesh accuracy or domain independence. These
+large mesh effects remain explicit while the load-control equations pass.
+The user's subsequent physical test case should supply matched operating
+conditions; its own force/film/pressure resolution must be established.
+
+The benchmark deliberately reduces the outer stage budget to one for a
+probe. Its partial-compliance fields/history are saved, with zero accepted
+force evaluations. Regressions additionally cover unbracketed targets,
+force-budget exhaustion, a real failed inner solve after one accepted probe,
+corrupted returned film/cached force, endpoint matching within tolerance,
+invalid requests and scalar-offset stopping without force closure. No
+failed partial root is labeled a converged load solution.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_property_load_verification --include-refinement \
+  --output-directory results/property_load_new
+```
+
+The verified run is `results/property_load_20261027/`: 35 streamed accepted
+force probes, their complete coupled/material/active histories, four final
+solutions, an independent reference and a rejected partial candidate (41 SI
+NPZ files total), plus three figures and finite JSON with source/runtime
+provenance. Existing directories are refused; per-case checkpoints preserve
+completed evaluations if interrupted. Force-error plots retain exact zeros.
+Generated results remain outside Git. No existing baseline or old numerical
+solver is overwritten.
+
+Final checks: `ruff check .` clean; complete `pytest -q`: **327 passed,
+62 skipped** (188.72 s). Skips are optional PyTorch/device coverage; no GPU
+execution is claimed. Recorded Python source hashes match the tested
+sources. The 41 SI archives and three-figure manifest were checked;
+force/offset and matched pressure/film figures were visually inspected.

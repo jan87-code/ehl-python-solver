@@ -378,3 +378,19 @@ This cold-starts elastic/material continuation, compares a small case with
 an independent complete nonlinear reference, and reports original mass,
 load, deformation and mesh errors. Density and viscosity are active in the
 coupled solve; classical benchmark agreement remains subsequent work.
+
+Prescribe a positive force for the pressure-dependent coupled model with
+`ehl_solver.property_load.solve_property_at_load`. It returns the solved SI
+offset, coupled fields and independently audited force evaluations. Provide
+an explicit positive offset bracket on a fixed physical grid; failed inner
+solves or out-of-bracket targets raise with retained diagnostics.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_property_load_verification --include-refinement \
+  --output-directory results/property_load_new
+```
+
+This verifies known-offset recovery and 0.10 N force closure. Negative-offset/
+strong-load branches and mesh-resolved physical validation remain open;
+see `docs/CONSTITUTIVE.md` and the latest validation-report section.

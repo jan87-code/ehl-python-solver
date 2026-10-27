@@ -2160,3 +2160,22 @@ physical mass/load and direct elastic checks are in `docs/CONSTITUTIVE.md`.
 No old solver or GPU path is replaced. This initial experiment has no new
 load controller or graded elasticity and does not establish mesh-converged
 classical EHL or experimental fluid accuracy.
+
+### Pressure-dependent positive-load control
+
+`property_load.py` now replaces prescribed offset by a bracketed scalar
+force equation around independently audited coupled solves. SI target force
+is the integral of gauge pressure [N]; density and saturation contribute
+through mass transport, not a separate mechanical load. Every trial keeps
+physical grid, reference scales and supply assumptions unchanged, updates
+only h0, and must pass original true-property mass, complementarity, gap,
+source-coupling and independent pressure-integration checks. Details and
+failure semantics are in `docs/CONSTITUTIVE.md`.
+
+Only the current positive-offset cold-start branch is supported. The gap
+remains h0+geometry+w(p), so minimum film is independently measured. Exact
+force closure by adjusting h0 can conceal mesh/domain sensitivity in h0,
+film and pressure; those errors must be evaluated separately at fixed load.
+No old signed/full-film controller or production bordered Newton method is
+modified. This nested CPU reference does not add transient squeeze, signed-
+offset continuation, GPU support or classical EHL physical validation.

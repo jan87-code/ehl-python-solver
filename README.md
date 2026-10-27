@@ -422,3 +422,9 @@ failed states and reproduction commands are in section 17 of
 `docs/VALIDATION_REPORT.md`. Run `examples.run_load_directed_200n` with the
 specified prior source archives, followed by `examples.audit_load_directed`
 to independently check saved fields and globalization histories.
+
+Explicit nested-grid initialization and safeguarded active repair now close
+200 N on **65x97 nodes** as well. Initialization alone is never accepted.
+Film changes remain large and pressure variation persists; see section 19
+of `docs/VALIDATION_REPORT.md` and `examples.run_load_refinement` for the
+matched-force evidence, retained failures and bounded reproduction.

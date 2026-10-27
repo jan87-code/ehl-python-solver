@@ -340,3 +340,39 @@ across modes and small-grid dense-versus-GMRES correction parity ensure that
 only preconditioning changes. Existing node, Newton, line-search, Krylov and
 true-residual limits remain unchanged; the optional mode never silently
 replaces a failed solve with a looser correction.
+
+## Finer-grid initialization and safeguarded repair
+
+`property_transfer.prolongate_property_guess` requires an independently
+audited full-material source root and a nested uniform target grid on the
+same physical reservoir. Geometry, modulus, scales, supply and film floor
+must agree. Bilinear pressure/content interpolation on physical (y,x)
+coordinates preserves SI trapezoidal force on these nested grids. It does
+not preserve mass equations or complementarity. The returned
+`PropertyLoadGuess` is explicitly unaccepted; target film uses its own
+full-source cell-integrated FFT and the unchanged signed offset. No pressure
+projection, extrapolation, offset lift or floor change is applied.
+
+`repair_property_load_guess` is a separate entry point for that unaccepted
+initialization. It permits initial mass/complementarity defects but requires
+the original pressure/content bounds, zero pressure edges and positive exact
+total film. It shares the force-Newton engine and final physical/force gates
+with audited-root continuation. Only a returned repaired root may become a
+warm seed. A zero iteration budget cannot promote an interpolated non-root.
+The original continuation entry point still rejects unconverged seeds.
+
+Repair additionally enables safeguarded active lookahead. If an otherwise
+feasible Armijo step is shorter than .1 and a novel active-constraint model
+is available, defer the short step and try that model within the unchanged
+eight-model cap. The deferred step remains a verified fallback. Alternative
+models still require true selected-system linear accuracy, original min
+merit/slope, pressure/content feasibility and positive film. On model cycling,
+exhaustion or linear failure, the best deferred feasible Armijo step can be
+restored; its recorded acceptance identifies that fallback explicitly.
+Deferred trials and failed model diagnostics remain in the history.
+
+This is a bounded globalization heuristic, not a physical criterion or a
+convergence guarantee. It is enabled for explicit initialization repair;
+existing warm-root continuation retains its prior default behavior. Tests
+verify recovery from flooded initial content and restoration of the genuine
+feasible step when the proposed active-model linear solve is forced to fail.

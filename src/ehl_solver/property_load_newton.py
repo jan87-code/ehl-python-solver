@@ -11,7 +11,11 @@ import numpy as np
 from scipy.sparse import bmat, coo_matrix, csr_matrix, diags, hstack, vstack
 
 from ehl_solver.backend import make_backend
-from ehl_solver.cavitating_newton import CavitatingNewtonSystem, solve_cavitating_correction
+from ehl_solver.cavitating_newton import (
+    CavitatingLinearError,
+    CavitatingNewtonSystem,
+    solve_cavitating_correction,
+)
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.property_reynolds import _frozen_system, admissible
 from ehl_solver.property_warm import PropertyWarmSystem, WarmPropertyRoot
@@ -272,6 +276,25 @@ def solve_property_load_newton(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner
     )
     z = verify_seed(system, seed, seed_offset_m)
+    return _solve_property_load_state(
+        system, z, maximum_iterations, maximum_krylov_cycles, schur_tolerance, active_recovery
+    )
+
+
+def _solve_property_load_state(
+    system,
+    z,
+    maximum_iterations,
+    maximum_krylov_cycles,
+    schur_tolerance,
+    active_recovery,
+    *,
+    active_lookahead=False,
+):
+    """Shared Newton engine; callers distinguish audited roots from initial guesses."""
+    problem = system.problem
+    target_load_n = system.target_load_n
+    z = np.array(z, dtype=float, copy=True)
     history = []
     last = None
     diagnostics = {}
@@ -302,19 +325,28 @@ def solve_property_load_newton(
             full = system.full(z).copy()
             seen = set()
             accepted = False
+            backup = None
             for recovery in range(8 if active_recovery else 1):
                 key = np.packbits(full).tobytes()
                 if key in seen:
                     break
                 seen.add(key)
                 view = system if recovery == 0 else system.correction_view(z, full)
-                linear = solve_cavitating_correction(
-                    view,
-                    z,
-                    maximum_krylov_cycles=maximum_krylov_cycles,
-                    gmres_restart=60,
-                    schur_tolerance=schur_tolerance,
-                )
+                try:
+                    linear = solve_cavitating_correction(
+                        view,
+                        z,
+                        maximum_krylov_cycles=maximum_krylov_cycles,
+                        gmres_restart=60,
+                        schur_tolerance=schur_tolerance,
+                    )
+                except CavitatingLinearError as exc:
+                    if backup is None:
+                        raise
+                    record.setdefault("active_recovery_failures", []).append(
+                        {"model": recovery, "reason": str(exc), "diagnostics": exc.diagnostics}
+                    )
+                    break
                 d = linear.direction
                 # Slope uses actual min derivative, not switched active equations.
                 slope = system.merit_slope(z, residual, d)
@@ -330,6 +362,11 @@ def solve_property_load_newton(
                     "trials": [],
                 }
                 record["models"].append(model)
+                predicted = z + d
+                proposed = full.copy()
+                proposed[predicted[: system.n] < -1e-10] = False
+                proposed[predicted[system.n : 2 * system.n] < -1e-10] = True
+                novel = np.packbits(proposed).tobytes() not in seen
                 if slope < 0:
                     # First try the full step; next start at a safe affine bound.
                     lower = z[: 2 * system.n] + 1e-10
@@ -386,6 +423,15 @@ def solve_property_load_newton(
                             {"alpha": alpha, "merit": value, "reason": reason, "accepted": accepted}
                         )
                         if accepted:
+                            if active_lookahead and alpha < 0.1 and recovery < 7 and novel:
+                                candidate = model["trials"][-1]
+                                if backup is None or candidate["merit"] < backup[1]["merit"]:
+                                    backup = (model, candidate, trial.copy())
+                                candidate["accepted"] = False
+                                candidate["reason"] = (
+                                    "deferred feasible Armijo step for active lookahead"
+                                )
+                                accepted = False
                             break
                 if accepted:
                     break
@@ -396,6 +442,11 @@ def solve_property_load_newton(
                 updated[predicted[: system.n] < -1e-10] = False
                 updated[predicted[system.n : 2 * system.n] < -1e-10] = True
                 full = updated
+            if not accepted and backup is not None:
+                _, candidate, trial = backup
+                candidate["accepted"] = True
+                candidate["reason"] = "accepted safeguarded fallback after active lookahead"
+                accepted = True
             if not accepted:
                 raise RuntimeError("all feasible Armijo/active recovery models exhausted")
             z = trial

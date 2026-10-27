@@ -3,7 +3,7 @@
 Audit history: 2026-10-26 through 2026-10-27. Sections 1–10 retain the
 original incompressible/isoviscous audit; sections 11 onward document
 pressure-dependent NumPy/SciPy CPU developments. The latest bounded
-matrix-free force path now closes 200 N on 33x49 nodes;
+matrix-free force path now closes 200 N on 33x49 and 65x97 nodes;
 mesh/domain accuracy remain open. This report records numerical verification,
 **not complete physical validation of classical piezoviscous EHL**.
 
@@ -2346,3 +2346,141 @@ tangents, complete operator invariance and dense bordered correction parity.
 Restart and raw 200 N pressure/film figures were visually inspected;
 cell-scale pressure variation remains visible and is not hidden. Optional
 skips are device coverage; no GPU execution is claimed.
+
+## 19. Explicit finer-grid initialization and active repair (2026-10-27)
+
+Starting revision: `f04a7c5742d26c6144b6fb3eef29c767700cc9bf`.
+This milestone separates transferring a field from accepting a physical
+root. It retains source archives and compares independently force-closed
+solutions at 200 N on fixed physical reservoir bounds and identical laws.
+
+### Force-preserving interpolation is not a solution
+
+`PropertyLoadGuess` holds only an unaccepted pressure/content initialization,
+signed offset and diagnostics. `prolongate_property_guess` first independently
+audits the source root, then requires identical reservoir bounds, geometry,
+modulus, SI scales, supply and floor, plus nested uniform target axes. Physical
+(y,x) bilinear interpolation preserves the composite SI trapezoidal force on
+the refined grid. No field clipping, pressure rescaling, extrapolation or
+rigid-offset adjustment is applied. The target's own cell dimensions/kernel
+and full-source FFT determine its total film. Changed target displacements
+reflect changed source approximation, not circular FFT wraparound.
+
+For the 33x49->65x97 200 N transfer, force remains exactly 200 N at printed
+precision, but initial maximum mass defect is .03491795, relative local
+imbalance .409726 and complementarity .122326. Initial sampled total film
+is .03165391353 um. This interpolation is explicitly rejected as a root;
+force preservation and positive film cannot substitute for mass/constraint
+closure. The unaccepted raw initialization is retained separately.
+
+`repair_property_load_guess` shares the original force-Newton engine but
+has an explicit initial-guess contract: pressure/content bounds, physical
+pressure edges, constitutive domain and exact positive total film must hold,
+while initial mass/complementarity may fail. Final return requires all the
+same original physical/force gates as warm continuation. Existing audited-
+root continuation does not silently accept an interpolated non-root.
+Independent small-grid tests compare repaired results against a separately
+cold-initialized force solve and verify source immutability, load preservation,
+wrong-domain/material rejection, strict film feasibility and zero-budget
+failure retention.
+
+### Retained failed repairs and bounded active lookahead
+
+The initial 65x97 200 N repair exhausts 30 corrections. Its last available
+partial state still has maximum mass defect .0197340, relative local defect
+.224103 and complementarity .0597978. All remain failed. An independent
+10 N transfer/repair also exhausts that budget; its history reveals repeated
+steps shrinking through 4.29e-4, 4.29e-6 and 4.29e-8 near active constraints.
+Those states are not reused as accepted continuation seeds. Both raw
+initializations and failed fields/histories are preserved.
+
+The repair path now enables safeguarded active lookahead. When a feasible
+Armijo step is shorter than .1 and a novel selected active model exists,
+try that model while retaining the short step as a fallback. Every model
+keeps the true selected-system linear residual check; original min-equation
+merit/slope and all physical bounds govern nonlinear acceptance. On cycling,
+exhaustion or a failed alternative linear solve, the best retained feasible
+Armijo step can be restored. Histories distinguish deferred steps, accepted
+alternatives and restored fallbacks, including failed-model diagnostics.
+No original tolerance or iteration/backtrack/model cap is raised. Existing
+warm-root continuation keeps its previous default; explicit initialization
+repair enables the new strategy. This heuristic is not a global convergence
+proof.
+
+Regression tests exercise real recovery from a flooded initial content field
+and force a selected-model linear failure to verify restoration of the already
+verified feasible Armijo step. The latter test retains a failed final root
+when its correction budget ends; a successful fallback is not mislabeled as
+full nonlinear convergence. The pre-lookahead experiments remain separately
+reproducible with `--no-active-lookahead`.
+
+### Independently accepted 200 N refinement
+
+With active lookahead, the same 65x97 initialization converges in nine Newton
+corrections and 18 linear models, including nine selected active models.
+The independent saved-state auditor verifies the original field/force gates,
+true correction errors and original-directional Armijo inequalities. Maximum
+true linear error is 8.243e-10. The final original max mass defect is
+1.188e-15, relative local defect 4.447e-15, global defect zero at printed
+precision and complementarity 3.133e-29. Direct center/peak source-cell
+integration differs from target FFT by at most 1.695e-21 m.
+
+| Grid `(ny,nx)` | Independently integrated Q [N] | h0 [um] | Sampled hmin [um] | Central film [um] | Peak pressure [MPa] |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 33x49 | 200 | -4.630558908 | .01960927772 | .3320824786 | 1725.253140 |
+| 65x97 | 199.99999999999994 | -4.521772796 | .1629378195 | .4429945326 | 1741.100421 |
+
+At matched force, minimum film changes +730.9%, central film +33.40% and
+peak pressure +.9185%. The combined 1% mesh target remains false despite
+excellent force/mass closure. Sampled extrema can move between nodes. The
+raw pressure field still shows cell-scale variation. No asymptotic order,
+physically resolved pressure spike, or film-height accuracy is established.
+The supplied correlation estimates remain reference context, not exact fields
+to which solver output is adjusted.
+
+Authoritative evidence is `results/load_refinement_200n_20261027_final/`
+and `results/load_refinement_200n_20261027_audit/`: the unaccepted guess,
+fully repaired SI solution, complete 18-model history, input/source/runtime
+hashes, independent archive/globalization audit and inspected matched-
+centerline and raw pressure/film figures. The earlier no-lookahead 200 N
+and 10 N failures and the first lookahead development run remain separately
+preserved, never retroactively relabeled. Recorded source hashes match.
+The source 200 N archive remains unchanged.
+
+### Reproduction, bounds and remaining work
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_load_refinement \
+  --input-directory results/preconditioned_load_20261027 \
+  --output-directory results/load_refinement_200n_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.audit_load_directed \
+  --input-directory results/load_refinement_200n_new \
+  --output-directory results/load_refinement_200n_audit_new
+```
+
+`--no-active-lookahead` reproduces the previous globalization strategy;
+failures remain failures. `--load-n` selects an already closed source load.
+The default refinement factor is two; explicit `--refinement-factor 3` maps
+33x49 directly to 97x145 at the same reservoir. This has 14,065 physical
+nodes and stays below the unchanged 20,000-node cap. A further uniform
+doubling of 65x97 would have 24,897 nodes and is rejected before allocation
+by the registered case helper. No unequal-cell FFT or source truncation is
+used to evade that limit. The third-grid bounded assessment is recorded
+separately while it runs; no root is claimed before full repair/audit.
+
+Next: complete the bounded third-grid assessment and compare only accepted
+matched-force fields. Investigate the persisting grid-scale pressure pattern
+with independent discretization consistency/stability evidence before any
+change to conservative face transport. Finite physical-reservoir sensitivity
+must also be assessed at matched force. More accurate linear solves alone do
+not validate the unresolved film/pressure field.
+
+Final 65x97 milestone checks: `ruff check .` clean; full `pytest -q`
+**357 passed, 62 skipped** (299.96 s). Five new regressions cover force-
+preserving initialization, explicit non-root/zero-budget handling,
+independently cold-initialized repaired-root parity, physical-data/boundary/
+film rejection, actual active lookahead recovery and safeguarded fallback
+under an injected selected-model linear failure. Skips are optional device
+coverage; all production calculations here are NumPy/SciPy CPU float64.

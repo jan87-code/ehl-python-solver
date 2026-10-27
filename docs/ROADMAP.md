@@ -1154,3 +1154,49 @@ device skips (261.86 s). Eleven independent archive audits, recorded source
 hashes and raw pressure/film/restart figures pass inspection. The 200 N
 force target now closes; the coarse pressure variation and film-height
 accuracy remain open. Continue with verified finer-grid initialization.
+
+## Finer-grid warm initialization/repair (2026-10-27, verified on 65x97)
+
+The 200 N sparse-tangent milestone is committed/pushed as f04a7c5. Add an
+explicit unaccepted interpolation type, audit the source root, preserve its
+SI force on nested fixed-reservoir grids, and solve the full target equations
+before accepting any transferred state. Existing root-seed auditing remains
+strict. Source pressure/content and signed offset are not clipped or lifted.
+
+Direct 65x97 repair initially exhausts 30 corrections; its guess and failed
+partial fields/histories are saved separately. A 10 N initialization attempt
+also stalls with tiny feasible steps near active fronts. Safeguarded active
+lookahead now keeps those feasible steps as backups while trying novel active
+models under original merit/feasibility checks. It reaches 200 N on 65x97 in
+nine corrections/18 linear models. Independent saved-field audit passes.
+The original failures remain rejected and are reproducible with
+`--no-active-lookahead`; their partial states are never reused as roots.
+
+Evidence: `results/load_refinement_200n_20261027_final/` and its `_audit/`.
+The same source is also being tested with factor-three nested refinement,
+97x145 (14,065 physical nodes, below 20,000). Finish that bounded run, archive
+audits, final full tests and matched-load reporting, then commit/push.
+The minimum-film change from 33x49 to 65x97 is still +730.9%; equation
+closure is not mesh accuracy. Pressure variation remains visible.
+
+The independently verified transfer/active-repair milestone is complete on
+65x97: 200 N closes in nine corrections/18 linear models, with max original
+mass 1.188e-15, relative local defect 4.447e-15 and true linear error below
+8.243e-10. Five new regressions pass; full pytest 357 passed, 62 optional
+skips (299.96 s), Ruff clean. Source hashes and independent saved-state,
+force/source/globalization audits pass; two raw figures were inspected.
+
+At the same 200 N and physical reservoir, hmin changes .0196093->.162938 um,
+central film .332082->.442995 um and peak pressure 1725.25->1741.10 MPa.
+The 1% mesh target is false and cell-scale pressure variation persists.
+No physical validation claim is made. Preserve the failed pre-lookahead
+repairs and every unaccepted initialization; only the fully audited repaired
+root may seed subsequent calculations.
+
+The separately bounded factor-three 97x145 case remains in progress under
+`results/load_refinement_200n_20261027_factor3/`; its initialization is saved,
+but no final root is claimed yet. Complete its existing solver budget and
+retain the result/failure history. Next assess that matched-load resolution
+change and investigate conservative transport/discrete stability of the
+pressure pattern before modifying physics or interpreting film correlation
+agreement. Do not silently increase the node or iteration caps.

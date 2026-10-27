@@ -394,3 +394,12 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=sr
 This verifies known-offset recovery and 0.10 N force closure. Negative-offset/
 strong-load branches and mesh-resolved physical validation remain open;
 see `docs/CONSTITUTIVE.md` and the latest validation-report section.
+
+The user's circular 200 N case is registered in
+`ehl_solver.benchmark_200n.Circular200N`, with explicit 113 GPa dimensionless
+conventions and declared lubricant assumptions. Run
+`python -m examples.run_200n_readiness --output-directory results/200n_new`
+(with `PYTHONPATH=src` and one BLAS/OpenMP thread). This is a bounded readiness
+assessment; the current positive-offset probes do not achieve 200 N.
+See section 15 of `docs/VALIDATION_REPORT.md` for the retained failure,
+mesh evidence and signed-offset continuation required next.

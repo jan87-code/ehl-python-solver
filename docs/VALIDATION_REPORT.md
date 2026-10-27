@@ -1735,3 +1735,126 @@ Final checks: `ruff check .` clean; complete `pytest -q`: **327 passed,
 execution is claimed. Recorded Python source hashes match the tested
 sources. The 41 SI archives and three-figure manifest were checked;
 force/offset and matched pressure/film figures were visually inspected.
+
+## 15. User circular 200 N benchmark readiness (2026-10-27)
+
+Starting revision: `dc2e17ad19f00e845d8adfa416c5955bea060898`.
+**Outcome: the operating case and modulus conversion are verified; the
+current cold positive-offset path does not yet solve the 200 N case.**
+This is a benchmark-readiness assessment, not physical validation or a
+force-controlled comparison with Hamrock-Dowson film estimates.
+
+### Explicit input conventions and assumed lubricant
+
+The user's convention is E_contact=113 GPa, U=eta0 Ue/(E_contact R),
+W=Q/(E_contact R^2), G=alpha E_contact. Set Q=200 N, Rx=Ry=15 mm,
+Ue=2 m/s, eta0=.04 Pa s and alpha=2.21e-8/Pa. This gives
+U=4.7197640118e-11, W=7.8662733530e-6 and G=2497.3. The alternative
+E'=226 GPa convention has U/2, W/2 and 2G; the elastic kernel still uses
+113 GPa. The modulus definition is 1/E_contact=sum((1-nu_i^2)/E_i).
+Independent supplied Hertz quantities agree with the circular formulas:
+a=.2710408131 mm, p0=1299.876220 MPa, approach=4.897541492 um.
+The rounded supplied 1299 MPa differs by less than .1%.
+
+The user's supplied correlation estimates hmin=.278495 um and
+hcentral=.477353 um are retained verbatim. They are not exact field data,
+and no independent source/formula match is asserted here. The constitutive
+law was not specified by the user. This assessment assumes the existing
+Roelands law, with z=alpha*gamma/log(eta0/eta_star)=.671366671110627,
+gamma=196 MPa and eta_star=6.31e-5 Pa s. Its ambient logarithmic viscosity
+derivative exactly matches alpha, independently checked by finite differences.
+Matching that slope does not establish that this curve reproduces the user's
+lubricant at GPa pressures. The assumed density model is Dowson-Higginson,
+rho0=850 kg/m^3, a=.6e-9/Pa and b=1.7e-9/Pa. No temperature was supplied
+or assigned; no thermal model is used.
+
+### Bounded forward probes and separate mesh evidence
+
+Both centered, nested uniform meshes use x,y=[-3a,3a], zero gauge pressure
+on all edges, west content one, +x entrainment and full-domain free-space
+elastic sources. L=a, href=Hertz approach and pref=Hertz peak are fixed for
+every offset and both meshes; Lambda=12 eta0 Ue L/(href^2 pref). Neither
+the physical reservoir nor the scales are regenerated from the trial gap.
+These finite flooded reservoirs are not evidence of fully flooded far-field
+convergence. BLAS/OpenMP use one thread; at most 1617 nodes are allocated
+per state. Existing stage, active-set and admissibility limits are unchanged.
+
+| Prescribed h0 [um] | Q on 17x25 [N] | Q on 33x49 [N] | Relative mesh load change |
+| ---: | ---: | ---: | ---: |
+| 5 | .2719783959 | .2786685967 | 2.460% |
+| 2 | .6459915517 | .6801215833 | 5.283% |
+| .5 | 1.6980452655 | 1.9700562924 | 16.019% |
+| .1 | 3.3322223742 | rejected | not compared |
+
+At .5 um, peak pressure changes from 32.6244 to 41.3295 MPa (26.68%),
+and sampled minimum film changes from .537148878 to .546175885 um
+(1.681%). No mesh-convergence criterion is met. At .1 um the coarse
+solution has peak pressure 123.138891 MPa and minimum film .220393477 um,
+but its force is only 3.33 N. Proximity to a supplied film-height estimate
+at the wrong force is not physical agreement with the 200 N benchmark.
+
+The seven accepted forward states pass independent re-evaluation of saved
+SI mass fluxes, pressure/content admissibility and complementarity. Maximum
+dimensionless continuity defect is 1.305e-11; maximum relative local defect
+is 9.716e-11. Fresh full-source FFT film/displacement agree exactly with the
+saved arrays at printed precision. Independent direct source-cell integration
+at the center and pressure peak differs from FFT by at most 5.294e-23 m.
+Separate SI trapezoidal force integration agrees with every saved force.
+These checks verify the returned low-force roots, not a 200 N solution.
+
+The fine .1 um cold solve overflows the viscosity exponential during its
+initial rigid-film material continuation. No compliance stage is accepted.
+The nested exception, 123 property-history entries and last available
+pressure/content state are saved. That last partial state has mass defect
+.00142434 and relative local defect .198866, so it explicitly fails the
+original criteria. It is never included as a force evaluation or plotted
+as a converged state. No exponential clipping, pressure cap, additional
+iteration allowance or acceptance relaxation is introduced.
+
+None of the accepted offsets brackets 200 N. The scalar load controller is
+therefore not invoked; target_achieved, mesh_verified and domain_verified
+remain false. This finite sample does not prove that every positive-offset
+branch is insufficient. It shows that the current cold-start path and these
+meshes cannot deliver the requested benchmark. The dry approach (4.90 um)
+is much larger than the supplied central film (.477 um), motivating a
+signed-offset elastic continuation. Their difference alone is not an EHL
+solution or a justified fixed fluid offset.
+
+### Reproduction and next justified solver change
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_200n_readiness \
+  --output-directory results/circular_200n_coarse_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_200n_readiness --ny 33 --nx 49 \
+  --output-directory results/circular_200n_fine_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.plot_200n_readiness \
+  --inputs results/circular_200n_coarse_new results/circular_200n_fine_new \
+  --output-directory results/circular_200n_comparison_new
+```
+
+Verified outputs are `results/circular_200n_readiness_20261027_final/`,
+`results/circular_200n_readiness_20261027_refined/` and
+`results/circular_200n_comparison_20261027/`. Together they retain seven
+converged archives, one failed partial-state archive, complete available
+histories, finite JSON, original Python source hashes, comparison input
+hashes, seven independent saved-field audits and one inspected figure.
+A preliminary three-offset run is separately preserved. No generated
+results are committed; existing output directories are refused.
+
+Next: add a separately verified warm-start continuation that maintains
+positive *total film* while allowing signed rigid offsets. Advance load and
+material strength through accepted roots with bounded retries, retaining
+original SI mass, complementarity, source coupling and force gates. Verify
+small-load parity and known-offset recovery before attempting the 200 N
+branch. Once it closes, establish mesh/domain accuracy before interpreting
+film differences from the supplied correlation. No GPU or constitutive-law
+change is justified as a substitute for that solver work.
+
+Final checks: `ruff check .` clean; full `pytest -q`: **334 passed,
+62 skipped** (205.30 s). Skips are optional PyTorch/device coverage.
+No new device execution is claimed. All seven numerical regressions and
+seven independently re-audited accepted forward states pass. The 200 N
+force target and mesh/domain accuracy remain explicitly unachieved.

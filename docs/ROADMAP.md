@@ -977,3 +977,56 @@ fixed-force mesh/domain studies. Positive offset brackets are currently
 required; signed-offset or strongly loaded branches need separate verified
 continuation if the benchmark requires them. No classical EHL or physical
 film-height accuracy claim follows from the present load-control milestone.
+
+## User circular 200 N benchmark readiness (2026-10-27, complete; target open)
+
+Use the user's 113 GPa contact-modulus convention explicitly: U=eta0 Ue/(E R),
+W=Q/(E R^2), G=alpha E. Physical inputs are Q=200 N, Rx=Ry=15 mm,
+E=113 GPa (alternative E'=226 GPa), Ue=2 m/s, eta0=.04 Pa s and
+alpha=2.21e-8/Pa. Supplied correlation estimates are hmin=.278495 um and
+hcentral=.477353 um, not independent numerical reference fields.
+
+`Circular200N` records SI inputs, both dimensionless conventions and exact
+Hertz scales. The assumed Roelands index is derived from the supplied
+ambient logarithmic viscosity slope (z=.6713666711); it is not silently
+left at the previous .68. Density uses the existing Dowson-Higginson law
+and assumed rho0=850 kg/m^3; these choices remain unconfirmed lubricant
+assumptions. No temperature or Barus law is inferred from alpha alone.
+
+Run bounded positive-offset readiness probes before attempting a 200 N
+scalar root. Keep physical bounds +/-3a and Hertz-based scales fixed;
+independently vary mesh and retain every failed nested state. Do not claim
+200 N closure or compare film errors to the correlation unless the full
+mass/film/complementarity/force gates pass. If the positive-offset probes
+fail to bracket 200 N, implement verified feasible signed-offset continuation
+next, without treating low-force film values as a physical comparison.
+
+Readiness assessment completed and independently audited on 17x25 and 33x49
+nested grids, fixed +/-3a domain. Seven prescribed-offset roots pass original
+mass/complementarity/film checks. At h0=.5 um, Q changes 1.69805->1.97006 N
+(16.02%) on refinement; at .1 um the coarse Q is 3.33222 N and the fine
+cold rigid/material solve overflows. The latter's exception chain, last
+available partial fields and 123 property iterations are retained and
+explicitly rejected. No audited bracket for 200 N exists in these probes,
+so no scalar force solve or film-height accuracy claim is made.
+
+Evidence: `results/circular_200n_readiness_20261027_final/`,
+`results/circular_200n_readiness_20261027_refined/` and
+`results/circular_200n_comparison_20261027/`; eight SI archives and one
+inspected comparison figure. Seven saved-state audits independently check
+mass, full-source film, sampled direct displacement and SI load. Source
+hashes match. Seven new regressions verify supplied Hertz numbers, both
+modulus conventions, ambient-alpha derivative and fixed-domain scale/grid
+behavior. The case-registration/readiness milestone is complete; reaching
+200 N remains open.
+
+Next development action: implement warm-start signed-offset continuation
+with positive total film, bounded load/material steps and retained retries.
+First verify independent small-case parity/recovery, then attempt this
+200 N case and separate mesh and physical-reservoir effects. The current
+cold positive-offset limitation must be removed by verified solver changes,
+not pressure clipping, force scaling or relaxed acceptance criteria.
+
+Final readiness checks: Ruff clean; complete pytest 334 passed, 62 optional
+device skips (205.30 s). All retained accepted states and comparison inputs
+were independently re-audited; the overflow candidate remains rejected.

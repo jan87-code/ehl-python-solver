@@ -212,3 +212,22 @@ failure with `python -m examples.run_property_load_verification
 single-thread CPU settings. The verified numerical experiment is
 `results/property_load_20261027/`. Load closure does not establish film or
 pressure mesh accuracy, domain independence or experimental validation.
+
+## User-supplied 200 N circular benchmark
+
+`ehl_solver.benchmark_200n.Circular200N` fixes the user's SI operating case
+and uses 113 GPa in U=eta0 Ue/(E R), W=Q/(E R^2), G=alpha E. The elastic
+kernel uses this same 113 GPa contact modulus; E'=2E=226 GPa is recorded
+as a conversion only. With eta0=.04 Pa s and alpha=2.21e-8/Pa, the existing
+Roelands law is matched at ambient pressure by
+
+```
+z = alpha * gamma / log(eta0/eta_star) = .671366671110627
+```
+
+Thus d(log eta)/dp at zero is exactly alpha. This specifies an assumed
+Roelands curve, not a unique law implied by alpha or a verified match to
+the user's reference lubricant at GPa pressure. The existing density model
+uses assumed rho0=850 kg/m^3, a=.6e-9/Pa and b=1.7e-9/Pa. No operating
+temperature was supplied, and none is invented. Supplied Hamrock-Dowson
+film estimates remain correlation targets, not exact solutions.

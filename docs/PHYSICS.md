@@ -2179,3 +2179,42 @@ film and pressure; those errors must be evaluated separately at fixed load.
 No old signed/full-film controller or production bordered Newton method is
 modified. This nested CPU reference does not add transient squeeze, signed-
 offset continuation, GPU support or classical EHL physical validation.
+
+## Smooth material-transport consistency probe (2026-10-27)
+
+`examples.run_transport_consistency` compares the existing SI mass-flux
+stencil with an independently differentiated continuum source on rectangular
+(ny,nx) grids. It uses L=1 mm, h_ref=2 um, p_ref=10 MPa, Ue=.1 m/s,
+and the existing IsothermalFluid(.04 Pa s, 850 kg/m^3) material laws.
+Both density and viscosity vary with pressure. Analytic derivatives of smooth
+pressure/film/content fields form div[-rho h^3 grad(p)/(12 eta)
++ Ue rho h theta e_x], in kg/(m^2 s); no manufactured source is inserted
+into a solver and no production root is assessed.
+
+On 9x17, 17x33, 33x65 and 65x129 grids, full-film relative L2 divergence
+errors are .0317437, .00867311, .00222986 and .000563468 (last observed
+order 1.98455). Smooth variable-content errors are .0366970, .0120777,
+.00461058 and .00205672, approaching the expected first-order upwind
+asymptote. These deliberately non-complementary manufactured fields isolate
+smooth flux consistency; they do not verify cavitation-front accuracy.
+
+A separate uniform frozen-film tangent applies alternating x pressure.
+Centered density-advection divergence is zero, but diffusion remains nonzero
+and agrees with the independent 4*mobility/dx^2 Fourier symbol to 4.08e-16
+relative error. Its density-only cell Peclet number is .000270037.
+This limited null-mode observation is not evidence of an unstable complete
+elastic/material/JFO operator, nor an explanation of the archived pressure
+pattern. The coupled nonlocal film tangent and active fronts remain untested
+by this probe. No production stencil, tolerance, fluid law or floor changed.
+
+Reproduce into a new directory (existing directories are refused):
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
+  python -m examples.run_transport_consistency \
+  --output-directory results/transport_consistency_new
+```
+
+The JSON records errors, orders, units, limited diagnostic scope and source/
+runtime provenance. Recover and independently audit the saved 200 N roots
+before extending these observations to the coupled benchmark.

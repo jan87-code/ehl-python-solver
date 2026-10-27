@@ -1200,3 +1200,31 @@ retain the result/failure history. Next assess that matched-load resolution
 change and investigate conservative transport/discrete stability of the
 pressure pattern before modifying physics or interpreting film correlation
 agreement. Do not silently increase the node or iteration caps.
+
+## Recovery and independent transport consistency (2026-10-27)
+
+Recovered GitHub develop at b6daed0 in a separate worktree, preserving the
+original staged HIP work. The production 200 N archives and pending 97x145
+checkpoint are absent from this workspace; that run cannot be resumed or
+its saved-state audit reproduced here. No third-grid root is claimed.
+
+Added an independent smooth SI continuum-source check of the existing
+pressure-dependent face-flux stencil and a uniform alternating-pressure
+linear probe. Full-film convergence approaches order two; smooth variable
+content approaches order one. Centered density transport has an alternating
+null response, while diffusion matches its nonzero analytic symbol. This
+is limited stencil evidence, not coupled stability or physical validation.
+Four regressions cover both orders and the separate tangent responses.
+See PHYSICS.md for inputs, evidence, reproduction and limits.
+
+Next: recover the original source/checkpoint archives, complete the bounded
+97x145 repair and audit all accepted matched-force fields. Then assess the
+complete coupled transport/elastic tangent and active fronts at those roots,
+and separate reservoir sensitivity from mesh error. Do not change transport
+or infer pressure-pattern causality from the smooth probe alone.
+
+Final verification: Ruff clean; full pytest 361 passed, 62 optional device
+skips (269.22 s), with BLAS/OpenMP limited to one thread. The standalone
+four-grid probe completed with runtime/source provenance under
+`/tmp/ehl-transport-consistency-verified/`; no simulation output is committed.
+Production refinement and archive-dependent audits remain unfinished.

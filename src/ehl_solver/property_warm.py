@@ -17,10 +17,10 @@ from ehl_solver.property_reynolds import admissible, mass_audit, mass_fluxes
 
 
 class PropertyWarmSystem(CavitatingNewtonSystem):
-    def __init__(self, problem, fluid, speed_m_s, offset_m):
+    def __init__(self, problem, fluid, speed_m_s, offset_m, *, maximum_interior_nodes=400):
         super().__init__(problem)
-        if self.n > 400:
-            raise ValueError("dense warm reference limited to 400 interior nodes")
+        if maximum_interior_nodes not in (400, 20000) or self.n > maximum_interior_nodes:
+            raise ValueError(f"warm system limited to {maximum_interior_nodes} interior nodes")
         if not np.isfinite(offset_m) or not np.isfinite(speed_m_s) or speed_m_s <= 0:
             raise ValueError("finite signed offset and positive SI speed required")
         parameter = (
@@ -74,7 +74,7 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         mass = self.divergence(qx, qy) * self.problem.length_scale_m / self.flux_scale
         return np.r_[mass.ravel() / self.mass_scale, np.minimum(state[: self.n], state[self.n :])]
 
-    def jacobian_vector(self, state, direction):
+    def jacobian_vector(self, state, direction, *, offset_direction_m=0.0):
         v = np.asarray(direction, dtype=float)
         if v.shape != (self.size,) or not np.all(np.isfinite(v)):
             raise ValueError("finite P,D direction required")
@@ -84,7 +84,10 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         dp, dt = np.zeros(problem.shape), np.zeros(problem.shape)
         dp[1:-1, 1:-1] = v[: self.n].reshape(dp[1:-1, 1:-1].shape) * problem.pressure_scale_pa
         dt[1:-1, 1:-1] = -v[self.n :].reshape(dt[1:-1, 1:-1].shape)
-        dh = fft_convolve_same(dp, problem.elastic_kernel, make_backend("numpy"))
+        dh = (
+            fft_convolve_same(dp, problem.elastic_kernel, make_backend("numpy"))
+            + offset_direction_m
+        )
         rho, eta, dr, de = self.fluid.properties(p)
         dr, de = dr * dp, de * dp
         m = rho * h**3 / (12 * eta)

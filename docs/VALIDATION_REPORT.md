@@ -1,9 +1,11 @@
 # EHL scientific verification report
 
-Audit date: 2026-10-26. Scope: NumPy/SciPy CPU stationary, isothermal,
-incompressible, isoviscous JFO/elastic point contact with positive load
-closure. This is numerical verification of a restricted model, **not complete
-physical validation of classical piezoviscous EHL**.
+Audit history: 2026-10-26 through 2026-10-27. Sections 1–10 retain the
+original incompressible/isoviscous audit; sections 11 onward document
+pressure-dependent NumPy/SciPy CPU developments. The latest bounded
+matrix-free force path reaches 100.442 N on 33x49 nodes; 200 N closure and
+mesh/domain accuracy remain open. This report records numerical verification,
+**not complete physical validation of classical piezoviscous EHL**.
 
 ## 1. Diagnostic audit before further physics changes
 
@@ -2005,3 +2007,233 @@ Final checks: `ruff check .` clean; full `pytest -q`: **341 passed,
 62 skipped** (267.32 s). Seven new regressions and the independent saved-root
 comparison pass. Skips are optional PyTorch/device coverage. No GPU execution,
 200 N force closure, mesh convergence or physical EHL accuracy is claimed.
+
+## 17. Matrix-free load-directed material JFO continuation (2026-10-27)
+
+Starting revision: `08d64ce8693d2ff921370932539f9b00b17e4518`.
+This milestone replaces the fine-grid dense correction bottleneck with a
+separate matrix-free bordered force path. The existing dense signed-offset
+reference, cold solvers, previous accepted archives and original physical
+acceptance criteria are preserved. Roelands and the 113 GPa convention
+remain fixed; density data remain the explicitly stated model assumptions.
+
+### Scalable correction and independent algebraic verification
+
+`PropertyLoadSystem` adds h0/href and the force equation to the previously
+verified full-material/full-compliance JFO operator. Its complete analytic
+action includes pressure-dependent density/viscosity, full-source elastic
+film, the signed offset column, upwind content and SI load quadrature.
+No dense Jacobian is formed on the scalable path. A sparse frozen-film,
+frozen-property constrained JFO operator preconditions Schur/GMRES solves;
+the offset column and force row are consistent with the full operator.
+The material/elastic terms omitted by preconditioning remain in every true
+matrix-free product. No constitutive law is simplified to make the solve pass.
+
+The existing independently checked `solve_cavitating_correction` computes
+pressure/content and offset responses, reconstructs the bordered step and
+checks its complete analytic-JVP residual. Unsafe Schur reconstruction uses
+a complete bordered GMRES fallback. Krylov recurrence histories, block/whole
+true residuals, fallback and Schur indicators are retained. A small-grid
+explicit dense Jacobian independently agrees with the matrix-free correction;
+forcing an unsafe Schur threshold verifies the full fallback as well.
+Finite differences independently check the complete bordered action,
+including its offset and force terms. A separate independently initialized
+nonlinear reference provides known-offset/pressure recovery at its measured
+force. Injected Krylov failures retain their diagnostics and partial state.
+
+The production path caps physical nodes at 20,000, Newton corrections at
+30, GMRES restart at 60 and cycles per block at ten. Sparse LU fill consumes
+additional memory; these limits are not a measured peak-process memory claim.
+The old dense solver still defaults to at most 400 interior nodes; the shared
+analytic system explicitly opts into the larger cap only for the scalable
+path. A 33x49 sparse construction regression independently verifies that the
+bordered matrix remains sparse beyond the old dense limit. CPU benchmarks
+use one BLAS/OpenMP thread, NumPy/SciPy float64 and the existing uniform
+zero-padded free-space FFT. No GPU or unequal-cell FFT is introduced.
+
+### Feasibility, active constraints and original merit
+
+Each Newton correction first tries its full step. Recovery starts from a
+safe affine fraction to the original pressure/content bounds and exact
+positive-total-film floor, then backtracks. Film is affine along a joint
+pressure/offset direction, so its bound uses the full-source FFT direction,
+not a guessed gap limiter. Bound ratios are evaluated only when the full
+step could cross that bound, avoiding meaningless overflow from tiny
+unconstraining direction components. No pressure/content projection,
+film-floor lift, viscosity cap or acceptance relaxation is applied.
+
+Failed searches can try up to eight selected active-constraint models.
+Violating P_new or D_new rows are pivoted to their zero constraints, and
+each selected linear system is independently checked. A switched constraint
+row is explicitly a selected active-set model, not falsely described as the
+old min derivative away from a tie. Regardless of that model, Armijo merit
+and its directional slope use the original min(P,D) equations, including
+true directional min derivatives at ties. Every line trial records step,
+merit, acceptance and feasibility/Armijo rejection reason. Physical
+admissibility and relative force <=1e-8 are independently required at return.
+Selected-system dense parity is verified; this does not establish universal
+active-front robustness for arbitrary loads or meshes.
+
+### Force steps, preserved warm roots and matched-grid protocol
+
+`continue_property_load` advances the imposed SI normal force. Failed solves
+halve the requested force increment, accepted roots grow it by 1.5, and only
+an independently audited accepted root becomes a continuation seed. Each
+attempt starts from that root, never a failed partial Newton iterate. The
+API caps attempts at 60 per call; this benchmark declares 12 attempts for
+each requested force checkpoint and a 1e-5 N minimum increment. All loops
+and failure exits remain bounded. Zero force errors are retained exactly.
+
+Coarse input is the preserved 17x25 signed root at 8.9655393334 N. Refined
+input is the preserved 33x49 prescribed-offset root at 1.9700562924 N.
+Raw SI axes and input NPZ hashes identify these states. Fresh original SI
+mass, pressure/content, boundary and full-source film audits validate them
+before force stepping. No accepted input archive is modified or overwritten.
+Both grids retain the identical physical +/-3a reservoir, Hertz-based scales,
+fluid, geometry and fully flooded west-content assumption of section 15.
+The refined path first closes 2, 4 and 8 N, then joins the same 10, 20, 40,
+80, 120, 160 and 200 N checkpoints proposed on the coarse path. Once a grid
+stalls its later checkpoints remain unachieved. Comparisons include only
+checkpoints independently force-closed on both grids, not matched offsets
+or failed candidates. Mesh accuracy and finite-reservoir placement remain
+separate questions from equation/force convergence.
+
+Every attempt checkpoints its requested force and status. Accepted SI fields
+retain pressure, content, film, displacement, density and viscosity plus
+complete nonlinear/Krylov/globalization histories and direct center/peak
+source-cell displacement checks. Rejections retain last available partial
+fields, signed offset, nonlinear/model/line histories and linear diagnostics.
+Nonfinite diagnostic values are explicitly tagged in portable JSON, never
+silently dropped or emitted as invalid numeric literals. Final bounded-run
+status distinguishes successful force checkpoints from a continuation stall.
+
+### Reproduction and independent archive audit
+
+With the section-15 and section-16 source runs available (or freshly
+reproduced under their documented commands):
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.run_load_directed_200n \
+  --coarse-source results/signed_200n_20261027_final/attempt_23/solution.npz \
+  --refined-source results/circular_200n_readiness_20261027_refined/offset_0.5um/solution.npz \
+  --output-directory results/load_directed_new
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src \
+  python -m examples.audit_load_directed \
+  --input-directory results/load_directed_new \
+  --output-directory results/load_directed_audit_new
+```
+
+The coarse source is specifically the section-16 attempt-23 root at signed
+h0=-.3014203906597183 um; the refined source is the section-15 .5 um root.
+For differently named reproduction directories, substitute those paths.
+A wrong declared seed offset fails its exact-film audit instead of being
+silently accepted. The runner refuses existing output directories and never
+writes into either source directory. On a fresh checkout first generate
+these two source runs; no large datasets are stored in Git.
+
+The separate auditor reloads every accepted SI archive and independently
+recomputes original mass/constraint/boundary acceptance, exact full-source
+film/displacement and SI trapezoidal load against the actual requested force.
+It also checks the saved complete correction errors and true directional
+Armijo inequalities, retains source/archive hashes and plots the strongest
+accepted refined field with its actual operating force. All pressure contour
+levels span the raw signed range; no field is clipped or smoothed.
+
+### Verified bounded results and matched-load mesh uncertainty
+
+**Outcome: the matrix-free path reaches a fully accepted 100.4423828125 N
+state on 33x49 nodes, using preserved warm roots and unchanged physical gates.
+The requested 200 N state remains unachieved.** The old dense bottleneck no
+longer prevents refined-grid force solves. This is numerical verification
+of a restricted discrete model, not mesh-converged physical validation.
+
+The authoritative run is `results/load_directed_200n_20261027_final/`:
+17 coarse attempts (eight accepted/nine rejected) and 38 refined attempts
+(33 accepted/five rejected). Coarse requested checkpoints 10 and 20 N close;
+refined checkpoints 2, 4, 8, 10, 20, 40 and 80 N close. Additional accepted
+adaptive targets reach 20.62890625 N coarse and 100.4423828125 N refined.
+These last adaptive loads are actual force-closed targets, not claims that
+the next requested 40/120 N checkpoints or 200 N were reached.
+
+| Shared target Q [N] | Coarse hmin [um] | Refined hmin [um] | Coarse central film [um] | Refined central film [um] | Coarse/refined peak p [MPa] |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 10 | .1053712134 | .2805497782 | .3956703655 | .4061321004 | 820.0550 / 775.6412 |
+| 20 | .005463677393 | .2547030083 | .2710452750 | .4935463323 | 756.4411 / 1058.9447 |
+
+At 10 N refinement changes sampled minimum film by +166.25%, central film
+by +2.644% and peak pressure by -5.416%. At 20 N the corresponding changes
+are +4561.75%, +82.09% and +39.99%. The declared 1% mesh target is false.
+These are genuinely matched-force comparisons with the same physical
+reservoir; offset is independently solved on each mesh. Stable force or a
+relatively stable central film cannot override the unresolved minimum film
+and pressure errors. No convergence order is inferred from two grids.
+
+The strongest refined root has Q=100.4423828125 N,
+h0=-2.76927325835 um, hmin=.1375437173 um, central film=.3060045115 um
+and peak p=1406.190560 MPa. Original max mass is 1.956e-15, relative local
+imbalance 1.564e-13 and complementarity 2.205e-34. Direct source-cell
+center/peak displacement differs from FFT by at most 4.236e-22 m there.
+The inspected pressure contour shows visible cell-scale variation. Neither
+that field nor its film values are presented as resolved classical EHL
+predictions or compared to the supplied **200 N** correlation as if loads
+matched. Further resolution and branch/discretization investigation are
+required; no smoothing or pressure adjustment is used to conceal the pattern.
+
+### Distinct stalled-step diagnostics
+
+Coarse proposals above the last accepted 20.62890625 N root drive total
+film toward the unchanged floor and exhaust the 30-correction budget.
+The last accepted coarse minimum is 1.29650e-11 m, still above the original
+1e-12 m floor. No physical-contact onset, branch nonexistence or engineering
+accuracy is inferred from this unresolved coarse path. Its rejected partial
+fields and every model/line trial remain distinct from accepted force roots.
+
+The refined path rejects larger proposals when the true bordered Krylov
+residual check fails. For example, the 106.375 N proposal reports a true
+linear residual 3.072e-7 after 1200 total linear iterations across block/
+fallback work, above the unchanged 5e-9 criterion. Smaller retries recover
+98.78125, 99.73046875 and 100.4423828125 N. The bounded continuation ends
+at its 12-attempt budget for the requested 120 N checkpoint. This is a
+linear/preconditioning limitation of the tested route, not evidence that
+the physical 200 N solution is impossible. No failed correction or partial
+nonlinear iterate becomes a force value for the next accepted step.
+
+### Independent audits, artifacts and next development action
+
+`results/load_directed_200n_20261027_audit/` independently verifies all
+41 accepted archives. Largest original dimensionless mass defect is
+1.353e-12 and largest independent relative force error is 4.441e-16.
+The audit checks 286 accepted-solve linear models, four actual bordered
+fallbacks and 116 accepted shortened line steps; all recorded true linear
+errors are below 9.780e-10 and every original directional Armijo inequality
+passes. Alternative selected active-constraint recovery models are verified
+by small-grid algebra tests but are not exercised in these accepted-run
+histories; no broad empirical robustness claim is made for that optional
+recovery route. Primary min active sets are updated during Newton solves.
+
+The benchmark retains 55 SI NPZ files (41 accepted and 14 failed partial
+states), complete histories, unchanged input hashes, runtime/source hashes,
+explicit checkpoint/force flags and a branch figure. The independent audit
+adds per-state/archive hashes, original residual/force/film/boundary audits,
+globalization checks and a raw strongest-state pressure/film figure. Both
+figures were inspected and recorded Python hashes match the final sources.
+Earlier exploratory checkpoints are separately preserved, including an
+interrupted pre-final run; they are not substituted for the authoritative run.
+
+Next: improve material/elastic preconditioning and numerical equilibration
+against the retained high-load Krylov failures, keeping true residual
+criteria fixed. Independently verify a finer-grid warm-start transfer/repair
+before extending matched-force resolution studies beyond 33x49. Investigate
+the cell-scale pressure variation and minimum-film mesh sensitivity before
+claiming physical accuracy or interpreting a 200 N film comparison. Changes
+to the discretization require separate consistency/conservation benchmarks;
+changing viscosity, density or plots is not an error-control strategy.
+
+Final verification: `ruff check .` clean; full `pytest -q`: **347 passed,
+62 skipped** (263.68 s). Six new regressions verify complete bordered
+finite differences, dense/Schur/fallback correction parity, independently
+known offset recovery at matched force, film directions, sparse fine-grid
+construction, accepted merit/force gates, seed rejection, bounded retry
+rollback and retained Krylov failure diagnostics. Optional skips are device
+coverage; no GPU implementation or execution claim is added.

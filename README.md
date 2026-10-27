@@ -412,3 +412,12 @@ BLAS/OpenMP thread. It crosses zero rigid offset with positive total film;
 the verified branch reaches 8.97 N, while 200 N closure remains open.
 See section 16 of `docs/VALIDATION_REPORT.md` for independent verification,
 retained retries and the current computational/resolution limits.
+
+`ehl_solver.property_load_newton` adds matrix-free load-directed continuation
+with sparse preconditioning and verified bordered corrections. The bounded
+coarse/refined study reaches **100.442 N on 33x49 nodes**; 200 N and mesh
+accuracy remain open. Matched-force comparisons, preserved warm inputs,
+failed states and reproduction commands are in section 17 of
+`docs/VALIDATION_REPORT.md`. Run `examples.run_load_directed_200n` with the
+specified prior source archives, followed by `examples.audit_load_directed`
+to independently check saved fields and globalization histories.

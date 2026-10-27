@@ -1073,3 +1073,63 @@ matrix-free/sparse route for finer-grid checks. Then use audited load-directed
 steps/brackets toward 200 N, keeping force, mesh and physical-domain errors
 separate. The current dense reference is limited to 400 interior nodes;
 33x49 and larger grids are deliberately rejected rather than allocated.
+
+## Scalable load-directed continuation (2026-10-27, verified bounded path)
+
+Build on commit 08d64ce using the preserved 8.9655393334 N signed root as
+coarse-grid input and the preserved 1.9700562924 N refined prescribed-offset
+root. Input SI axes and archive hashes are checked; existing arrays are not
+modified. Implement matrix-free material/elastic/offset Jacobian products,
+sparse frozen-film JFO preconditioning and verified bordered Schur/GMRES
+corrections. Preserve the dense reference's default cap and all original
+physical/force criteria. Add bound-aware Armijo and selected active-constraint
+recovery without clipping or lowering the film floor.
+
+Small-grid finite differences, independent dense correction parity, forced
+Schur fallback, known-offset recovery and Krylov/retry failure retention pass.
+The authoritative run is checkpointing under
+`results/load_directed_200n_20261027_final/`. Both 17x25 and 33x49 grids close
+10 and 20 N with fixed physical bounds; the refined grid continues higher.
+The coarse branch approaches the film floor on larger proposals. Retain its
+rejected histories and compare only independently force-closed shared loads;
+no matched-offset comparison or failed state may substitute for these gates.
+Finish the bounded run, independent saved-field audits and full regression
+suite, then document exact progress, remaining resolution/continuation limits,
+commit and push. An earlier exploratory run is preserved separately.
+
+Scalable load-directed milestone complete as a bounded CPU numerical path.
+Matrix-free bordered material/elastic JVPs, sparse frozen-film preconditioning,
+verified Schur/GMRES plus fallback, affine pressure/content/film bound steps,
+original-directional Armijo and bounded force-step rollback are implemented.
+Full pytest 347 passed, 62 optional skips (263.68 s); Ruff clean. The old
+dense reference remains available with its default 400-interior-node cap.
+
+Authoritative evidence: `results/load_directed_200n_20261027_final/` and
+`results/load_directed_200n_20261027_audit/`. All 41 accepted states pass
+independent original mass/film/boundary and SI force audits; 14 rejected
+partial states retain full available nonlinear/Krylov/globalization data.
+Four actual bordered fallbacks and 116 accepted shortened steps pass
+independent history checks. Input archives are unchanged and source hashes
+match. Two unsmoothed figures were inspected.
+
+Coarse 17x25 closes 10/20 N and reaches 20.62890625 N before larger proposals
+approach the film floor and exhaust Newton budgets. Refined 33x49 closes
+2/4/8/10/20/40/80 N and reaches an accepted adaptive target of
+100.4423828125 N (h0=-2.76927325835 um, hmin=.1375437173 um,
+pmax=1406.190560 MPa). Larger proposals fail the unchanged true bordered
+Krylov check; smaller retries recover progress until the declared attempt
+budget for 120 N ends. The 200 N target remains unachieved.
+
+Matched-force comparisons reveal large resolution error: at 10 N, coarse/
+refined hmin=.105371/.280550 um; at 20 N, .00546368/.254703 um. The 1%
+mesh criterion is false. The strongest refined contour has visible cell-scale
+pressure variation, retained without smoothing. No physical film-height or
+pressure accuracy is inferred from equation convergence.
+
+Next justified action: strengthen pressure-law/elastic preconditioning and
+scaling against the archived high-load true-Krylov failures, and independently
+verify finer-grid warm-transfer/repair. Resume from audited accepted roots,
+compare grids at force-closed shared targets, and investigate the pressure
+variation/resolution error before a physical 200 N comparison. Do not relax
+force/mass/complementarity/film tolerances, raise the floor, or change fluid
+laws to bypass the measured limitations.

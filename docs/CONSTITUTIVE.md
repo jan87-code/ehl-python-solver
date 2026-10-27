@@ -263,3 +263,52 @@ a callback streams complete roots/failures. Retries always start from the
 last audited root. It follows offset with measured force, not a new imposed
 force algorithm, and does not establish global branch uniqueness. Load
 closure remains a separate gate before physical film-height comparisons.
+
+## Matrix-free force Newton and load-directed continuation
+
+`property_load_newton.PropertyLoadSystem` augments the verified analytic
+material/elastic action with h0/href and `(integral p dxdy-Qtarget)/Qtarget`.
+The h0 column differentiates total film by href; the force row differentiates
+SI pressure quadrature. Scales and the finite reservoir stay fixed as force
+changes. `solve_property_load_newton` requires a fresh physical/boundary/film
+audit of the supplied warm root and accepts only original mass, content,
+pressure, complementarity and positive-film criteria plus relative force
+error <=1e-8. Signed offsets remain permitted; no seed is silently repaired.
+
+The true operator is matrix-free. A sparse frozen-property/frozen-film JFO
+block and analytic offset column precondition the verified Schur/GMRES
+correction from `cavitating_newton`. Reconstructed bordered corrections and
+all block solves retain their true-JVP checks (5e-9 maximum relative error),
+Krylov histories and a complete bordered fallback when Schur reconstruction
+is unsafe. An independent dense correction on a small problem checks both
+routes. No dense Jacobian is formed by the production load path. The old
+dense reference keeps its default 400-interior-node bound; only the shared
+analytic system can explicitly opt into the scalable path's allocation cap.
+
+Globalization first tries a full step, then uses a safe affine fraction to
+pressure/content bounds and the exact total-film floor before backtracking.
+No ratios are formed for bounds that a full step cannot cross, avoiding
+irrelevant arithmetic overflow from subnormal direction components. There
+is no clipping, projection, film lift or tolerance relaxation. Merit decrease
+uses the original min(P,D) equations and their true directional derivative
+at ties. Failed searches can try up to eight selected active-constraint
+models, pivoting violated P_new=0 or D_new=0 rows. Each selected linear
+system has its own fully checked residual; switched rows are not mislabeled
+as the old min derivative. Original-equation merit/slope and physical bounds
+still govern acceptance. Selected-system algebra is independently verified;
+broad robustness across arbitrary active-front switches is not inferred.
+
+Limits: 20,000 physical nodes, 30 Newton corrections, eight active models,
+24 line trials per model, GMRES restart 60 and at most ten cycles per block.
+Sparse factor fill consumes additional memory; node/Krylov caps are not a
+measured total-process memory guarantee. CPU benchmarks use one BLAS/OpenMP
+thread. No GPU/runtime dependency is introduced.
+
+`continue_property_load` advances SI force by bounded adaptive increments,
+halving rejected steps and growing accepted ones by 1.5. Only a fully audited
+force root can seed the next solve; retries roll back to the last accepted
+root. Its maximum is 60 attempts per call (benchmark: 12 per requested
+checkpoint), with an explicit minimum force increment. Callback-streamed
+histories distinguish accepted states, failed partial Newton iterates and
+Krylov diagnostics. Nonfinite diagnostics are tagged explicitly in JSON,
+not emitted as invalid numeric literals or silently discarded.

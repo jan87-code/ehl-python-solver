@@ -1510,3 +1510,47 @@ device skips (85.23 s). Source hashes match the verified property curves;
 the generated figure was inspected. At 1 GPa the illustrative laws give
 rho=1038.888889 kg/m^3 and eta=242724.7165 Pa s; these large model values
 are retained, not capped or presented as experimental measurements.
+
+## 12. Pressure-dependent prescribed-film JFO, 2026-10-27
+
+Milestone 2 adds a separate conservative variable-property CPU path; the
+original constant-property solver remains an independent reference. Equations,
+SI mass-flux units, face interpolation, coefficient damping, true-property
+acceptance and bounded failure retention are specified in
+`docs/CONSTITUTIVE.md`. No film feedback, GPU port or thermal law is added.
+
+An independent continuum pressure-driven channel uses adaptive integration
+of rho/eta and scalar potential inversion. With constant h=20 um, Ue=0,
+x=[0,1] mm, p_w=5 MPa and p_e=1 MPa, exact transverse pressure data give
+an independent 2-D Dirichlet reference. Pressure relative L2 errors on
+17/33/65/129 streamwise nodes are 4.11e-8,1.05e-8,2.62e-9,6.41e-10;
+mean centerline mass-flux errors are 2.62e-6,6.56e-7,1.64e-7,4.10e-8.
+The final errors pass predeclared 1e-6 pressure and 1e-5 flux criteria.
+Separate tests verify the original flooded/starved constant-property limit,
+complete analytic smooth flux directions, constant high-pressure transport
+with liquid density in SI kg/s, and explicit iteration-budget failure.
+
+Rigid cavitating point cases retain h0=.1 um, Rx=10 mm,Ry=20 mm,
+x=+/-8L,y=+/-8Ly, but use Ue=.1 m/s so pressure dependence is significant.
+For 17/33/65 grids, Q=0.152191317/0.212848236/0.231211825 N and peak
+p=8.74852/21.1658/24.2872 MPa. Finest eta/eta0=1.70475 and
+rho/rho0=1.0139945. Original max mass defects stay below 7.52e-10;
+relative local/global conservation and complementarity pass the unchanged
+criteria. These are converged discrete physical-model roots. The last
+load/peak mesh changes are 8.63%/14.75%, so the 1% point mesh target is
+explicitly NOT met; no resolved EHL benchmark is claimed.
+
+`results/property_reynolds_20261027_verified/` contains seven SI NPZ
+states, two figures, exact source/runtime/parameter provenance, constitutive
+continuation/active histories, mass budgets and front brackets. Fresh-dir
+reproduction: `python -m examples.run_property_reynolds_verification
+--output-directory results/property_reynolds_new` with the documented
+single-thread environment. Raw pressure/content are not clipped, viscosity
+is not capped, and existing baselines are preserved. Next: initial coupled
+uniform cases with independent equation, elastic-source and force checks.
+
+Milestone-2 checks: Ruff clean; full pytest 314 passed, 62 optional device
+skips (87.60 s). Six added configurations cover limit parity, continuum
+channel refinement, complete smooth-flux derivatives, density/transport SI
+units and retained failure. Verified source hashes match; the independent
+reference-convergence figure was inspected. Graded coupling remains deferred.

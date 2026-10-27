@@ -2136,3 +2136,15 @@ resolved 1975 viscosity-unit inconsistency are documented in
 `docs/CONSTITUTIVE.md`. No existing isoviscous solve is changed by this module.
 Pressure-dependent mass-flux integration and initial coupled runs are the next
 two authorized milestones; the finite-reservoir/model limitations remain.
+
+### Pressure-dependent conservative JFO mass flow
+
+The separate prescribed-film CPU path now uses liquid rho(p),eta(p) in
+both pressure mobility and entrainment capacity. It conserves mass in kg/s;
+variable density prevents interpreting these as the earlier volume budgets.
+`docs/CONSTITUTIVE.md` specifies the arithmetic face interpolation, original
+SI audit, coefficient-only damping, bounds and benchmark references. An
+independent Kirchhoff pressure-driven channel checks the continuum limit,
+and complete smooth flux derivatives match finite differences. Existing
+isoviscous and GPU paths remain independent; this milestone does not alter
+coupled film or claim physical classical-EHL accuracy.

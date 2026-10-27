@@ -52,3 +52,57 @@ SI NPZ arrays and runtime/source hashes; generated data are outside Git.
 Reproduce with `python -m examples.run_constitutive_verification
 --output-directory results/constitutive_new` using the documented single-
 thread/MPLCONFIGDIR/PYTHONPATH setup. This milestone does not alter flow.
+
+## Conservative prescribed-film integration
+
+`property_reynolds.py` conserves the physical mass flux
+`j=-rho(p) h^3 grad(p)/(12 eta(p)) + Ue rho(p) h theta e_x`,
+with p>=0, 0<=theta<=1, p(1-theta)=0. Density is the liquid density;
+at cavitation p=0, liquid density is rho0 and theta is transported content.
+Dissolved gas, transient squeeze and thermal physics remain absent.
+
+Internally X=x/L,Y=y/L,H=h/href,P=p/pref, R=rho/rho0,V=eta/eta0,
+Lambda=12 eta0 Ue L/(href^2 pref). Arithmetic face mobility is
+avg(R H^3/V); advective capacity is avg(R H) and theta is west-upwinded.
+The physical mass-flux scale is rho0 href^3 pref/(12 eta0 L), in kg/(m s).
+Integrated boundary flows are kg/s, not m^3/s. A single reference-density
+factor cannot convert variable-density mass flow into physical volume flow.
+
+The bounded coefficient-Picard method solves a complete constrained JFO
+active-set system for each frozen mobility/capacity. Density coefficients
+are damped arithmetically and viscosity logarithmically, both by factor .5.
+Pressure/content fields are never blended or clipped; every accepted inner
+state satisfies the frozen complementarity system. Final convergence
+independently evaluates the ORIGINAL SI mass flux at unrelaxed constitutive
+properties of the returned pressure. Thus coefficient damping cannot make
+an incorrect pressure-law state pass. Limits: 20000 nodes, 100 iterations
+per constitutive strength and 100 active-set iterations. Exhaustion retains
+history and the last candidate. Physical defaults are ambient pressure edges,
+flooded west, copied outflow content and no transverse advective flux.
+Optional positive Dirichlet pressure data imply wet edges and allow an
+independent pressure-driven reference. They do not change default supply.
+
+Acceptance retains max original dimensionless mass defect <=1e-8,
+relative local/global mass imbalance <=1e-10 and complementarity/
+admissibility <=1e-10. Pressure update <=1e-9 is additional, not sufficient.
+The analytic complete smooth mass-flux direction includes h, pressure,
+content, density and viscosity derivatives. Independent centered differences
+check it; no generalized derivative at front changes is claimed.
+
+The independent pressure-driven channel has constant h=20 um, Ue=0,
+x=[0,1] mm, p_west=5 MPa and p_east=1 MPa. F(p)=integral rho/eta dp
+is linear in x and mass flux per width equals h^3*(F(p_w)-F(p_e))/(12 L).
+Adaptive quadrature and scalar root inversion provide continuum pressure
+without a sparse/JFO solve. Exact pressure traces on transverse boundaries
+embed this reference in a 2-D rectangular problem. Grid convergence checks
+both pressure and physical mass flux. The separate constant-property limit
+matches the original flooded/starved JFO solver. A constant high-pressure
+transport case checks density in the entrainment term and SI boundary units.
+
+Reproduce `python -m examples.run_property_reynolds_verification
+--output-directory results/property_reynolds_new` using single-thread setup.
+The verified run is `results/property_reynolds_20261027_verified/`.
+Point cases retain the finite +/-8L,+/-8Ly reservoir, h0=.1 um, Rx=10 mm,
+Ry=20 mm and Ue=.1 m/s. They demonstrate material pressure dependence,
+not a resolved classical-EHL pressure/film benchmark. Their mesh errors
+remain separately reported; elasticity is not yet included in this milestone.

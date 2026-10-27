@@ -355,3 +355,13 @@ in `docs/CONSTITUTIVE.md`. Generate their illustrative verification curves:
 ```bash
 python -m examples.run_constitutive_verification --output-directory results/constitutive_new
 ```
+
+Verify conservative pressure-dependent prescribed-film flow:
+
+```bash
+python -m examples.run_property_reynolds_verification --output-directory results/property_reynolds_new
+```
+
+It includes an independent pressure-driven continuum reference and cavitating
+point grids. Physical fluxes are now mass flows; point mesh accuracy remains
+open. Details and dimensionalization are in `docs/CONSTITUTIVE.md`.

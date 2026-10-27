@@ -896,3 +896,17 @@ high-precision/finite-difference checks and source-unit resolution are in
 Ruff clean; full pytest 308 passed, 62 optional device skips (85.23 s).
 Next: conservative variable-property prescribed-film mass flow, including
 an independent pressure-driven reference and constant-property JFO parity.
+
+Milestone 2 implemented and benchmarked: pressure-dependent prescribed-film
+JFO now conserves SI mass using rho in both mobility and entrainment. The
+independent potential-integral channel converges with final pressure/flux
+errors 6.41e-10/4.10e-8. Point cases reach 24.3 MPa and eta/eta0=1.70;
+physical audits pass, while the last 8.63% load and 14.75% peak mesh changes
+remain open. Evidence: `results/property_reynolds_20261027_verified/`.
+Next action after final regression/commit: coupled uniform variable-property
+cases, independent constant-property monolithic parity, full source/film and
+mass/load checks. Keep publication matching as subsequent verification.
+
+Milestone-2 final checks: Ruff clean; full pytest 314 passed, 62 optional
+device skips (87.60 s). All channel/reference and original physical audits
+pass; point mesh accuracy is separately flagged false. Proceed to milestone 3.

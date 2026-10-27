@@ -18,7 +18,14 @@ from examples.run_scientific_validation import provenance, save_json
 from examples.scientific_figures import figure, save
 
 
-def main(source, directory, load_n, active_lookahead=True, refinement_factor=2):
+def main(
+    source,
+    directory,
+    load_n,
+    active_lookahead=True,
+    refinement_factor=2,
+    lookahead_selection="best",
+):
     if refinement_factor not in (2, 3):
         raise ValueError("refinement factor must be 2 or 3")
     old = json.loads((source / "summary.json").read_text())
@@ -71,6 +78,7 @@ def main(source, directory, load_n, active_lookahead=True, refinement_factor=2):
         "physical_domain_verified": False,
         "interpolated_guess_accepted": False,
         "active_lookahead": active_lookahead,
+        "lookahead_selection": lookahead_selection,
         "refinement_factor": refinement_factor,
         "matched_loads": [],
     }
@@ -96,7 +104,13 @@ def main(source, directory, load_n, active_lookahead=True, refinement_factor=2):
     checkpoint()
     try:
         root = repair_property_load_guess(
-            target, fluid, 2.0, load_n, guess, active_lookahead=active_lookahead
+            target,
+            fluid,
+            2.0,
+            load_n,
+            guess,
+            active_lookahead=active_lookahead,
+            lookahead_selection=lookahead_selection,
         )
     except PropertyLoadNewtonError as exc:
         save_json(
@@ -187,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--load-n", type=float, default=200.0)
     parser.add_argument("--no-active-lookahead", action="store_true")
     parser.add_argument("--refinement-factor", type=int, choices=(2, 3), default=2)
+    parser.add_argument("--lookahead-selection", choices=("best", "legacy"), default="best")
     args = parser.parse_args()
     main(
         args.input_directory,
@@ -194,4 +209,5 @@ if __name__ == "__main__":
         args.load_n,
         not args.no_active_lookahead,
         args.refinement_factor,
+        args.lookahead_selection,
     )

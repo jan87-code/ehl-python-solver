@@ -290,8 +290,12 @@ def _solve_property_load_state(
     active_recovery,
     *,
     active_lookahead=False,
+    lookahead_selection="best",
 ):
     """Shared Newton engine; callers distinguish audited roots from initial guesses."""
+    if lookahead_selection not in ("best", "legacy"):
+        raise ValueError("lookahead_selection must be best or legacy")
+    resolved_lookahead = active_lookahead and lookahead_selection == "best"
     problem = system.problem
     target_load_n = system.target_load_n
     z = np.array(z, dtype=float, copy=True)
@@ -417,6 +421,11 @@ def _solve_property_load_state(
                             value = float(r @ r / (2 * system.size))
                             accepted = value <= merit + 1e-4 * alpha * slope
                             reason = "accepted" if accepted else "Armijo"
+                            if resolved_lookahead and accepted and (
+                                value >= merit or np.array_equal(trial, z)
+                            ):
+                                accepted = False
+                                reason = "no resolved state/merit progress"
                         except (ValueError, FloatingPointError) as exc:
                             reason = str(exc)
                         model["trials"].append(
@@ -442,7 +451,14 @@ def _solve_property_load_state(
                 updated[predicted[: system.n] < -1e-10] = False
                 updated[predicted[system.n : 2 * system.n] < -1e-10] = True
                 full = updated
-            if not accepted and backup is not None:
+            if backup is not None and (
+                not accepted
+                or (resolved_lookahead and backup[1]["merit"] < model["trials"][-1]["merit"])
+            ):
+                if accepted:
+                    current = model["trials"][-1]
+                    current["accepted"] = False
+                    current["reason"] = "superseded by lower-merit verified lookahead backup"
                 _, candidate, trial = backup
                 candidate["accepted"] = True
                 candidate["reason"] = "accepted safeguarded fallback after active lookahead"

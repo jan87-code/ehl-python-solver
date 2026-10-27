@@ -1255,3 +1255,34 @@ Preserve the original reference and unchanged physical acceptance gates.
 Only accepted force-closed roots may enter subsequent mesh/domain studies.
 Final verification: Ruff clean; full pytest 361 passed, 62 optional device
 skips (285.51 s). No production numerical changes were made.
+
+## Active-lookahead candidate selection (2026-10-27)
+
+The archived 97x145 failure reveals a candidate-selection defect: iteration
+zero defers an original-model step reducing merit 4.413396e-5 -> 4.294239e-5,
+then accepts a final model at 4.413396e-5 instead. That final acceptance
+prevents the existing fallback from restoring the better verified candidate.
+The best policy now compares both candidates, marks superseded acceptances,
+and rejects state/merit equality caused by rounding. Six targeted cases
+cover selection, no-progress rejection and the explicit legacy reference.
+Original physical gates, Jacobians, correction accuracy and caps are retained.
+
+The 65x97 200 N replay remains bitwise identical in pressure/film, with
+nine corrections/18 models and a passing independent saved-state audit.
+The 97x145 replay supersedes 16 worse final candidates, accepts 17
+strictly merit-decreasing corrections and then rejects its partial state
+when four tried active models have zero feasible fraction-to-boundary
+steps. Its 112 linear models remain accurate (max true error 2.181e-10).
+Final merit improves from the legacy 4.091610e-5 to 2.756063e-5, but original
+mass_maximum=.0495271 and complementarity=.0941517 still fail; no third-grid
+root or mesh accuracy is claimed. Input arrays are identical to the legacy
+run. Both failures remain preserved; independent history checking verifies
+the minimum verified merit candidate wins at every accepted correction.
+
+Next: localize the pressure/content constraint blocking all final directions
+and benchmark targeted active pivots at that bound, including roundoff and
+cycling cases. Preserve the legacy and best-candidate references, original
+acceptance gates and existing budgets; do not bypass the failure by clipping.
+Final checks: Ruff clean; full pytest 367 passed, 62 optional device skips
+(310.29 s). Evidence and code snapshots are saved under
+`results/lookahead_selection_20261027/` in the original project checkout.

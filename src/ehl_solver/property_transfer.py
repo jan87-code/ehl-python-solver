@@ -106,6 +106,7 @@ def repair_property_load_guess(
     maximum_iterations=30,
     preconditioner="local",
     active_lookahead=True,
+    lookahead_selection="best",
 ):
     """Explicitly unaccepted initialization; same original Newton/physical gates.
 
@@ -140,5 +141,12 @@ def repair_property_load_guess(
     z = system.pack(guess, guess.central_film_offset_m)
     system.solution(z)  # Checks the exact signed-offset film and original law domain.
     return _solve_property_load_state(
-        system, z, maximum_iterations, 10, 1e-10, True, active_lookahead=active_lookahead
+        system,
+        z,
+        maximum_iterations,
+        10,
+        1e-10,
+        True,
+        active_lookahead=active_lookahead,
+        lookahead_selection=lookahead_selection,
     )

@@ -2218,3 +2218,26 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=src \
 The JSON records errors, orders, units, limited diagnostic scope and source/
 runtime provenance. Recover and independently audit the saved 200 N roots
 before extending these observations to the coupled benchmark.
+
+## Best-candidate active lookahead (2026-10-27)
+
+Explicit finer-grid repair now compares the final accepted active-model
+trial with all retained feasible Armijo backups. The lowest measured merit
+wins; a worse final trial no longer overrides a better deferred candidate.
+Histories mark a displaced acceptance as superseded and retain exactly one
+accepted trial per correction. A best-mode trial must change the float64
+state and strictly reduce computed original merit as well as satisfy the
+original directional Armijo inequality. Equality caused by rounding is not
+nonlinear progress. This adds no pressure/content/film clamp and relaxes no
+physical, force, linear-residual or feasibility criterion.
+
+`repair_property_load_guess(..., lookahead_selection="legacy")` reproduces
+the preceding final-model preference and rounded Armijo behavior for
+comparison. `--lookahead-selection legacy` exposes that reference in
+`examples.run_load_refinement`; the policy is recorded in the output JSON.
+`--no-active-lookahead` still disables lookahead. Existing warm continuation,
+whose lookahead is disabled, retains its prior behavior. The default explicit
+repair uses `best`; the eight-model and 30-correction caps are unchanged.
+Regression tests isolate final-candidate selection, exact-state/merit
+stagnation, legacy behavior and failure retention. Physical convergence
+still requires the independently audited original field/force gates.

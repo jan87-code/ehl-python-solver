@@ -2581,3 +2581,96 @@ or alter material laws to bypass this failure.
 Final checks: Ruff clean; full pytest 361 passed, 62 optional device skips
 (285.51 s). No production solver, tolerance, floor or fluid law changed in
 this regeneration/assessment milestone.
+
+## 21. Correct active-lookahead candidate selection (2026-10-27)
+
+Starting revision: 4f140886f9643de14f30656e1988734f9efcb020.
+The archived failed factor-three history identifies a concrete logic defect,
+independent of mesh accuracy: a better verified backup is restored only if
+the final model fails. Thus a successful but much worse final model can
+supersede a substantially better original-model step. In iteration zero,
+the deferred alpha=.01359187449 candidate has merit 4.294238637e-5, while
+the accepted final alpha=2.946659925e-10 candidate has merit 4.413395998e-5.
+Repeated final steps eventually leave computed merit unchanged at roundoff.
+
+The best policy compares the final trial with the lowest-merit retained
+backup and marks a displaced acceptance as superseded. Original-directional
+Armijo, exact film feasibility and original field/force criteria remain
+mandatory. A trial must also change state and strictly decrease computed
+merit; rounded equality is rejected. No field or pressure rescaling, clipping,
+floor change, fluid-law change, extra active model or budget increase is used.
+The explicit legacy policy preserves previous selection/roundoff behavior,
+and lookahead-disabled warm continuation is unchanged.
+
+Six small globalization regression cases reproduce the incorrect choice
+and roundoff acceptance before the fix, verify the corrected choice and
+rejection, and preserve the explicit legacy behavior. Existing independent
+physical repaired-root parity, failed-model fallback, complete JVP, bordered
+correction, Krylov and warm/load-continuation regressions remain applicable.
+The failed partial is not reused as an accepted root: both numerical replays
+start from the original audited 33x49 source and its unaccepted interpolation.
+
+### Bounded replays and independent audits
+
+The 65x97 replay closes 200 N with nine corrections and 18 linear models.
+Pressure and film arrays are bitwise identical to the previously independently
+audited root. The new saved-field/globalization audit passes as well; original
+mass/force/film criteria are unchanged. No candidate supersession occurs on
+this successful case, confirming its prior trajectory is retained.
+
+The 97x145 replay begins with arrays identical to the archived legacy
+initialization. It supersedes 16 worse accepted final trials and accepts 17
+strictly merit-decreasing corrections before a rejected eighteenth correction.
+There are 112 accurate linear models (max true error 2.181e-10). Independent
+history recomputation verifies each accepted trial has the minimum merit of
+the evaluated feasible Armijo candidates. The final four models have zero
+feasible fraction-to-boundary steps, with the failure recorded as all feasible
+Armijo/active recovery models exhausted. No correction or active-model limit
+was increased. The legacy failure and its partial fields remain rejected.
+
+| Failed 97x145 partial | Legacy | Best candidate |
+| --- | ---: | ---: |
+| Final original merit | 4.091609880e-5 | 2.756063378e-5 |
+| Original max mass defect | .0643674331 | .0495270775 |
+| Relative local mass defect | .440413535 | .337983675 |
+| Relative global mass defect | .0294992174 | .0226399192 |
+| Complementarity | .107004731 | .0941517332 |
+| SI force [N] | 200 | 200 |
+| Accepted root | no | no |
+
+The new failed-partial audit independently recomputes the SI flux, exact
+film/source relation, force and candidate histories; sampled direct source
+integration differs by at most 3.389e-21 m. Source hashes match. No film
+value from either failed 97x145 partial enters a mesh-convergence comparison.
+Improved merit is not physical convergence. Strict decrease removes exact
+rounded equality but does not guarantee a useful positive feasible step.
+
+Evidence: `results/lookahead_selection_20261027/` in the original checkout
+contains both new replays, the accepted-root audit, independently assessed
+failed partial, exact source snapshot, source/input hashes and a SHA-256
+manifest. The archived source in `results/recovered_200n_20261027/` remains
+unchanged. A fresh replay uses:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/ehl-mpl PYTHONPATH=src:. \
+  python -m examples.run_load_refinement \
+  --input-directory results/regenerated_load_33x49 \
+  --output-directory results/best_candidate_refinement_new \
+  --refinement-factor 3 --lookahead-selection best
+```
+
+Use `--lookahead-selection legacy` to reproduce the preceding policy;
+use factor two for the accepted 65x97 comparison. Always use fresh output
+directories. Generation summaries retain their original paths before the
+archival copy. Existing field/force acceptance and audit commands are retained.
+
+Next: independently identify the pressure/content lower-bound blockers in
+the final zero-step models and benchmark targeted active pivots, including
+cycling and roundoff cases. Keep both reference policies and original
+acceptance criteria. Third-grid recovery, mesh/domain convergence and
+physical film-height validation remain unresolved.
+
+Final checks: `ruff check .` clean; full `pytest -q` 367 passed, 62 optional
+device skips (310.29 s), with one BLAS/OpenMP thread. The accepted raw
+centerline figure was inspected; persistent cell-scale variation is not
+smoothed or treated as physical accuracy.

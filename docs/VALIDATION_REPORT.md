@@ -1486,3 +1486,27 @@ hashes, raw field counts and figure manifests were checked. Fine pressure/
 film overlays, iteration/zero-defect histories and audited comparison
 figures were visually inspected. The unresolved coupled mesh target and
 full graded source-map cost remain documented rather than hidden.
+
+## 11. Constitutive milestone, 2026-10-27
+
+The user authorized moving pressure-dependent laws onto the next development
+path while retaining the finite-reservoir and 1.58% coupled-mesh limitations.
+`constitutive.py` implements independently tested SI density/viscosity and
+analytic pressure derivatives. Source details, the 1975 printed viscosity
+unit inconsistency and the explicit SI resolution from NASA RP-1255 are in
+`docs/CONSTITUTIVE.md`. This is verification of empirical law evaluation,
+not validation of a measured fluid or a classical EHL solution.
+
+Independent 60-digit Decimal references and finite-difference derivative
+checks cover 0..1 GPa, along with the original GPa density conversion and
+constant-property limits. `results/constitutive_20261027_verified/` holds a figure,
+raw SI NPZ values/derivatives and source/runtime JSON. The curve parameters
+are illustrative at assigned fixed T=313.15 K. Existing result baselines,
+flow solvers and GPU implementations are preserved. Integration into JFO
+and initial elastic solves remain subsequent milestones.
+
+Milestone-1 checks: Ruff clean; complete pytest 308 passed, 62 optional
+device skips (85.23 s). Source hashes match the verified property curves;
+the generated figure was inspected. At 1 GPa the illustrative laws give
+rho=1038.888889 kg/m^3 and eta=242724.7165 Pa s; these large model values
+are retained, not capped or presented as experimental measurements.

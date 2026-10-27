@@ -871,3 +871,28 @@ and its one-correction recovery remain separately preserved. Producer and
 reaudit hashes/field counts/figures were verified and representative final
 plots inspected. No graded nonlinear or infinite-domain validation claim
 is made from this uniform finite-reservoir experiment.
+
+## Pressure-dependent properties: authorized priority change (2026-10-27)
+
+The user explicitly reprioritized the next three milestones after abf2a25:
+(1) independently benchmarked SI density/viscosity laws and derivatives;
+(2) conservative pressure-dependent prescribed-film JFO with independent
+mass/constraint/derivative checks; (3) initial coupled pressure-dependent
+uniform finite-reservoir cases with continuation and independent field/load
+checks. Graded elasticity remains deferred. The existing 1.58% coupled mesh
+uncertainty and physical reservoir assumptions stay documented; constitutive
+work does not claim to resolve them or to match classical EHL data already.
+
+Current action: verify original-source constants/units, implement/test the
+standalone laws first, then commit/push each independently verified milestone.
+Use bounded single-thread NumPy/SciPy runs and preserve every baseline. If
+interrupted, resume the first unfinished milestone here rather than restarting
+the far-field investigation. Weekly account allowance is not visible to the
+agent; no quota-fit guarantee is made.
+
+Milestone 1 complete: SI constitutive laws, analytic derivatives, independent
+high-precision/finite-difference checks and source-unit resolution are in
+`docs/CONSTITUTIVE.md`. Evidence: `results/constitutive_20261027_verified/`.
+Ruff clean; full pytest 308 passed, 62 optional device skips (85.23 s).
+Next: conservative variable-property prescribed-film mass flow, including
+an independent pressure-driven reference and constant-property JFO parity.

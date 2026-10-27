@@ -348,3 +348,10 @@ passing the original solver defaults. The reaudit preserves that rejection
 and tightens the independent reference with one additional Newton correction;
 candidate fields are unchanged. Coupled load changes decrease to 1.58%
 under refinement, so the 1% mesh target remains open.
+
+Standalone SI pressure-dependent fluid laws and derivatives are documented
+in `docs/CONSTITUTIVE.md`. Generate their illustrative verification curves:
+
+```bash
+python -m examples.run_constitutive_verification --output-directory results/constitutive_new
+```

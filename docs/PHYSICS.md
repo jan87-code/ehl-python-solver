@@ -2126,3 +2126,13 @@ displacement is not fixed at that boundary. The experiment requires uniform
 physical cells. It cannot be ported to graded grids by applying this FFT to
 unequal sources. Validation report section 10 separates reference parity,
 cut independence and remaining mesh/physical-reservoir limitations.
+
+### Pressure-dependent laws (2026-10-27)
+
+Standalone float64 Roelands viscosity and Dowson-Higginson density are now
+implemented in `constitutive.py`. SI coefficients, source-equation checks,
+analytic derivatives, illustrative reference-temperature parameters and the
+resolved 1975 viscosity-unit inconsistency are documented in
+`docs/CONSTITUTIVE.md`. No existing isoviscous solve is changed by this module.
+Pressure-dependent mass-flux integration and initial coupled runs are the next
+two authorized milestones; the finite-reservoir/model limitations remain.

@@ -3129,12 +3129,15 @@ not activate it in the material solver.
 
 The block is the primary pressure/content preconditioner; the bordered factor
 is the fallback. Independently recomputed factor-solve relative residuals
-are below 2.75e-16. Sparse data/index/pointer payloads and default restart-80
+are below 2.75e-16. Sparse data/index/pointer payloads and generic restart-80
 basis estimates exclude temporary workspaces, additional vectors, Python,
 FFT buffers and allocator peaks. They are neither peak process memory nor
 CUDA VRAM measurements. Finest dense full-Jacobian storage would be 5.50 GiB
 and is not allocated. These measurements support further profiling, not an
 unverified cap increase or extrapolated larger-grid convergence.
+The material Newton driver explicitly uses restart 60, rather than the
+generic correction helper's default 80; its 61-vector finest basis estimate
+is 12.65 MiB. The table's 81-vector estimate is a conservative larger budget.
 
 Evidence: `results/transport_candidate_20261028_final_verified`, including
 source hashes, analytical-source errors, individual direction differences,
@@ -3145,3 +3148,72 @@ Windows wider-longdouble test skips; no tolerance was weakened. Next: verify
 cached CPU elasticity inside the bordered workflow and measure complete
 solve/peak memory before expanding grids; benchmark a higher-order conservative
 transport alternative separately. Material/JFO GPU support remains open.
+
+## 26. Cached CPU elasticity in bordered material Newton (2026-10-28)
+
+Starting at 69b6a54, an explicit `elasticity_mode="cached"` option reuses the
+existing NumPy ElasticityOperator in material force Newton, force continuation
+and unaccepted-guess repair. Reference execution remains the default. The
+same analytic integrated kernel is cached once per system with FFT-friendly
+linear-convolution padding. No constitutive, transport, boundary, sparse
+preconditioner, Newton, globalization, tolerance or node-cap change is made.
+
+Six new regressions independently check complete bordered JVPs against finite
+differences, a dense reference Jacobian/correction, Schur fallback, strict
+film rejection, original final mass/force gates and directional Armijo checks,
+active recovery with rejected trials, selected-model failure with safeguarded
+backup, failed Krylov diagnostics and continuation retry seed/mode preservation.
+Cached correction views reuse the same operator. Default reference code also
+passes the full existing suite. Both modes remain CPU NumPy/SciPy execution.
+
+The reproducible `examples.benchmark_cached_material` uses the same three
+accepted 200 N source meshes. Each initialization preserves source pressure
+and content but opens the signed offset by 0.01 href (5 nm), explicitly
+creating an unaccepted guess. Both modes repair this identical guess at
+the same 200 N force, using the existing local preconditioner and original
+30-correction/eight-model/10-Krylov-cycle budgets. Each mode runs in its own
+fresh process, warms once, then performs three measured repairs. Median
+times include system/operator construction and the full nonlinear repair;
+independent final audits run outside timing. This is a warm local repair
+benchmark, not cold recovery or proof over a wider load/coupling range.
+
+Every warm and measured root passes independent reference convolution/film,
+sampled direct source-cell deformation, trapezoidal force, original SI mass/
+complementarity/field gates, complete true-correction residual and saved
+directional Armijo history checks. No audit is relaxed for cached mode.
+Source hashes remain unchanged. Operating-system resident and pagefile
+high-water marks cover the entire worker lifetime, including startup,
+source loading, warm-up, all repeated solves and audits. They are not
+incremental solve-only peaks, GPU allocations or a bound for larger meshes.
+
+Windows results (Python 3.12.9, NumPy 2.5.4, SciPy 1.18.1, one BLAS/OpenMP
+thread), three repetitions per mode after one warm-up:
+
+| (ny,nx) | Reference median s | Cached median s | Reference/cached | Newton corrections ref/cached | Total Krylov iterations ref/cached | Peak resident MiB ref/cached |
+|---|---:|---:|---:|---:|---:|---:|
+| 33x49 | 1.3672 | .4664 | 2.93x | 4 / 4 | 181 / 181 | 129.18 / 129.32 |
+| 65x97 | 4.3196 | 1.7702 | 2.44x | 4 / 4 | 231 / 230 | 140.81 / 141.15 |
+| 97x145 | 17.4404 | 7.6672 | 2.27x | 5 / 5 | 332 / 332 | 162.32 / 164.27 |
+
+Cached mode is faster on all tested meshes for this specific complete repair
+workload. Finest worker-lifetime peak pagefile (commit) counter is 269.58/271.54 MiB
+for reference/cached. The slight memory increase is consistent with the
+retained spectrum/padding; no scaling law is inferred from three meshes.
+Final relative pressure L2 differences are 2.91e-15, 6.04e-15 and 9.93e-15.
+Maximum total-film difference is 6.78e-21 m; maximum h0 difference is
+8.48e-22 m. Newton counts agree, while one Krylov iteration differs on the
+middle mesh. These differences are not hidden by forcing identical histories.
+Maximum final original scaled mass defect is below 1.85e-13; maximum audited
+true correction residual is below 8.71e-10, within the unchanged 5e-9 gate.
+Both paths retain the source's unresolved mesh-dependent pressure pattern.
+
+Evidence: `results/cached_material_20261028_repeated`, six isolated worker
+directories with final fields/histories/source hashes and all 18 measured
+repair audits and timing samples. Each worker also passes an excluded warm-up audit. The
+earlier single-measurement exploratory run remains separately retained.
+
+Verification: Ruff clean; complete CPU/CUDA pytest **470 passed, one skipped
+in 208.07 s**. The skip is the existing Windows wider-longdouble diagnostic.
+All 17 new candidate/cached regressions also pass with torch imports blocked
+(4.57 s). Material/JFO CUDA solving, mesh convergence, larger reservoirs and
+physical film accuracy remain open.

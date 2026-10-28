@@ -1485,3 +1485,36 @@ measure actual peak process memory and Krylov work before any >20,000-node
 trial. Separately investigate a conservative higher-order transport option
 with smooth-source and front/positivity checks; retain the donor candidate
 as a diagnostic baseline. Mesh/domain and physical film accuracy remain open.
+
+## Optional cached CPU material elasticity (2026-10-28)
+
+Starting from 69b6a54, reused the existing verified ElasticityOperator behind
+an explicit `elasticity_mode="cached"` option in material force Newton,
+load continuation and unaccepted-guess repair. Default reference execution,
+the original flux, constitutive laws, sparse preconditioning, physical gates,
+30-correction/eight-model budgets and 20,000-node cap are retained. This is
+CPU optimization, not a GPU material/JFO port or a new transport scheme.
+
+Independent small-grid tests check the full elastic/material bordered product,
+dense-reference correction, Schur fallback, strict film rejection, both
+globalization checks, rejected trials, active backup, Krylov failure and
+continuation retry mode/seed preservation. Matched-force saved 200 N roots
+on all three existing meshes undergo identical perturbed-offset repair in
+both modes, then independent original field/force/history/direct-source audits.
+See validation report section 26 for actual timings, parity and OS memory.
+
+Three measured repairs per mode after warm-up give reference/cached speedups
+2.93x, 2.44x and 2.27x on 33x49, 65x97 and 97x145. Pressure differences are
+<1e-14 relative, total-film differences <6.8e-21 m, h0 <8.5e-22 m. Finest
+worker-lifetime resident peaks are 162.32/164.27 MiB, including startup,
+warm-up and audits. This is measured local repair performance, not a cold-
+continuation speedup or peak estimate for a larger grid. Complete CPU/CUDA
+suite: 470 passed, one Windows longdouble skip (208.07 s); Ruff clean.
+Seventeen new tests also pass with torch blocked.
+
+Remaining accuracy work: investigate a higher-order conservative transport
+candidate with independent smooth/front tests before adoption; reproduce
+matched-force mesh trends using explicitly bounded resource controls before
+attempting the next 129x193 mesh above the current cap. Peak-memory evidence
+from local repairs does not validate that larger mesh or cold continuation.
+Physical film accuracy and full material/JFO CUDA solving remain open.

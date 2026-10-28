@@ -12,13 +12,17 @@ import numpy as np
 from ehl_solver.backend import make_backend
 from ehl_solver.cavitating_newton import CavitatingNewtonSystem
 from ehl_solver.convolution import fft_convolve_same
+from ehl_solver.elasticity import ElasticityOperator
 from ehl_solver.property_coupled import PropertyCoupledSolution
 from ehl_solver.property_reynolds import admissible, mass_audit, mass_fluxes
 
 
 class PropertyWarmSystem(CavitatingNewtonSystem):
-    def __init__(self, problem, fluid, speed_m_s, offset_m, *, maximum_interior_nodes=400):
+    def __init__(self, problem, fluid, speed_m_s, offset_m, *, maximum_interior_nodes=400,
+                 elasticity_mode="reference"):
         super().__init__(problem)
+        if elasticity_mode not in ("reference", "cached"):
+            raise ValueError("elasticity_mode must be reference or cached (CPU only)")
         if maximum_interior_nodes not in (400, 20000) or self.n > maximum_interior_nodes:
             raise ValueError(f"warm system limited to {maximum_interior_nodes} interior nodes")
         if not np.isfinite(offset_m) or not np.isfinite(speed_m_s) or speed_m_s <= 0:
@@ -33,6 +37,11 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         if not np.isclose(parameter, problem.reynolds_parameter, rtol=1e-12, atol=0):
             raise ValueError("fluid and speed must reproduce fixed problem Lambda")
         self.fluid, self.speed, self.offset = fluid, speed_m_s, float(offset_m)
+        self.elasticity_mode = elasticity_mode
+        self.elastic_operator = (
+            ElasticityOperator(problem.shape, problem.dx_m, problem.dy_m, problem.e_star_pa)
+            if elasticity_mode == "cached" else None
+        )
         self.flux_scale = (
             fluid.density_kg_m3
             * problem.film_scale_m**3
@@ -51,8 +60,24 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         theta[1:-1, 0] = problem.inlet_fractional_film_content
         theta[1:-1, -1] = theta[1:-1, -2]
         theta[0], theta[-1] = theta[1], theta[-2]
-        h, w = problem.fields(p * problem.pressure_scale_pa, central_film_offset_m=self.offset)
+        if self.elastic_operator is None:
+            h, w = problem.fields(p * problem.pressure_scale_pa, central_film_offset_m=self.offset)
+        else:
+            w = self.elastic_deformation(p * problem.pressure_scale_pa)
+            h = self.offset + problem.rigid_geometry_m + w
+            if not np.all(np.isfinite(h)) or np.any(h <= problem.film_floor_m):
+                raise ValueError("coupled film is nonfinite or at/below film_floor_m")
         return p, theta, h, w, self.offset
+
+    def elastic_deformation(self, pressure_pa):
+        """Pa -> gap increase m, same kernel; optional per-system CPU spectrum.
+
+        Cached padding is FFT-friendly and still computes the full linear
+        convolution. Failures propagate; reference mode remains the default.
+        """
+        if self.elastic_operator is not None:
+            return self.elastic_operator(pressure_pa)
+        return fft_convolve_same(pressure_pa, self.problem.elastic_kernel, make_backend("numpy"))
 
     def divergence(self, qx, qy):
         return (
@@ -84,10 +109,7 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         dp, dt = np.zeros(problem.shape), np.zeros(problem.shape)
         dp[1:-1, 1:-1] = v[: self.n].reshape(dp[1:-1, 1:-1].shape) * problem.pressure_scale_pa
         dt[1:-1, 1:-1] = -v[self.n :].reshape(dt[1:-1, 1:-1].shape)
-        dh = (
-            fft_convolve_same(dp, problem.elastic_kernel, make_backend("numpy"))
-            + offset_direction_m
-        )
+        dh = self.elastic_deformation(dp) + offset_direction_m
         rho, eta, dr, de = self.fluid.properties(p)
         dr, de = dr * dp, de * dp
         m = rho * h**3 / (12 * eta)

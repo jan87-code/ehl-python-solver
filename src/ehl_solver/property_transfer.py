@@ -108,6 +108,7 @@ def repair_property_load_guess(
     active_lookahead=True,
     lookahead_selection="best",
     content_bound_pivots=True,
+    elasticity_mode="reference",
 ):
     """Explicitly unaccepted initialization; same original Newton/physical gates.
 
@@ -137,7 +138,8 @@ def repair_property_load_guess(
     ):
         raise ValueError("initial guess fails original shape/pressure/content/boundary bounds")
     system = PropertyLoadSystem(
-        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner
+        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
+        elasticity_mode=elasticity_mode,
     )
     z = system.pack(guess, guess.central_film_offset_m)
     system.solution(z)  # Checks the exact signed-offset film and original law domain.

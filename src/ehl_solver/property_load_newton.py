@@ -10,13 +10,11 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.sparse import bmat, coo_matrix, csr_matrix, diags, hstack, vstack
 
-from ehl_solver.backend import make_backend
 from ehl_solver.cavitating_newton import (
     CavitatingLinearError,
     CavitatingNewtonSystem,
     solve_cavitating_correction,
 )
-from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.property_reynolds import _frozen_system, admissible
 from ehl_solver.property_warm import PropertyWarmSystem, WarmPropertyRoot
 
@@ -24,7 +22,8 @@ from ehl_solver.property_warm import PropertyWarmSystem, WarmPropertyRoot
 class PropertyLoadSystem:
     merit_slope = CavitatingNewtonSystem.merit_slope
 
-    def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen"):
+    def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen",
+                 elasticity_mode="reference"):
         if preconditioner not in ("frozen", "material", "local"):
             raise ValueError("preconditioner must be frozen, material or local")
         self.preconditioner = preconditioner
@@ -34,7 +33,8 @@ class PropertyLoadSystem:
             raise ValueError("physical node budget exceeds 20000")
         self.problem = problem
         self.base = PropertyWarmSystem(
-            problem, fluid, speed_m_s, problem.central_film_offset_m, maximum_interior_nodes=20000
+            problem, fluid, speed_m_s, problem.central_film_offset_m, maximum_interior_nodes=20000,
+            elasticity_mode=elasticity_mode,
         )
         self.n = self.base.n
         self.size = 2 * self.n + 1
@@ -183,10 +183,7 @@ class PropertyLoadSystem:
         dp[1:-1, 1:-1] = (
             direction[: self.n].reshape(dp[1:-1, 1:-1].shape) * self.problem.pressure_scale_pa
         )
-        return (
-            fft_convolve_same(dp, self.problem.elastic_kernel, make_backend("numpy"))
-            + direction[-1] * self.problem.film_scale_m
-        )
+        return self.base.elastic_deformation(dp) + direction[-1] * self.problem.film_scale_m
 
     def correction_view(self, z, full):
         other = copy(self)
@@ -254,6 +251,7 @@ def solve_property_load_newton(
     schur_tolerance=1e-10,
     active_recovery=True,
     preconditioner="frozen",
+    elasticity_mode="reference",
 ):
     """Bordered force solve; true-JVP-checked Schur/GMRES and bounded globalization.
 
@@ -273,7 +271,8 @@ def solve_property_load_newton(
     ):
         raise ValueError("Newton/Krylov budgets must lie in 0..30 and 1..10")
     system = PropertyLoadSystem(
-        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner
+        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
+        elasticity_mode=elasticity_mode,
     )
     z = verify_seed(system, seed, seed_offset_m)
     return _solve_property_load_state(
@@ -521,6 +520,7 @@ def continue_property_load(
     maximum_attempts=32,
     callback=None,
     preconditioner="frozen",
+    elasticity_mode="reference",
 ):
     """Adaptive SI-force steps; rejected solves never become continuation seeds."""
     if (
@@ -535,7 +535,8 @@ def continue_property_load(
     ):
         raise ValueError("invalid bounded load continuation controls")
     system = PropertyLoadSystem(
-        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner
+        problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
+        elasticity_mode=elasticity_mode,
     )
     z = verify_seed(system, seed, seed_offset_m)
     current = system.solution(z)
@@ -567,6 +568,7 @@ def continue_property_load(
                 seed=current.solution,
                 seed_offset_m=current.central_film_offset_m,
                 preconditioner=preconditioner,
+                elasticity_mode=elasticity_mode,
             )
         except PropertyLoadNewtonError as exc:
             record["reason"] = str(exc)

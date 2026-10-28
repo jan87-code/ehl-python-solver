@@ -511,3 +511,22 @@ available cached FFT-friendly elasticity operator against the saved roots;
 no solver performance change or node-cap increase is enabled. Sparse payloads
 are storage lower bounds, not peak-memory measurements. See validation-report
 section 25 for the accuracy tradeoff, timings and remaining integration work.
+
+The material bordered force solver, force continuation and unaccepted-guess
+repair now accept `elasticity_mode="cached"` for a reusable **CPU NumPy**
+elastic operator with FFT-friendly zero padding. The default is
+`elasticity_mode="reference"`. Both retain the same integrated kernel, units,
+positive gap sign, original transport and nonlinear acceptance criteria.
+Errors propagate; cached mode does not select CUDA or silently fall back.
+
+```bash
+python -m examples.benchmark_cached_material --input-directories results/source_200n_new results/refined_200n_new results/fine_200n_new --output-directory results/cached_material_new
+```
+
+Use the documented single-thread settings. Each mode runs in a separate
+process, warms once, then repeats three complete nonlinear repairs from
+identical unaccepted guesses at 200 N. Reference field/force/history and
+direct elasticity audits are mandatory. OS peak memory covers each worker's
+entire lifetime, including warm-up and audits. This benchmarks local repair
+of known roots, not cold load continuation or mesh accuracy. See validation-
+report section 26 for measured parity and end-to-end repair speedups.

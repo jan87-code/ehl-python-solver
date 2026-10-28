@@ -139,6 +139,7 @@ def accepted_case(source, directory):
     storage = {
         "matrix_payload_bytes": payload(matrix),
         "krylov_81_float64_vectors_bytes": int(81*system.size*8),
+        "material_krylov_61_float64_vectors_bytes": int(61*system.size*8),
         "dense_full_jacobian_bytes_not_allocated": int(system.size**2*8),
         "note": "payload lower bounds; exclude workspaces, Python, FFTs and allocator peaks",
     }

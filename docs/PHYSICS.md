@@ -2453,3 +2453,32 @@ be relabelled candidate solutions. Before a candidate Newton comparison,
 implement and verify its own residual, boundary Jacobian, frozen operator,
 bordered correction and original globalization/acceptance checks. Current
 evidence does not justify changing the reference transport stencil.
+
+## Optional cached CPU elasticity in material force Newton (2026-10-28)
+
+`PropertyLoadSystem`, `solve_property_load_newton`, `continue_property_load`
+and `repair_property_load_guess` accept `elasticity_mode="cached"`.
+`"reference"` remains the default. Cached mode creates one existing
+ElasticityOperator per system using the same analytic integrated kernel,
+Nyquist ordering, backward FFT normalization and positive Pa-to-m gap sign.
+Zero padding is rounded up to FFT-friendly lengths, still at least the full
+linear-convolution size. It reuses the kernel spectrum in film, residual,
+elastic JVP, h0 direction, Schur column and feasibility calculations. Active
+correction views share this unchanged spectrum. Fresh continuation systems
+construct fresh operators; no global cache or cross-step reuse is implied.
+
+This changes arithmetic scheduling and FFT padding, not physical equations
+or the Newton method. Strict h>film_floor, the complete material/elastic
+Jacobian, force border, original sparse preconditioner, selected active
+models, inexact forcing, both feasibility/Armijo stages and stopping gates
+are unchanged. Cached reconstruction explicitly checks the original strict
+film gate. Final SI mass audits still use the original reference flux;
+benchmark audits also recompute reference convolution and sampled direct
+source-cell deformation. Six new regressions cover complete products and
+dense corrections, Schur fallback, final roots, infeasible film, rejected
+trials, active recovery/backup, Krylov failure and continuation retries.
+
+Both modes use NumPy/SciPy on CPU without requiring PyTorch. No CUDA material
+or JFO implementation is added. Tiny FFT roundoff differences can change a
+Krylov iteration count; equal iteration histories are not assumed or forced.
+Matched-field/load convergence is checked with the original tolerances.

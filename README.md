@@ -571,3 +571,15 @@ multigrid or physical-load validation.
 ```bash
 python -m examples.benchmark_multigrid_bordered --output-directory results/multigrid_bordered_new
 ```
+
+### Loaded material/JFO multigrid diagnostic (2026-10-28)
+
+`python -m examples.benchmark_property_block --help` describes the isolated CPU
+comparison of frozen/material/local sparse full-border preconditioners and the
+active pressure/content MG prototype. On three saved 200 N roots and one
+rejected partial, local preconditioning converges while frozen and MG exhaust
+the tested 240-iteration budget with true residuals near one. The prototype is
+not integrated into production Newton solving. Reproduction inputs, setup/action
+and GMRES timings, memory scope and limitations are recorded in roadmap and
+validation report section 30. This is linear diagnostic evidence, not new
+nonlinear, mesh or physical-film validation.

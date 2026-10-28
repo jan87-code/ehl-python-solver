@@ -2583,3 +2583,44 @@ The verified small-grid Schur and full-bordered corrections do not establish
 nonlinear feasibility/globalization, 200 N repair convergence, mesh accuracy,
 performance or physical validation. Production integration requires those
 additional checks.
+
+## Isolated loaded-state block-preconditioner comparison
+
+`examples.benchmark_property_block` compares full bordered inverse surrogates
+with exactly the same complete elastic/material JVP at saved registered 200 N
+states. Source pressure, film and force remain in SI; the internal flattened
+state/corrections are dimensionless P,D,h0/H0 as above. Accepted sources must
+pass the existing independent force/field/film/boundary gates. Failed partials
+are separately recomputed and must remain rejected by the original gates;
+linear convergence never promotes a partial to a nonlinear root. Summary,
+NPZ and packed-state hashes must match between workers, and input bytes and
+state vectors are checked again after each worker's computation.
+
+Each source/mode runs in a fresh child process. All modes use the verified
+cached CPU elasticity implementation and check the complete JVP and residual
+against the original reference before timing solves. Sparse frozen, material
+and local modes factor their existing **full bordered** sparse matrices.
+The diagnostic MG inverse uses its fixed pressure/content action and an
+approximate force Schur complement; an unsafe Schur indicator fails explicitly.
+No sparse inverse is substituted for a failed MG setup. Outer GMRES always
+uses the original complete material/elastic JVP and original load row.
+
+The two RHS vectors are the saved state's negative residual and J*v for a
+fixed-seed normalized known direction. The latter exercises nonzero active
+constraint and force components, and reports forward error as well as true
+linear residual. Reports retain GMRES info, preconditioned histories, JVP
+calls and exhausted solves. JVP counts and GMRES wall time exclude the
+independent post-solve validation call. A linear result is verified only when GMRES
+succeeds and its independently recomputed true relative residual is <=5e-9.
+Only verified directions are compared against the local sparse result.
+
+Inverse setup (including a fresh cached system on the existing physical
+problem), inverse application, and GMRES wall times are separate. A setup and
+inverse-action warm-up are excluded from those samples. OS worker-lifetime
+RSS includes imports, input auditing, warm-up and solves: it is not incremental
+preconditioner memory. Factor/array payloads exclude allocation workspaces;
+MG stored-array totals can count shared storage more than once. The bounded
+restart/cycle settings are diagnostic settings, not changed production limits.
+These full-border timings are not timings of the production block-Schur,
+recovery, nonlinear globalization or continuation paths. No large-mesh resource
+allowance, new pressure root or physical film-height claim follows from them.

@@ -3408,3 +3408,115 @@ Next evidence must compare setup/action cost, memory and true Krylov work
 against sparse preconditioners on loaded accepted/rejected states. Nonlinear
 material/JFO MG, the unresolved 129x193 mesh and physical film accuracy remain
 open; no performance or convergence improvement is claimed here.
+
+
+## 30. Bounded loaded-state block-preconditioner comparison (2026-10-28)
+
+Starting at `1432462`, implemented `examples.benchmark_property_block` and
+independent regression tests, leaving all production numerical paths unchanged.
+The three accepted 200 N roots and one rejected 97x145 partial come from
+preserved commit `a4bee767fe01fc79793c20aec70ae359ea5d13c3`; exact paths and
+reproduction command are in ROADMAP.md. The rejected partial's independently
+recomputed scaled mass maximum is 0.0495271, so it remains rejected regardless
+of linear-solver results.
+
+Sixteen workers each perform three inverse-setup/action measurements and three
+GMRES solves for each of two RHS vectors. Each mode uses cached CPU elasticity,
+checked against the original complete reference JVP and residual. Maximum
+relative JVP discrepancy is 1.58e-16 and maximum residual-entry discrepancy
+4.19e-18. Source summary/state hashes and packed states agree across modes;
+all inputs remain unchanged. No physical state, offset, front or active set is
+rounded, clipped, filtered or updated by this experiment.
+
+The diagnostic budget is restart 60, four cycles (240 inner iterations),
+rtol 1e-9 and independent true relative residual <=5e-9. Both material and
+local full-border preconditioners converge on both RHS vectors in all repeats.
+Frozen and block MG exhaust all 240 iterations in every repeat; their true
+relative residuals range from about 0.998 to 1.000004. This rejects production
+adoption of the current prototype for these states under the tested budget;
+it does not establish failure at every possible Krylov budget or prove why
+these preconditioners stagnate.
+
+Iteration counts are identical across the three repeats. N/K denote the saved
+state Newton RHS and known-direction J*v RHS. All wall times below are medians
+of three observations after inverse warm-up. Timings are machine-dependent;
+workers are sequential, without exclusive machine reservation. Environment:
+Linux x86_64, Intel i7-960 3.20 GHz, Python 3.12.3, NumPy 2.5.4, SciPy 1.18.1,
+BLAS/OpenMP/MKL threads one. Setup includes a new cached system and inverse on
+an existing physical problem, excluding source audit. Application is one full
+bordered surrogate inverse action. GMRES time excludes setup. RSS is OS
+worker-lifetime peak, including imports, audits, warm-up and all measurements.
+
+| Source | Inverse | N/K iterations | Setup ms | Apply ms | Newton GMRES ms | RSS MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 33x49 accepted | frozen | 240/240 (exhausted) | 38.661 | 0.508 | 916.251 | 132.58 |
+| 33x49 accepted | material | 108/93 | 41.833 | 0.517 | 383.910 | 132.89 |
+| 33x49 accepted | local | 22/21 | 43.885 | 0.544 | 76.147 | 131.73 |
+| 33x49 accepted | multigrid | 240/240 (exhausted) | 48.291 | 1.802 | 1260.712 | 129.73 |
+| 65x97 accepted | frozen | 240/240 (exhausted) | 236.707 | 3.959 | 2950.179 | 169.28 |
+| 65x97 accepted | material | 95/76 | 204.054 | 3.531 | 1056.434 | 164.62 |
+| 65x97 accepted | local | 29/28 | 202.026 | 3.377 | 315.874 | 163.54 |
+| 65x97 accepted | multigrid | 240/240 (exhausted) | 163.649 | 2.833 | 2595.726 | 140.07 |
+| 97x145 accepted | frozen | 240/240 (exhausted) | 1142.063 | 13.906 | 8175.946 | 267.36 |
+| 97x145 accepted | material | 85/60 | 880.413 | 12.859 | 2443.633 | 247.94 |
+| 97x145 accepted | local | 33/32 | 1128.426 | 14.133 | 1007.665 | 271.74 |
+| 97x145 accepted | multigrid | 240/240 (exhausted) | 372.936 | 4.621 | 5150.599 | 154.31 |
+| 97x145 rejected | frozen | 240/240 (exhausted) | 1037.825 | 14.374 | 7412.480 | 266.44 |
+| 97x145 rejected | material | 85/83 | 792.604 | 11.809 | 2537.610 | 247.82 |
+| 97x145 rejected | local | 31/32 | 733.833 | 12.701 | 841.973 | 222.50 |
+| 97x145 rejected | multigrid | 240/240 (exhausted) | 366.440 | 4.449 | 5496.641 | 154.57 |
+
+Across verified results, the maximum true residual is 8.26e-10. Known-direction
+relative forward errors are <=6.67e-8 for material and <=1.05e-8 for local;
+small true residual alone is not a forward-error/conditioning guarantee.
+Material/local Newton directions differ by <=2.49e-9 relative L2. No directions
+from exhausted solves are compared as accepted corrections.
+
+At the accepted finest grid, MG stores about 3.46 MiB of reported array payload
+versus 60.31 MiB of local LU factor payload, and has lower measured lifetime
+RSS, but does not solve the system within budget. Array/factor payloads exclude
+workspaces and MG sums can count shared storage more than once. These memory
+observations cannot justify a larger node cap or substitute for convergence.
+
+The experiment factors full sparse borders and compares against an approximate
+MG force-Schur inverse. It does not replay production block-Schur/recovery,
+line searches, active-set exploration or continuation, and does not establish
+nonlinear speedup or new load/mesh convergence. The selected local sparse
+preconditioner remains the useful reference here. Next investigate how to
+retain material and local elastic tangent information in a bounded MG/block
+surrogate; verify the complete operator before any production selection change.
+Physical film accuracy and the 129x193 convergence problem remain open.
+
+Raw output: `results/block_mg_comparison_20261028_final`, with all vectors,
+three-run traces, setup/action samples, source hashes, source snapshot and
+worker reports. `plots/krylov_comparison.png` and `plots/resource_comparison.png`
+show raw measurements and observed ranges without pressure-field filtering;
+both were visually inspected. Input snapshots and original archive provenance
+are in `results/block_mg_inputs_20261028`. These are local/Git-ignored artifacts.
+The measured source snapshot precedes an exception-chaining-only lint cleanup;
+the production numerical modules and measured algorithm are unchanged.
+
+A separate post-run audit reloads all raw vectors, recomputes both RHS vectors
+and true residuals using original reference FFT execution, and checks all
+32 saved directions against the independent seven-term SI mass-flux derivative
+and trapezoidal force direction. It confirms 16 verified and 16 exhausted
+results; maximum relative SI mass-action discrepancy is 5.22e-15 and maximum
+absolute force-row discrepancy is 2.47e-17. Rejected input classification is
+preserved. Audit source, source/report/vector hashes and all individual checks
+are retained in `results/block_mg_comparison_20261028_audit`.
+
+Final verification: `ruff check .` and `git diff --check` pass. Complete CPU
+suite with BLAS/OpenMP/MKL threads one: 459 passed, 62 optional backend/GPU
+skips in 312.52 s. All 30 benchmark/prototype regressions pass in the targeted
+run (19.95 s), including 17 new regressions for dense correction parity,
+independent gates, false-success/exhaustion reporting, source/film/force audit,
+setup rejection and worker-error retention. No GPU ran for this increment.
+
+Local evidence package: `results/block_mg_evidence_20261028_verified.zip`,
+12,078,003 bytes and 151 files, with all SHA-256 manifest entries and ZIP CRCs
+verified. SHA-256:
+`a73459777143a34dd204f2210ff0cd946054ee8310593d32be0495a0279a8b44`.
+It retains input provenance, measured/published sources, raw vectors and traces,
+inspected plots and independent audit. The package is Git-ignored; only code,
+tests and documented evidence/identity are committed, with no asserted
+off-machine archive synchronization.

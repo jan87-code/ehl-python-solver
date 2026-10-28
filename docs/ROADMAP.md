@@ -1600,3 +1600,120 @@ Verification on Linux CPU: repository-wide `ruff check .` and `git diff
 including two transport-rejection tests added after full-suite collection.
 The MG/prototype combined run before those last two cases reports 19 passed.
 No GPU execution or loaded-state performance is asserted by these checks.
+
+## Loaded-state block-MG comparison (2026-10-28)
+
+Continued from `1432462`: added an isolated-process comparison runner for
+frozen/material/local sparse full-border inverses and the active block-MG
+prototype. It uses the complete material/elastic JVP, matched CPU caching,
+independent true-residual checks and a known-direction probe. Accepted roots
+and rejected partials retain separate source audits/classifications; reports
+preserve hashes, raw vectors, Krylov failures, setup/action/solve timings and
+worker-lifetime resident-memory measurements. Production equations, nonlinear
+paths, acceptance gates and resource caps are unchanged.
+
+Reproducible CPU command, from repository root with the optional GPU runtime
+unneeded (the output directory must be new):
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+MPLCONFIGDIR=/tmp/ehl-mpl-cache PYTHONPATH=.:src .venv/bin/python \
+  -m examples.benchmark_property_block \
+  --input-directories \
+    results/block_mg_inputs_20261028/accepted_33x49 \
+    results/block_mg_inputs_20261028/accepted_65x97 \
+    results/block_mg_inputs_20261028/accepted_97x145 \
+    results/block_mg_inputs_20261028/rejected_97x145 \
+  --output-directory results/block_mg_comparison_REPRODUCE \
+  --repeats 3 --restart 60 --cycles 4
+```
+
+Input snapshots were extracted without alteration from preserved commit
+`a4bee767fe01fc79793c20aec70ae359ea5d13c3`. The accepted 33x49 source is
+`results/recovered_200n_20261027/regenerated_load_33x49` (last accepted state
+`attempt_043/solution.npz`); the accepted 65x97 and 97x145 sources are
+`results/content_bound_pivots_20261027/content_pivot_refinement_factor2` and
+`content_pivot_refinement_factor3`; the rejected 97x145 source is
+`results/lookahead_selection_20261027/best_candidate_refinement_factor3`.
+Each input copy includes its original summary and selected state; the local
+input manifest retains original Git paths and SHA-256 hashes. Inputs and
+measurement outputs are Git-ignored, and no prior results are overwritten.
+
+Measured outcome (three observations per worker, four states): material and
+local full-border preconditioning pass both complete-JVP RHS checks in all
+repeats. Local Newton iterations are 22/29/33 on accepted 33x49/65x97/97x145
+roots and 31 on the rejected 97x145 partial; material takes 108/95/85/85.
+Frozen and block MG exhaust 240 iterations on both RHS vectors throughout,
+with true residuals near one. The current prototype is therefore not selected
+for production. Lower MG payload/RSS does not compensate for failure to solve.
+Exact timing, memory, forward-error and correction-parity results are in
+validation report section 30; raw traces, source/vector hashes and inspected
+plots are retained in `results/block_mg_comparison_20261028_final`.
+
+Next bounded step: investigate a diagnostic pressure/content inverse that
+retains material and local elastic tangent information, comparing it against
+this measured reference with complete-JVP/force checks before considering
+production integration. Keep existing local sparse preconditioning and every
+nonlinear, physical and resource gate unchanged. No additional mesh is accepted
+and no physical film-height or GPU material/JFO claim is added.
+
+A separate original-FFT/SI-flux audit of all 32 saved directions confirms the
+reported passing/exhausted classification; maximum independent mass-action
+error is 5.22e-15 relative. Evidence and its reproduction script are retained
+in `results/block_mg_comparison_20261028_audit`.
+
+To recover the four input snapshots on a fresh clone, fetch the preserved
+archive branch, then extract only the original summaries and selected states:
+
+```bash
+git fetch origin feature/hip-backend
+python - <<'PY'
+import json
+import subprocess
+from pathlib import Path
+
+commit = "a4bee767fe01fc79793c20aec70ae359ea5d13c3"
+root = Path("results/block_mg_inputs_20261028")
+root.mkdir(parents=True, exist_ok=False)
+paths = {
+    "accepted_33x49": "results/recovered_200n_20261027/regenerated_load_33x49",
+    "accepted_65x97": "results/content_bound_pivots_20261027/content_pivot_refinement_factor2",
+    "accepted_97x145": "results/content_bound_pivots_20261027/content_pivot_refinement_factor3",
+    "rejected_97x145": "results/lookahead_selection_20261027/best_candidate_refinement_factor3",
+}
+for name, source in paths.items():
+    summary = subprocess.check_output(["git", "show", f"{commit}:{source}/summary.json"])
+    data = json.loads(summary)
+    accepted = [e for e in data["grids"]["refined"]["attempts"]
+                if e.get("accepted") and abs(e.get("load_n", 0)/200-1) <= 1e-8]
+    state = accepted[-1]["state_file"] if accepted else "failed_partial.npz"
+    for relative, content in (
+        ("summary.json", summary),
+        (state, subprocess.check_output(["git", "show", f"{commit}:{source}/{state}"])),
+    ):
+        target = root / name / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+PY
+```
+
+This reads preserved Git objects without switching branches or replacing source
+code. The benchmark recomputes original field/force/film audits and records
+input hashes before accepting any classification. No generated state is
+reconstructed from correlations or promoted by interpolation.
+
+Verification: repository-wide Ruff and whitespace checks pass. Complete Linux
+CPU suite: 459 passed, 62 optional backend/GPU skips (312.52 s), with
+BLAS/OpenMP/MKL threads one. Thirty benchmark/prototype regressions also pass
+as a targeted run (19.95 s). The 17 new benchmark regressions independently
+check dense full-border parity, exact active/force rows, true-JVP corrections,
+false-success/exhaustion reporting, source mutation/film/force gates, setup
+rejection and retained worker failures. No GPU execution is asserted.
+
+Local evidence archive: `results/block_mg_evidence_20261028_verified.zip`,
+12,078,003 bytes, 151 files; every manifest member SHA-256 and ZIP CRC verified.
+Archive SHA-256:
+`a73459777143a34dd204f2210ff0cd946054ee8310593d32be0495a0279a8b44`.
+It contains exact original inputs/provenance, raw comparison vectors/traces,
+measured source snapshot, inspected plots, independent audit and published
+validation source. The archive is Git-ignored; no off-machine copy is asserted.

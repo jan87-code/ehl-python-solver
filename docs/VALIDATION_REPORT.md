@@ -3217,3 +3217,13 @@ in 208.07 s**. The skip is the existing Windows wider-longdouble diagnostic.
 All 17 new candidate/cached regressions also pass with torch imports blocked
 (4.57 s). Material/JFO CUDA solving, mesh convergence, larger reservoirs and
 physical film accuracy remain open.
+
+The local `results/transport_cached_20261028_verified.zip` retains the new
+carrier/front and reservoir evidence, isolated transport/resource benchmark,
+repeated cached repairs, prior verified recovery ZIP and exact source snapshot
+at `6336876c19a567d6b983f41c5b82a50028c902ae`. All 199 payload files pass
+SHA-256 rehashing from the archive and ZIP CRC verification. Size: 19,502,445
+bytes; archive SHA-256:
+`fb4f12ec66659b30e25ba8e8b3f5d8aae9151506339a7c570876cd3aa5c6a035`.
+Generated data remain Git-ignored. This is verified local packaging;
+off-machine backup or OneDrive synchronization has not been confirmed.

@@ -1390,3 +1390,10 @@ An explicit simulated interruption at the accepted 186.375 N root resumes
 through four newly audited steps to 200 N; final pressure differs by
 6.65e-12 relative L2 and offset by 1.27e-18 m from the cold path. The
 loaded-root audit also passes with torch imports deliberately blocked.
+
+Recovery package: `results/recovery_20261028_verified.zip` (7,887,923 bytes),
+343 files verified against its SHA-256 manifest and ZIP CRCs, including exact
+source snapshot at 47f70c2ae19b64d5cc065846a3ce4698347bacb2. Archive SHA-256:
+`10c55aab7b0f963d9713db798f57fc80bfa22ecf40924510c9c5a9abb39beaf6`.
+The package is local/Git-ignored; only the reproducible code, evidence and
+archive identity are committed. No off-machine synchronization is asserted.

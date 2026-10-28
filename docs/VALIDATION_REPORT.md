@@ -2968,3 +2968,14 @@ Verification: `ruff check .` clean; complete Windows CPU/CUDA `pytest -q`
 skips because Windows longdouble has no additional mantissa precision. Six
 new independent diagnostic regressions pass; physical/model accuracy remains open.
 The loaded-root audit additionally passes with torch imports deliberately blocked.
+
+The local `results/recovery_20261028_verified.zip` packages the three cold/
+refined roots and audits, loaded diagnostics, simulated resume check and exact
+source/test/documentation snapshot at commit
+`47f70c2ae19b64d5cc065846a3ce4698347bacb2`. All 343 payload files were
+independently rehashed from the ZIP against the included manifest, and ZIP CRC
+verification passes. Size: 7,887,923 bytes. Archive SHA-256:
+`10c55aab7b0f963d9713db798f57fc80bfa22ecf40924510c9c5a9abb39beaf6`.
+The ZIP and raw fields are not in Git; their identity and regeneration
+instructions are. This is verified local packaging, not confirmation of
+an off-machine backup or OneDrive synchronization.

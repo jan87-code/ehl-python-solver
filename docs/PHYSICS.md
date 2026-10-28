@@ -2410,3 +2410,46 @@ roundoff on these cases. Inlet and transverse boundary mass flows change
 substantially despite small inner-film changes; net balance still passes.
 This limited sensitivity range is smaller than the existing mesh changes,
 but proves neither infinite-domain convergence nor physical film accuracy.
+
+## Isolated donor-capacity transport candidate (2026-10-28)
+
+`transport_candidate` is an experimental CPU component, not a solver option.
+With c=rho*h and m=rho*h^3/(12*eta), its +x face flux is
+`-average(m)*(p_right-p_left)/dx + Ue*(c*theta)_left`.
+The y diffusion flux, arithmetic mobility and finite-volume divergence are
+unchanged mathematically. The production reference uses
+`Ue*average(c)*theta_left`. Consequently the exact candidate-minus-reference
+x-face flux is `-Ue/2*(c_right-c_left)*theta_left`.
+Both use single shared face fluxes, so volume-weighted divergence telescopes
+to outward boundary mass flow on uniform or nonuniform rectilinear axes.
+Public pressure, film and flux units remain Pa, m and kg/(m s); interior
+divergence is kg/(m^2 s), fields (ny,nx), entrainment +x. No field is clipped.
+
+At a uniform full-film state, the candidate density-advection pressure symbol
+is `Ue*h*rho_p*(1-exp(-i*xi))/dx`, versus the reference
+`i*Ue*h*rho_p*sin(xi)/dx`. The donor symbol adds positive real part
+`Ue*h*rho_p*(1-cos(xi))/dx` for rho_p>0, including a nonzero two-cell response.
+For smooth capacity it adds a leading `-Ue*dx/2 * dxx(c)` term to divergence:
+this is first-order numerical diffusion, not physical diffusion. Neither
+symbol models the entire elastic/material/cavitation Jacobian or temporal
+stability. Constant capacity recovers the reference exactly; stationary
+constant-property p=0 and h*theta=constant gives constant donor flux.
+
+Manufactured prescribed fields use linear p and trigonometric positive h,
+with either theta=1 or smooth varying theta. Their continuum source is
+derived analytically, without discrete differentiation. At zero constitutive
+strength, `div(q)=-rho*h^2/(4*eta)*(hx*px+hy*py)
++Ue*rho*(hx*theta+h*theta_x)` for this linear pressure. On 33..257 square
+grids the reference is second order for theta=1; the donor is first order.
+Both are first order when theta varies. These source-driven prescribed fields
+are not complementarity or EHL roots. Analytic donor flux directions include
+all material, pressure, film and content variations, verified independently
+at constant and full constitutive strength. The loaded-state checks supply
+the full unchanged elastic film direction; nonsmooth complementarity and
+Newton globalization are outside the candidate component.
+
+The accepted 200 N reference roots fail the candidate mass gate. They cannot
+be relabelled candidate solutions. Before a candidate Newton comparison,
+implement and verify its own residual, boundary Jacobian, frozen operator,
+bordered correction and original globalization/acceptance checks. Current
+evidence does not justify changing the reference transport stencil.

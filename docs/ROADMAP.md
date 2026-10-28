@@ -1452,3 +1452,36 @@ Verification: Ruff clean; complete Windows CPU/CUDA suite 453 passed, one
 skipped (237.98 s). The existing wider-longdouble diagnostic skips because
 Windows supplies no extra precision. Fourteen new CPU regressions cover the
 diagnostics and reservoir initialization/repair; optional torch remains optional.
+
+## Isolated transport alternative and resource measurements (2026-10-28)
+
+Starting at 6ff85dc, independently checked a conservative donor-capacity
+candidate and analytic smooth flux JVP. Production stencils and Newton paths
+remain unchanged. Nonuniform telescoping, scalar faces, constant-capacity
+parity, stationary h*theta, discrete symbols, full/zero-material JVPs and
+manufactured continuum-source tests pass. Forty-three loaded elastic/front
+directions pass; no candidate root or physical improvement is established.
+The candidate adds first-order numerical diffusion and loses the reference's
+second-order full-film smooth capacity transport. A nonzero alternating
+density-advection response is insufficient grounds for adoption.
+
+Measured the existing local preconditioner block and bordered fallback at
+the three accepted meshes. Finest sparse LU payloads are about 14/60 MiB;
+81 float64 state vectors require 16.8 MiB. Payloads exclude peak workspaces;
+they do not validate larger meshes or CUDA memory use. Matrix-free storage
+remains essential: the finest dense full Jacobian would require 5.50 GiB.
+No node cap or nonlinear budget is raised.
+
+The existing cached FFT-friendly ElasticityOperator reproduces accepted
+deformation to <4.9e-16 relative error. Isolated timings identify reusable
+spectra and FFT padding as a promising CPU improvement before a GPU port.
+These timings are not an integrated solver speedup. Material/JFO remains
+CPU-only, while existing optional CUDA tests retain their prior scope.
+
+Next bounded milestone: integrate the already verified reusable elastic
+operator behind an explicit reference/cached CPU comparison, verify full
+bordered products/corrections/globalization and matched-force roots, and
+measure actual peak process memory and Krylov work before any >20,000-node
+trial. Separately investigate a conservative higher-order transport option
+with smooth-source and front/positivity checks; retain the donor candidate
+as a diagnostic baseline. Mesh/domain and physical film accuracy remain open.

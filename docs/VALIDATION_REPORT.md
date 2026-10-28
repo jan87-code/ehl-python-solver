@@ -3065,3 +3065,83 @@ regressions pass, including independent discrete Fourier symbols, exact
 one-sided ties, reflected reformation, integer-input dtype handling and
 same-spacing reservoir repair. The two new test modules also pass with
 torch imports deliberately blocked. No full physical EHL validation is claimed.
+
+## 25. Isolated donor transport and existing solver resource audit (2026-10-28)
+
+Starting from 6ff85dc, `transport_candidate` provides an independently tested
+conservative donor-capacity flux and its analytic smooth direction. It is
+not a production solver option. The original centered-capacity/upstream-content
+flux, material laws, boundaries, Newton/globalization, physical gates and
+20,000-node cap remain unchanged. README and PHYSICS give equations and
+reproduction instructions.
+
+Eleven new tests cover independently evaluated scalar x/y faces, nonuniform
+control-volume telescoping, material/constant-law JVPs, constant-capacity
+reference parity, stationary p=0 and h*theta=constant, invalid inputs, and
+manufactured-source orders. Donor density-advection symbols are independently
+checked at 2/4/8/16 cells per wavelength, including their real numerical-
+diffusion term and nonzero Nyquist response. These are not full EHL stability
+results. The source-driven manufactured fields need not satisfy complementarity.
+
+On 33/65/129/257 square manufactured grids, the finest full-film divergence
+relative L2 errors are 1.00405e-4 for the reference and 1.27170e-2 for the
+donor. Last observed orders are 1.99986 and 1.00559. With varying content,
+errors are .00491706 and .01265527, orders 1.00070 and 1.00569. Thus a
+first-order donor cannot be presented as an accuracy improvement over the
+second-order full-film reference merely because it adds alternating-mode
+response. It also does not establish why the loaded pressure pattern occurs.
+
+At the three accepted 200 N roots, 43 full-elastic carrier/front flux
+directions pass independent residual differences: maximum best error
+8.01e-9. Front probes use positive, second-order forward samples and preserve
+original field bounds; perturbed states are not roots. Exact candidate-minus-
+reference face-flux identities agree to 5.87e-14 relative. The unchanged
+accepted fields have candidate scaled mass maxima .00372048, .00466458 and
+.00575769, far above the original 1e-8 gate. No candidate nonlinear solution
+or physical improvement has been demonstrated.
+
+The same benchmark measures the current CPU local sparse preconditioner and
+existing residual/JVP paths on these saved roots. Windows Python 3.12.9,
+NumPy 2.5.4, SciPy 1.18.1, one BLAS/OpenMP thread; five timed evaluations
+after one excluded warm-up. Assembly/factorization are single measurements.
+Timings vary between runs and do not include a nonlinear solve.
+
+| (ny,nx) | Reference mass residual ms | Candidate mass residual ms | Existing full JVP ms | Existing film direction ms | Existing cached fast elasticity ms |
+|---|---:|---:|---:|---:|---:|
+| 33x49 | .322 | .350 | 6.315 | 2.971 | .664 |
+| 65x97 | .460 | .794 | 12.654 | 6.092 | 1.367 |
+| 97x145 | .800 | 1.212 | 38.852 | 21.213 | 4.184 |
+
+Candidate residual evaluation was slower on all three meshes in this run.
+The last two columns are different isolated calls: the film direction also
+constructs the supplied pressure direction, while the cached operator takes
+a ready pressure field. Their ratio is not a solver speedup. Cached ordinary-
+padding and the already existing FFT-friendly ElasticityOperator were both
+checked against the accepted deformation. The latter agrees to 4.89e-16
+relative and uses FFT shapes 98x147, 196x294 and 294x440; this benchmark does
+not activate it in the material solver.
+
+| (ny,nx) | Block LU payload MiB | Bordered LU payload MiB | 81 state vectors MiB | Block/bordered factorization ms |
+|---|---:|---:|---:|---:|
+| 33x49 | .816 | 1.513 | 1.801 | 5.32 / 9.71 |
+| 65x97 | 4.931 | 12.231 | 7.398 | 23.45 / 69.58 |
+| 97x145 | 13.981 | 60.161 | 16.791 | 80.51 / 528.20 |
+
+The block is the primary pressure/content preconditioner; the bordered factor
+is the fallback. Independently recomputed factor-solve relative residuals
+are below 2.75e-16. Sparse data/index/pointer payloads and default restart-80
+basis estimates exclude temporary workspaces, additional vectors, Python,
+FFT buffers and allocator peaks. They are neither peak process memory nor
+CUDA VRAM measurements. Finest dense full-Jacobian storage would be 5.50 GiB
+and is not allocated. These measurements support further profiling, not an
+unverified cap increase or extrapolated larger-grid convergence.
+
+Evidence: `results/transport_candidate_20261028_final_verified`, including
+source hashes, analytical-source errors, individual direction differences,
+all timing samples, storage estimates and raw divergence arrays. Exploratory
+and incomplete runs remain separately preserved. Verification: Ruff clean;
+complete CPU/CUDA pytest **464 passed, one skipped in 207.86 s**. The existing
+Windows wider-longdouble test skips; no tolerance was weakened. Next: verify
+cached CPU elasticity inside the bordered workflow and measure complete
+solve/peak memory before expanding grids; benchmark a higher-order conservative
+transport alternative separately. Material/JFO GPU support remains open.

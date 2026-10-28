@@ -493,3 +493,21 @@ python -m examples.run_material_reservoir --audit-only --input-directory results
 Use one BLAS/OpenMP thread and new output paths. The study retains raw
 initializations, roots, histories, flow budgets and shared-node differences.
 See validation-report section 24 and PHYSICS.md for the metrics and limits.
+
+An isolated donor-capacity transport candidate now has independent conservation,
+manufactured-source, Fourier-symbol and elastic-direction checks. It transports
+`Ue*(rho*h*theta)_left`, while retaining the reference pressure-diffusion flux.
+It is **not selected by any production solver**. It is first order and loses
+the reference's second-order smooth full-film capacity transport. Its nonzero
+alternating density-advection response alone does not justify adoption.
+
+```bash
+python -m examples.benchmark_transport_candidate --input-directories results/source_200n_new results/refined_200n_new results/fine_200n_new --output-directory results/transport_candidate_new
+```
+
+This CPU study also measures the existing local sparse preconditioner, basis
+storage and isolated residual/JVP/elasticity costs. It checks the already
+available cached FFT-friendly elasticity operator against the saved roots;
+no solver performance change or node-cap increase is enabled. Sparse payloads
+are storage lower bounds, not peak-memory measurements. See validation-report
+section 25 for the accuracy tradeoff, timings and remaining integration work.

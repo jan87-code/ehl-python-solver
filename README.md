@@ -583,3 +583,14 @@ not integrated into production Newton solving. Reproduction inputs, setup/action
 and GMRES timings, memory scope and limitations are recorded in roadmap and
 validation report section 30. This is linear diagnostic evidence, not new
 nonlinear, mesh or physical-film validation.
+
+The follow-up exact active-row reduction retains all material/local mass
+couplings and reproduces the corresponding full-LU iteration counts in the
+loaded-state diagnostic. On the accepted 97x145 case, local reduced setup and
+application take about 1/3.93 and 1/4.61 of full-border LU time, with lower
+measured worker-lifetime RSS. Tangent MG passes the coarsest case but remains
+unreliable on other states. Both remain diagnostic options; production Newton
+integration and its nonlinear recovery/physical gates are still to be tested.
+Use `--modes local material local-reduced material-reduced local-mg material-mg`
+for the explicit comparison. Validation report section 31 records the scope
+and evidence; the historical four-mode default remains unchanged.

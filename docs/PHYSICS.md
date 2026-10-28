@@ -2624,3 +2624,52 @@ restart/cycle settings are diagnostic settings, not changed production limits.
 These full-border timings are not timings of the production block-Schur,
 recovery, nonlinear globalization or continuation paths. No large-mesh resource
 allowance, new pressure root or physical film-height claim follows from them.
+
+## Diagnostic tangent-preserving reduced blocks
+
+`property_tangent_multigrid` adds separate reduced-LU controls and a
+nonsymmetric MG prototype. Physical inputs retain SI units and the existing
+`(ny,nx)` grid convention with +x entrainment. Internal state/corrections use
+P=p/p_ref, D=1-theta and h0/H0, with C-order interior fields. These classes do
+not enter production Newton/globalization or continuation.
+
+Write the scaled sparse mass Jacobian as A*dP+B*dD, full-film selector F,
+and cavitated selector C=I-F. Complementarity rows prescribe dP_C and dD_F
+from any RHS, not just zero constraints. Subtract these known mass columns,
+then solve `K*u=b_mass-A*dP_C-B*dD_F`, where `K=A*F+B*C`.
+Reconstruct dP=dP_C+F*u and dD=dD_F+C*u. This retains *every* mass coupling
+from the existing sparse material/local assembly, including cavitated-content
+columns in full-cell mass rows. It does not approximate the nonlinear minimum
+or change the chosen active set. Physical pressure/content arrays are never
+projected or clipped.
+
+`PropertyTangentLU` explicitly factors this n-by-n sparse matrix as an algebraic
+control. With the original complete offset column and force row, exact field
+inversion and a scalar Schur reconstruction reproduce the existing 2n+1
+sparse bordered surrogate. Only its factorization representation changes;
+the complete matrix-free elastic/material Jacobian stays the outer operator.
+This is a diagnostic control, never a fallback for MG failure. A singular
+reduced block or unsafe force Schur indicator is rejected explicitly.
+
+`PropertyTangentMultigrid` uses the same K, including either material or local
+cell-self elastic pressure tangents. Fine signed row/max-column equilibration
+produces `D_r*K*D_c`; its inverse action maps back with D_c and D_r. Bilinear
+interpolation and transpose restriction act on scaled *mixed corrections*,
+with Galerkin coarse matrices. These corrections mix full-cell pressure and
+cavitated-cell deficit roles; they are not coarse physical films or states.
+No SPD or contraction guarantee applies. Fixed ILU defect correction uses
+NATURAL ordering, basic/area dropping, drop_tol=1e-4, explicit fill factor 2
+(default, bounded 1..4), and two pre/post sweeps. Exact sparse coarse LU is
+bounded to <=64 unknowns by default (maximum configurable 256). Setup errors
+identify the failed level and size; no shifts, diagonal regularization,
+state clipping or automatic LU fallback conceal factorization failure.
+The fixed cycle starts from zero, so outer GMRES sees a linear inverse.
+
+The original frozen `PropertyBlockMultigrid` and SPD `ReynoldsMultigrid`
+remain unchanged references. The benchmark's historical four-mode default is
+preserved; explicit `--modes` enables material-mg/local-mg and the corresponding
+material-reduced/local-reduced LU controls, retaining the local sparse reference.
+Fine-block LU success does not establish robustness of a nonsymmetric coarse
+hierarchy. All candidate corrections require complete true-JVP/force checks,
+and production integration still requires strict film feasibility, both line
+searches, recovery/continuation tests and independent final physical gates.

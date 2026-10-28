@@ -24,12 +24,22 @@ from ehl_solver.benchmark_200n import Circular200N
 from ehl_solver.property_block_multigrid import PropertyBlockMultigrid
 from ehl_solver.property_load_newton import PropertyLoadSystem
 from ehl_solver.property_reynolds import admissible, mass_audit
+from ehl_solver.property_tangent_multigrid import PropertyTangentLU, PropertyTangentMultigrid
 from examples.audit_transport_wavelengths import load_root
 from examples.benchmark_cached_material import peak_memory
 from examples.run_load_directed_200n import finite_json
 from examples.run_scientific_validation import provenance, save_json
 
-MODES = ("frozen", "material", "local", "multigrid")
+MODES = ("frozen", "material", "local", "multigrid", "material-mg", "local-mg",
+         "material-reduced", "local-reduced")
+DEFAULT_MODES = ("frozen", "material", "local", "multigrid")
+
+
+def preconditioner_mode(mode):
+    if mode not in MODES:
+        raise ValueError("unknown diagnostic inverse mode")
+    return {"multigrid": "frozen", "material-mg": "material", "local-mg": "local",
+            "material-reduced": "material", "local-reduced": "local"}.get(mode, mode)
 
 
 def digest(path):
@@ -98,19 +108,27 @@ def sparse_bytes(matrix):
 def build_inverse(system, state, mode):
     """Full bordered inverse surrogate; no fallback on MG or border failure.
 
-    Sparse modes factor the full existing frozen/material/local border. MG
+    material-mg/local-mg retain the respective sparse pressure tangent and all
+    mass coupling in a nonsymmetric reduced hierarchy. multigrid retains the
+    earlier frozen SPD pressure/content prototype. Sparse modes factor the
+    full existing frozen/material/local border. MG
     uses one fixed pressure/content action plus its approximate force Schur
     complement. These timings do not reproduce production block-Schur/retry work.
     """
-    if mode not in MODES or system.preconditioner != ("frozen" if mode == "multigrid" else mode):
+    if system.preconditioner != preconditioner_mode(mode):
         raise ValueError("mode and system preconditioner must match")
-    if mode != "multigrid":
+    if mode in ("frozen", "material", "local"):
         lu = splu(system.frozen_matrix(state))
         payload = sparse_bytes(lu.L)+sparse_bytes(lu.U)+lu.perm_r.nbytes+lu.perm_c.nbytes
         return LinearOperator((system.size, system.size), matvec=lu.solve, dtype=np.float64), {
             "factor_payload_bytes": payload,
         }
-    block = PropertyBlockMultigrid(system, state)
+    if mode == "multigrid":
+        block = PropertyBlockMultigrid(system, state)
+    elif mode.endswith("-reduced"):
+        block = PropertyTangentLU(system, state)
+    else:
+        block = PropertyTangentMultigrid(system, state)
     column_direction = np.zeros(system.size)
     column_direction[-1] = 1.
     column = system.jacobian_vector(state, column_direction)[:-1]
@@ -127,10 +145,28 @@ def build_inverse(system, state, mode):
         offset = (rhs[-1]-row@fields)/schur
         return np.r_[fields-response*offset, offset]
 
-    payload = sum(sparse_bytes(a) for a in (block.pressure, block.content, block.transport))
+    payload = sparse_bytes(block.pressure)+sparse_bytes(block.content)
+    if mode == "multigrid":
+        payload += sparse_bytes(block.transport)
     payload += block.full.nbytes+block.cavitated.nbytes+response.nbytes+row.nbytes
+    if mode.endswith("-reduced"):
+        factor = block.factor
+        factors = sum(sparse_bytes(a) for a in (factor.L, factor.U))
+        factors += factor.perm_r.nbytes+factor.perm_c.nbytes
+        payload += sparse_bytes(block.reduced)+factors
+        return LinearOperator((system.size, system.size), matvec=apply, dtype=np.float64), {
+            "array_payload_bytes": payload, "factor_payload_bytes": factors,
+            "approximate_schur_indicator": indicator, "reduced_unknowns": system.n,
+            "field_solver": "explicit exact reduced sparse LU control; no MG fallback",
+        }
+    if mode != "multigrid":
+        payload += sparse_bytes(block.reduced)+sparse_bytes(block.multigrid.matrix)
+        payload += block.multigrid.row_scale.nbytes+block.multigrid.column_scale.nbytes
+        payload += block.multigrid.diagnostics["factor_payload_bytes"]
     for level in block.multigrid.levels:
-        payload += sparse_bytes(level["matrix"])+level["diagonal"].nbytes
+        payload += sparse_bytes(level["matrix"])
+        if "diagonal" in level:
+            payload += level["diagonal"].nbytes
         if "prolongation" in level:
             payload += sparse_bytes(level["prolongation"])
         if "cholesky" in level:
@@ -190,7 +226,7 @@ def worker(source, directory, mode, repeats, restart, cycles):
     def setup():
         system = PropertyLoadSystem(original.problem, original.base.fluid, original.base.speed,
                                     original.target_load_n,
-                                    preconditioner="frozen" if mode == "multigrid" else mode,
+                                    preconditioner=preconditioner_mode(mode),
                                     elasticity_mode="cached")
         inverse, metadata = build_inverse(system, state, mode)
         return system, inverse, metadata
@@ -278,7 +314,10 @@ def compare_saved_directions(row, directory, index):
     row["verified_direction_relative_differences_to_local"] = comparisons
 
 
-def main(sources, directory, repeats, restart, cycles):
+def main(sources, directory, repeats, restart, cycles, modes=DEFAULT_MODES):
+    if (not modes or "local" not in modes or len(set(modes)) != len(modes)
+            or any(mode not in MODES for mode in modes)):
+        raise ValueError("unique supported modes including local reference required")
     directory.mkdir(parents=True, exist_ok=False)
     report = {"status": "incomplete", "runtime": provenance(), "cases": [],
               "scope": "isolated CPU full-bordered solves; not production Newton timings"}
@@ -287,7 +326,7 @@ def main(sources, directory, repeats, restart, cycles):
     for index, source in enumerate(sources):
         row = {"source_directory": str(source), "modes": {}}
         report["cases"].append(row)
-        for mode in MODES:
+        for mode in modes:
             target = directory / f"source_{index}_{mode}"
             command = [sys.executable, "-m", "examples.benchmark_property_block",
                        "--input-directories", str(source), "--output-directory", str(target),
@@ -315,6 +354,7 @@ if __name__ == "__main__":
     parser.add_argument("--input-directories", nargs="+", type=Path, required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--worker-mode", choices=MODES)
+    parser.add_argument("--modes", nargs="+", choices=MODES, default=DEFAULT_MODES)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--restart", type=int, default=60)
     parser.add_argument("--cycles", type=int, default=4)
@@ -327,4 +367,5 @@ if __name__ == "__main__":
         worker(args.input_directories[0], args.output_directory, args.worker_mode,
                args.repeats, args.restart, args.cycles)
     else:
-        main(args.input_directories, args.output_directory, args.repeats, args.restart, args.cycles)
+        main(args.input_directories, args.output_directory, args.repeats, args.restart,
+             args.cycles, args.modes)

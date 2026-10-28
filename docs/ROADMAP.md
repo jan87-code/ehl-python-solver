@@ -1717,3 +1717,78 @@ Archive SHA-256:
 It contains exact original inputs/provenance, raw comparison vectors/traces,
 measured source snapshot, inspected plots, independent audit and published
 validation source. The archive is Git-ignored; no off-machine copy is asserted.
+
+## Tangent-preserving active reduction and nonsymmetric MG (2026-10-28)
+
+Continued from `9150695`: independently implemented exact active-row
+elimination with all material/local pressure and content mass couplings.
+The n-unknown reduced block supports two explicitly selected diagnostics:
+exact sparse LU, and a fixed nonsymmetric geometric Galerkin V-cycle with
+ILU smoothing and bounded coarse LU. Neither is wired into production Newton.
+Original frozen block MG, SPD Reynolds MG, residual/JVP, material laws, force
+row, nonlinear budgets/gates and physical node caps remain unchanged.
+
+The diagnostic runner retains its four historical default modes. To compare
+new tangent hierarchies and exact-reduction controls with both sparse references:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+MPLCONFIGDIR=/tmp/ehl-mpl-cache PYTHONPATH=.:src .venv/bin/python \
+  -m examples.benchmark_property_block \
+  --input-directories \
+    results/block_mg_inputs_20261028/accepted_33x49 \
+    results/block_mg_inputs_20261028/accepted_65x97 \
+    results/block_mg_inputs_20261028/accepted_97x145 \
+    results/block_mg_inputs_20261028/rejected_97x145 \
+  --output-directory results/tangent_block_comparison_REPRODUCE \
+  --modes local material local-reduced material-reduced local-mg material-mg \
+  --repeats 3 --restart 60 --cycles 4
+```
+
+Use the existing unchanged input recovery instructions above; every output
+directory must be new. Failed setup, exhausted solves and rejected physical
+input classifications remain explicit. No coarse correction is interpreted as
+a new physical state, and no failing MG inverse invokes the reduced-LU control.
+
+Measured outcome: exact reduced LU retains both sparse references' iteration
+counts on all four states and both RHS vectors. At the accepted 97x145 grid,
+local inverse setup/application are 3.93x/4.61x faster, worker-lifetime RSS falls
+271.97 -> 164.32 MiB, and factor payload falls 60.31 -> 5.79 MiB. This is an
+isolated full-border diagnostic, not an integrated nonlinear speedup or a
+validated larger-grid memory allowance. All original force/mass/film gates
+and the rejected input's classification are unchanged.
+
+Local tangent MG passes the 33x49 case (47/41 Newton/known-vector iterations),
+but stalls at 240 on 97x145 and has coarse ILU failure on 65x97 and the rejected
+partial. Material-only MG stalls on 33x49 and has coarse setup failures on the
+other inputs. No regularization or fallback hides those outcomes. Exact
+active-row algebra is verified independently; the mixed geometric hierarchy
+is not robust enough for production.
+
+A separate audit rechecks all 38 saved directions, confirms 34 passing/four
+exhausted classifications, and retains five setup rejections. Independent SI
+mass-action error is <=7.05e-15 relative; eight full/reduced inverse comparisons
+also pass with sparse-surrogate residual <=1.85e-16. See validation report
+section 31 for timings, memory scope, action differences and limitations.
+Raw outputs/source snapshots and audit scripts are retained in new
+`results/tangent_block_comparison_20261028_final` and `_audit` directories.
+
+Next: introduce exact reduced LU as an explicit optional field preconditioner
+with complete Newton feasibility/globalization/recovery/continuation tests and
+independent matched-force audits. Retain the current production default and
+fallback behavior until those checks pass. Treat phase-aware coarse spaces
+and robust nonsymmetric MG as separate research work; neither unresolved mesh
+accuracy nor physical film-height validation is advanced by linear speedups.
+
+Verification: complete Linux CPU suite 499 passed, 62 optional backend/GPU skips
+(333.63 s), with BLAS/OpenMP/MKL threads one. The targeted tangent/benchmark
+run reports 57 passed (15.86 s), covering 36 new tangent tests and extended
+benchmark paths. Repository-wide Ruff and whitespace checks pass; both raw
+cost/status figures were visually inspected. No GPU execution is asserted.
+
+Local evidence archive: `results/tangent_block_evidence_20261028_verified.zip`,
+13,233,407 bytes, 162 files; all SHA-256 manifest entries and ZIP CRCs verified.
+SHA-256: `939061f061cf1679bf65a1e1c450ea1dce13cdd0d0b4e46972e39db4da48a514`.
+It retains unchanged inputs/provenance, exact measured sources, all worker
+reports/vectors, inspected plots, independent audit and validation source.
+Generated data/archive remain Git-ignored; no off-machine copy is asserted.

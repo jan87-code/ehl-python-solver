@@ -59,7 +59,7 @@ def test_mg_border_inverse_linearity_exact_force_and_active_rows(case):
 
 @pytest.mark.parametrize("mode", benchmark.MODES)
 def test_true_complete_jvp_solve_against_dense_reference(case, mode):
-    system, state = make_system(case, "frozen" if mode == "multigrid" else mode)
+    system, state = make_system(case, benchmark.preconditioner_mode(mode))
     inverse, _ = benchmark.build_inverse(system, state, mode)
     dense = np.column_stack([system.jacobian_vector(state, e) for e in np.eye(system.size)])
     known = np.random.default_rng(32).normal(size=system.size)
@@ -162,7 +162,7 @@ def test_parent_retains_worker_errors_and_finishes_other_modes(tmp_path, monkeyp
     output = tmp_path / "comparison"
     with pytest.raises(RuntimeError, match="worker error"):
         benchmark.main([tmp_path / "source"], output, 1, 2, 1)
-    assert calls == list(benchmark.MODES)
+    assert calls == list(benchmark.DEFAULT_MODES)
     report = json.loads((output / "summary.json").read_text())
     assert report["status"] == "worker errors; incomplete"
     assert all(row["worker_returncode"] == 1 for row in report["cases"][0]["modes"].values())

@@ -3520,3 +3520,132 @@ It retains input provenance, measured/published sources, raw vectors and traces,
 inspected plots and independent audit. The package is Git-ignored; only code,
 tests and documented evidence/identity are committed, with no asserted
 off-machine archive synchronization.
+
+
+## 31. Exact tangent-block reduction and nonsymmetric MG controls (2026-10-28)
+
+Starting from `9150695`, implemented exact active-row elimination of the
+existing sparse material/local mass matrix, plus explicit reduced-LU controls
+and a separate nonsymmetric Galerkin/ILU prototype. Physics, nondimensionalization
+and the complete mass/content/force algebra are specified in PHYSICS.md. These
+components remain diagnostics; no production nonlinear code, acceptance gate,
+node cap, stencil or material law changes.
+
+Tests compare the reduced mass matrix with independently selected original
+columns and solve the full sparse-surrogate dense system for arbitrary RHS.
+Full, cavitated, front and disconnected active sets exercise nonzero active
+constraint rows. Tests include signed/heterogeneous equilibration, exact
+Galerkin identities, fixed-cycle linearity, multilevel known-vector recovery,
+constant-property limits, complete elastic/material/load products and dense
+bordered corrections. Invalid/singular/nonfinite cases and injected factor
+failures propagate without fine-LU/reduced-LU fallback.
+
+Twenty-four isolated workers use the same four input snapshots as section 30,
+three observations per successful setup and the same restart-60/four-cycle
+240-iteration GMRES budget. All modes use cached CPU elasticity, independently
+checked against the original reference. Exact source snapshots and hashes are
+retained; state vectors and input files remain unchanged. No trial correction
+is applied to a physical state, including the previously rejected partial.
+
+Both reduced-LU modes converge for both RHS vectors on all four states, with
+identical iteration counts to their respective full sparse-LU references:
+local N/K counts 22/21, 29/28, 33/32, 31/32; material 108/93, 95/76, 85/60,
+85/83. All three observations reproduce those counts. Complete true relative
+residuals are below 8.26e-10. Compared with the full local result, reduced-local
+Newton directions differ by <=4.44e-14 relative L2; the known-vector directions
+can differ by 1.05e-8. These are linear checks, not nonlinear root accuracy.
+
+Measured medians below are in milliseconds, with worker-lifetime RSS in MiB.
+RSS includes imports, source audit, warm-up, setup and solves; factor payload
+excludes workspaces. Setup includes a fresh cached system/inverse on the
+existing physical problem. GMRES excludes setup and the independent post-check.
+One worker runs at a time; no exclusive machine reservation is asserted.
+Environment: Linux x86_64/i7-960 3.20 GHz, Python 3.12.3, NumPy 2.5.4,
+SciPy 1.18.1, BLAS/OpenMP/MKL threads one.
+
+| Source | Inverse | Setup ms | Apply ms | Newton GMRES ms | Factor MiB | RSS MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 33x49 accepted | local | 43.206 | 0.550 | 75.608 | 1.552 | 132.05 |
+| 33x49 accepted | local-reduced | 38.492 | 0.362 | 70.225 | 0.332 | 130.17 |
+| 33x49 accepted | material | 43.955 | 0.512 | 426.680 | 1.669 | 133.30 |
+| 33x49 accepted | material-reduced | 35.840 | 0.374 | 396.780 | 0.333 | 130.96 |
+| 65x97 accepted | local | 212.795 | 3.571 | 342.358 | 12.324 | 159.71 |
+| 65x97 accepted | local-reduced | 126.766 | 1.211 | 252.029 | 2.077 | 143.32 |
+| 65x97 accepted | material | 215.538 | 3.882 | 1127.141 | 12.363 | 163.75 |
+| 65x97 accepted | material-reduced | 128.135 | 1.086 | 859.752 | 2.076 | 145.09 |
+| 97x145 accepted | local | 1187.648 | 14.775 | 1096.602 | 60.311 | 271.97 |
+| 97x145 accepted | local-reduced | 301.827 | 3.206 | 671.791 | 5.792 | 164.32 |
+| 97x145 accepted | material | 824.084 | 13.384 | 2480.278 | 47.285 | 249.47 |
+| 97x145 accepted | material-reduced | 292.822 | 3.675 | 1653.878 | 5.806 | 170.32 |
+| 97x145 rejected | local | 670.715 | 10.339 | 814.803 | 36.383 | 223.90 |
+| 97x145 rejected | local-reduced | 283.186 | 2.453 | 560.833 | 5.559 | 163.66 |
+| 97x145 rejected | material | 840.598 | 12.155 | 2483.237 | 46.997 | 246.41 |
+| 97x145 rejected | material-reduced | 282.394 | 2.838 | 1607.132 | 5.547 | 169.54 |
+
+At the finest accepted grid, local reduced setup/application are 3.93x/4.61x
+faster in this isolated comparison, Newton GMRES wall is about 1.63x faster,
+and lifetime RSS is 271.97 -> 164.32 MiB. Local factor payload is
+60.31 -> 5.79 MiB. This n=13,585 reduced field factor plus a scalar force
+Schur action replaces the diagnostic 27,171-unknown full bordered factor;
+the actual outer state/operator still has all 27,171 unknowns. It is not an
+integrated nonlinear/continuation speedup or a larger-grid resource allowance.
+
+The MG prototype retains all tangent/coupling terms, but the geometric mixed
+hierarchy remains unreliable. Outcomes, identical across repeated solves:
+
+| Source | Local tangent MG | Material tangent MG |
+| --- | --- | --- |
+| 33x49 accepted | Verified 47/41 N/K iterations | Both exhaust 240; true residuals 89.6/1.00 |
+| 65x97 accepted | ILU fails at level 1 (1,457 unknowns) | Same level/size failure |
+| 97x145 accepted | Both exhaust 240; true residuals 1.015/1.00 | ILU fails at level 1 (3,337 unknowns) |
+| 97x145 rejected | ILU fails at level 1 (3,337 unknowns) | ILU fails at level 2 (805 unknowns) |
+
+These are explicit rejected setup/linear results. Initial COLAMD incomplete
+factors failed on the coarsest loaded input even though exact reduced LU
+succeeded. The tested fixed NATURAL ordering preserves lexicographic upstream
+structure and improves that case, but does not remove the later failures.
+No data-dependent ordering/fill switch, shift, clipping, regularization or
+silent sparse fallback is introduced. Bilinear coarse corrections mix pressure
+and deficit roles, and no spectral/causal diagnosis is claimed from these
+outcomes. Exact fine-block factorization success does not imply valid coarse
+factorization or MG convergence.
+
+A separate post-run audit reloads all 38 saved directions and the five setup
+rejections. Original reference FFT and the independent seven-term SI mass
+flux derivative confirm all 34 passing and four exhausted direction flags;
+maximum relative SI mass-action discrepancy is 7.05e-15 and force-row
+discrepancy 2.47e-17. Eight additional loaded-state inverse-action comparisons
+check the original full sparse border against explicit reduced LU. Maximum
+relative action difference is 9.83e-9 and maximum independently recomputed
+sparse-surrogate residual is 1.85e-16. Small residual is not a conditioning or
+forward-error guarantee; no condition number or physical accuracy is inferred.
+
+Raw evidence: `results/tangent_block_comparison_20261028_final`, with source
+snapshot, all worker reports, setup failures, vectors and repeated histories.
+`results/tangent_block_comparison_20261028_audit` retains the separate audit
+script and all checks. `plots/reduced_lu_costs.png` and
+`plots/tangent_mg_status.png` show observed timing ranges and every MG outcome,
+without physical-field filtering. Inputs remain the unchanged section-30
+snapshots. Historical outputs are preserved.
+
+Next bounded production work: integrate exact reduced LU only as an explicit
+optional field preconditioner, preserving existing Schur/full-border recovery,
+strict film rejection, both globalization checks, active backups, Krylov failure
+and continuation retries. Independently audit original final mass/force/film
+and matched-force repairs before selecting it. MG needs separate investigation
+of coarse spaces/smoothing that respect the mixed active roles; it is not
+selected by production. The 129x193 and physical film-validation gaps remain.
+
+Final verification: repository-wide Ruff and whitespace checks pass. Complete
+Linux CPU suite: 499 passed, 62 optional backend/GPU skips in 333.63 s,
+BLAS/OpenMP/MKL threads one. Targeted tangent/benchmark run: 57 passed in
+15.86 s, including 36 new tangent regressions and extended benchmark cases.
+Both cost/status figures were visually inspected. No GPU ran for this change.
+
+Local package: `results/tangent_block_evidence_20261028_verified.zip`,
+13,233,407 bytes and 162 files, with all manifest hashes and ZIP CRCs verified.
+Archive SHA-256:
+`939061f061cf1679bf65a1e1c450ea1dce13cdd0d0b4e46972e39db4da48a514`.
+It includes inputs, measured source snapshot, raw results, plots, independent
+audit and validation source; it is Git-ignored, with no asserted off-machine
+archive synchronization. Only code, tests and documented evidence are committed.

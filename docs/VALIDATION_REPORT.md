@@ -3360,3 +3360,12 @@ wider-longdouble diagnostic. All 65 selected refinement-resource, multigrid
 and monolithic CPU tests also pass with torch imports deliberately blocked
 (9.97 s). No tolerances were weakened. Pre-existing packaging modifications
 are preserved and generated evidence remains outside Git.
+
+Local evidence archive: `results/refinement_multigrid_20261028_verified.zip`,
+23,354,856 bytes, 171 payload files independently rehashed from the ZIP,
+with ZIP CRC verification passed. It includes both rejected mesh trials
+explicitly as rejected evidence, independent audits, mesh comparisons, MG
+benchmarks, the prior verified archive and exact source snapshot at
+`077367498c4d4af7864fd26c2b1e72b562c70b42`. Archive SHA-256:
+`85f52199152f76c69a95ed87a33d7d31c5953080caa23767973be819774e89a9`.
+Raw data remain Git-ignored; no off-machine backup or synchronization is asserted.

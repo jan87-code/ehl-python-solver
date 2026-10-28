@@ -280,8 +280,8 @@ class BorderedReynoldsElasticityProblem:
             or gmres_restart < 1
         ):
             raise ValueError("gmres_restart must be a positive integer")
-        if preconditioner not in ("ilu", "jacobi", "none"):
-            raise ValueError("preconditioner must be 'ilu', 'jacobi', or 'none'")
+        if preconditioner not in ("ilu", "jacobi", "none", "multigrid"):
+            raise ValueError("preconditioner must be ilu, jacobi, none or multigrid")
         if (
             not math.isfinite(ilu_drop_tolerance)
             or ilu_drop_tolerance < 0.0
@@ -547,11 +547,12 @@ def build_frozen_film_preconditioner(
     of the pressure Jacobian. The returned factorization/operator is intended
     to be reused for both Schur solves and the full bordered fallback within
     one Newton correction. ILU failures fall back explicitly to Jacobi and
-    then identity if the diagonal itself is invalid.
+    then identity if the diagonal itself is invalid. Explicit multigrid
+    setup/application failures propagate without that legacy recovery.
     """
     requested = problem.preconditioner if strategy is None else strategy
-    if requested not in ("ilu", "jacobi", "none"):
-        raise ValueError("strategy must be 'ilu', 'jacobi', or 'none'")
+    if requested not in ("ilu", "jacobi", "none", "multigrid"):
+        raise ValueError("strategy must be ilu, jacobi, none or multigrid")
     z = np.asarray(state, dtype=np.float64)
     if z.shape != (problem.pressure_size + 1,) or not np.all(np.isfinite(z)):
         raise ValueError("state must be a finite pressure-interior vector plus h0/h_ref")
@@ -565,6 +566,18 @@ def build_frozen_film_preconditioner(
         problem.reynolds_parameter,
     )
     matrix = (-reynolds_matrix / problem.reynolds_residual_scale).tocsr()
+    if requested == "multigrid":
+        from ehl_solver.multigrid import ReynoldsMultigrid
+
+        mg = ReynoldsMultigrid(film_m/problem.film_scale_m, problem.dx, problem.dy)
+        operator = LinearOperator(
+            matrix.shape,
+            matvec=lambda vector: -problem.reynolds_residual_scale*mg.apply(vector),
+            dtype=np.float64,
+        )
+        # MG setup/application failures propagate; ILU's legacy recovery below
+        # is not used for this explicitly selected strategy.
+        return FrozenFilmPreconditioner(matrix, operator, requested)
     diagonal = np.asarray(matrix.diagonal(), dtype=np.float64)
     used = requested
     try:
@@ -688,7 +701,8 @@ def solve_bordered_correction(
     """Solve a matrix-free Newton system through a Schur complement.
 
     The pressure block is solved by GMRES; its frozen-film Reynolds matrix
-    provides an ILU preconditioner. If the Schur denominator is unsafe or the
+    provides the selected preconditioner (ILU by default, optionally MG).
+    If the Schur denominator is unsafe or the
     reconstructed bordered correction is inaccurate, the method falls back
     to GMRES on the complete bordered Jacobian with a block preconditioner.
     """
@@ -742,8 +756,8 @@ def solve_bordered_correction(
         if preconditioner_strategy is None
         else preconditioner_strategy
     )
-    if requested_preconditioner not in ("ilu", "jacobi", "none"):
-        raise ValueError("preconditioner_strategy must be 'ilu', 'jacobi', or 'none'")
+    if requested_preconditioner not in ("ilu", "jacobi", "none", "multigrid"):
+        raise ValueError("preconditioner_strategy must be ilu, jacobi, none or multigrid")
     frozen_preconditioner = build_frozen_film_preconditioner(
         problem, z, strategy=requested_preconditioner
     )
@@ -969,7 +983,7 @@ def compare_bordered_preconditioners(
         raise ValueError("strategies must contain at least one preconditioner")
     if len(set(strategies)) != len(strategies):
         raise ValueError("strategies must not contain duplicates")
-    invalid = set(strategies) - {"ilu", "jacobi", "none"}
+    invalid = set(strategies) - {"ilu", "jacobi", "none", "multigrid"}
     if invalid:
         raise ValueError(f"unsupported preconditioner strategies: {sorted(invalid)}")
     results: list[PreconditionerBenchmark] = []

@@ -69,17 +69,19 @@ class Circular200N:
             ],
         }
 
-    def problem(self, offset_m, *, ny=17, nx=25, extent=3.0):
+    def problem(self, offset_m, *, ny=17, nx=25, extent=3.0, maximum_physical_nodes=20000):
+        if type(maximum_physical_nodes) is not int or maximum_physical_nodes not in (20000, 30000):
+            raise ValueError("physical node budget must be explicitly 20000 or 30000")
         if (
             any(
                 not isinstance(n, int) or isinstance(n, bool) or n < 5 or n % 2 == 0
                 for n in (ny, nx)
             )
-            or ny * nx > 20000
+            or ny * nx > maximum_physical_nodes
             or not np.isfinite(extent)
             or extent < 2
         ):
-            raise ValueError("odd centered grids >=5, <=20000 nodes and extent >=2 required")
+            raise ValueError("odd centered grids >=5, within node budget and extent >=2 required")
         a, h, p = self.hertz_radius_m, self.hertz_approach_m, self.hertz_pressure_pa
         lam = 12 * self.viscosity_pa_s * self.entrainment_m_s * a / (h**2 * p)
         return CavitatingElasticityProblem(

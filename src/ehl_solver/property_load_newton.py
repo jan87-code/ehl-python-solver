@@ -23,17 +23,21 @@ class PropertyLoadSystem:
     merit_slope = CavitatingNewtonSystem.merit_slope
 
     def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen",
-                 elasticity_mode="reference"):
+                 elasticity_mode="reference", maximum_physical_nodes=20000):
         if preconditioner not in ("frozen", "material", "local"):
             raise ValueError("preconditioner must be frozen, material or local")
         self.preconditioner = preconditioner
         if not np.isfinite(target_load_n) or target_load_n <= 0:
             raise ValueError("positive finite SI target load required")
-        if np.prod(problem.shape) > 20000:
-            raise ValueError("physical node budget exceeds 20000")
+        if (type(maximum_physical_nodes) is not int
+                or maximum_physical_nodes not in (20000, 30000)):
+            raise ValueError("physical node budget must be explicitly 20000 or 30000")
+        if np.prod(problem.shape) > maximum_physical_nodes:
+            raise ValueError(f"physical node budget exceeds {maximum_physical_nodes}")
         self.problem = problem
         self.base = PropertyWarmSystem(
-            problem, fluid, speed_m_s, problem.central_film_offset_m, maximum_interior_nodes=20000,
+            problem, fluid, speed_m_s, problem.central_film_offset_m,
+            maximum_interior_nodes=maximum_physical_nodes,
             elasticity_mode=elasticity_mode,
         )
         self.n = self.base.n
@@ -252,6 +256,7 @@ def solve_property_load_newton(
     active_recovery=True,
     preconditioner="frozen",
     elasticity_mode="reference",
+    maximum_physical_nodes=20000,
 ):
     """Bordered force solve; true-JVP-checked Schur/GMRES and bounded globalization.
 
@@ -273,6 +278,7 @@ def solve_property_load_newton(
     system = PropertyLoadSystem(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,
+        maximum_physical_nodes=maximum_physical_nodes,
     )
     z = verify_seed(system, seed, seed_offset_m)
     return _solve_property_load_state(
@@ -521,6 +527,7 @@ def continue_property_load(
     callback=None,
     preconditioner="frozen",
     elasticity_mode="reference",
+    maximum_physical_nodes=20000,
 ):
     """Adaptive SI-force steps; rejected solves never become continuation seeds."""
     if (
@@ -537,6 +544,7 @@ def continue_property_load(
     system = PropertyLoadSystem(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,
+        maximum_physical_nodes=maximum_physical_nodes,
     )
     z = verify_seed(system, seed, seed_offset_m)
     current = system.solution(z)
@@ -569,6 +577,7 @@ def continue_property_load(
                 seed_offset_m=current.central_film_offset_m,
                 preconditioner=preconditioner,
                 elasticity_mode=elasticity_mode,
+                maximum_physical_nodes=maximum_physical_nodes,
             )
         except PropertyLoadNewtonError as exc:
             record["reason"] = str(exc)

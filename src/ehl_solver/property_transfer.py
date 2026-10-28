@@ -26,7 +26,8 @@ class PropertyLoadGuess:
 
 
 def prolongate_property_guess(
-    source_problem, target_problem, fluid, speed_m_s, *, seed, seed_offset_m
+    source_problem, target_problem, fluid, speed_m_s, *, seed, seed_offset_m,
+    elasticity_mode="reference", maximum_physical_nodes=20000,
 ):
     """Bilinear SI pressure/content initialization on the same physical reservoir.
 
@@ -62,10 +63,14 @@ def prolongate_property_guess(
             for v in source
         ):
             raise ValueError("nested uniform refinement required")
-    system = PropertyLoadSystem(source_problem, fluid, speed_m_s, 1.0)
+    system = PropertyLoadSystem(source_problem, fluid, speed_m_s, 1.0,
+                                elasticity_mode=elasticity_mode,
+                                maximum_physical_nodes=maximum_physical_nodes)
     z = verify_seed(system, seed, seed_offset_m)
     accepted = system.solution(z).solution
-    target = PropertyLoadSystem(target_problem, fluid, speed_m_s, accepted.load_n)
+    target = PropertyLoadSystem(target_problem, fluid, speed_m_s, accepted.load_n,
+                                elasticity_mode=elasticity_mode,
+                                maximum_physical_nodes=maximum_physical_nodes)
     y, x = np.meshgrid(target_problem.y_m, target_problem.x_m, indexing="ij")
     points = np.c_[y.ravel(), x.ravel()]
 
@@ -109,6 +114,7 @@ def repair_property_load_guess(
     lookahead_selection="best",
     content_bound_pivots=True,
     elasticity_mode="reference",
+    maximum_physical_nodes=20000,
 ):
     """Explicitly unaccepted initialization; same original Newton/physical gates.
 
@@ -140,6 +146,7 @@ def repair_property_load_guess(
     system = PropertyLoadSystem(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,
+        maximum_physical_nodes=maximum_physical_nodes,
     )
     z = system.pack(guess, guess.central_film_offset_m)
     system.solution(z)  # Checks the exact signed-offset film and original law domain.

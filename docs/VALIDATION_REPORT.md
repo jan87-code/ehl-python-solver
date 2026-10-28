@@ -3168,7 +3168,7 @@ passes the full existing suite. Both modes remain CPU NumPy/SciPy execution.
 
 The reproducible `examples.benchmark_cached_material` uses the same three
 accepted 200 N source meshes. Each initialization preserves source pressure
-and content but opens the signed offset by 0.01 href (5 nm), explicitly
+and content but opens the signed offset by 0.01 href (48.98 nm), explicitly
 creating an unaccepted guess. Both modes repair this identical guess at
 the same 200 N force, using the existing local preconditioner and original
 30-correction/eight-model/10-Krylov-cycle budgets. Each mode runs in its own
@@ -3227,3 +3227,136 @@ bytes; archive SHA-256:
 `fb4f12ec66659b30e25ba8e8b3f5d8aae9151506339a7c570876cd3aa5c6a035`.
 Generated data remain Git-ignored. This is verified local packaging;
 off-machine backup or OneDrive synchronization has not been confirmed.
+
+## 27. Fourth-mesh resource trial and rejected nonlinear refinements (2026-10-28)
+
+The default 20,000-node budget is preserved. Explicit
+`maximum_physical_nodes=30000` permits the 24,897-node 129x193 case and is
+propagated through registered geometry, transfer, force systems and repair.
+There is no unbounded setting. Independent regression tests check default
+rejection, explicit acceptance and rejection beyond 30,000 nodes. Before
+the larger repair, the runner constructs the original local sparse block,
+checks its factor true residual and requires OS peak resident memory below
+1 GiB. The 61-vector Krylov basis estimate is 22.58 MiB. This is a resource
+allowance, not a change in physical or nonlinear acceptance.
+
+Two independent nested initializations retain the same 200 N force,
+registered material case and +/-3a domain. Both pass preflight; factor
+relative residuals are 3.33e-13 and 3.38e-13. Neither passes the unchanged
+30-correction budget. All failed fields, histories and diagnostics remain
+rejected. Independent reopened-field audits recompute original SI mass,
+reference convolution, force and complementarity:
+
+| Source mesh | Newton corrections | Models | Krylov iterations | Observed wall time s | Peak resident MiB | Final scaled mass defect | Final complementarity defect |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 65x97, factor 2 | 30 | 118 | 8,233 | 441.86 | 198.31 | .00284080 | 9.56e-14 |
+| 33x49, factor 4 | 30 | 211 | 14,830 | 791.03 | 199.52 | .07918680 | .111184 |
+
+Force errors are <=1.12e-16 relative, but the original scaled mass gate is
+1e-8 and local/global gates also fail. Reference-film reconstruction errors
+are <=6.78e-21 m. Force closure and small FFT differences cannot promote
+these partials into solutions. Wall times are observed bounded-run times,
+not isolated speedup benchmarks; verification work also ran during these trials.
+The attempts establish neither nonexistence of a fine root nor mesh convergence.
+
+The independent accepted-grid comparison uses raw fields and exact shared
+physical nodes. From 33x49 to 65x97, sampled shared-node pressure L2 change
+is 31.44%; from 65x97 to 97x145, it is 29.90% on their common 33x49 nodes.
+The latter peak-pressure change is only -1.40%, while minimum/central film
+changes are +15.08%/-10.58%. Minimum locations move; y-reflection can switch
+which equal minimum is reported. The raw centerlines retain the alternating
+pattern. No filtering or new transport stencil is applied.
+
+An unequal-spacing three-point minimum-film fit gives apparent p=2.128,
+but is explicitly unqualified: one very coarse mesh and moving extrema do
+not establish an asymptotic range. Central film and peak pressure are
+nonmonotone over the three accepted grids and receive no fit. A fourth
+converged result is unavailable, so no reliable continuum error or new
+film-height prediction is claimed. Mesh effects are expected; the missing
+evidence is convergence of the full fields and quantities of interest.
+
+Evidence: `results/refinement129_20261028` and
+`results/refinement129_from33_20261028`, their separate `_rejected_audit`
+directories, and `results/mesh_comparison_20261028_final`. Source roots are
+preserved. The earlier section 26 timing experiment used 0.01 href; its
+previous parenthetical conversion of 5 nm was a documentation error, now
+corrected to 48.98 nm (href=4.897541492 um). Its code and measured results
+are unchanged.
+
+## 28. CPU geometric multigrid and mathematical bordered integration (2026-10-28)
+
+Implemented fixed linear symmetric geometric V-cycles for the original
+prescribed/frozen-film SPD Reynolds diffusion matrix. Bilinear P, R=P.T,
+Galerkin coarse matrices, bounded damped Jacobi and small exact Cholesky
+are independently verified. Default CG is unchanged; optional
+`preconditioner="multigrid"` independently checks the true residual and
+does not fall back silently. Tests also verify independent analytic-source
+second-order discretization accuracy, rather than only algebraic inversion.
+
+Windows Python 3.12.9, NumPy 2.5.4, SciPy 1.18.1, one BLAS/OpenMP thread.
+Smooth positive film H=1+0.4X+0.2 sin(pi Y), unit square, random fixed-seed
+RHS. Three solves per mode, one excluded V-cycle initialization, rtol=1e-10.
+Setup includes the fine matrix and hierarchy and is reported separately:
+
+| Grid | CG iterations | MG-CG iterations | CG median s | MG-CG median s | Solve-only speedup | MG setup s |
+|---|---:|---:|---:|---:|---:|---:|
+| 33x33 | 155 | 8 | .003702 | .001868 | 1.98x | .01040 |
+| 65x65 | 323 | 8 | .012186 | .003554 | 3.43x | .02137 |
+| 129x129 | 660 | 8 | .111485 | .013512 | 8.25x | .09475 |
+| 257x257 | 1,335 | 8 | .823727 | .048066 | 17.14x | .66701 |
+| 513x513 | 2,660 | 8 | 15.10135 | .374907 | 40.28x | 2.80949 |
+
+Every listed solve passes the independently recomputed original relative
+residual <=1e-10. Operator complexity is 1.47..1.59. These are linear solve
+speedups, not coupled EHL speedups. Setup dominates small one-off solves;
+including it reverses the apparent small-grid benefit. No universal
+crossover grid is established.
+
+Frozen material-mobility surrogates from the accepted 65x97 and 97x145 roots
+span approximately 5.43e-14..547 and 7.38e-14..548 in dimensionless mobility.
+Unpreconditioned CG reaches the fixed 500-iteration cap (relative residuals
+19.83/18.36); MG-CG passes in 22/21 iterations. A speedup ratio is not valid
+when the reference fails, and the benchmark marks it accordingly. Separate
+known-pressure tests use symmetric diagonal equilibration at rtol=1e-12;
+forward pressure errors are 2.13e-9/1.31e-9 and original true residuals
+2.40e-13/7.12e-13. No material/elastic derivatives or JFO constraints enter
+these SPD surrogate solves.
+
+After these tests, optional MG was integrated into the signed full-film
+mathematical bordered Newton pressure preconditioner. The inverse sign and
+residual scaling match the original Jacobian; the original nonsymmetric
+GMRES, Schur recovery, inexact forcing, dual line searches, continuation and
+stopping rules are retained. Ten added MG configurations check complete
+bordered corrections, Schur fallback, failed Krylov diagnostics, zero/weak/
+moderate compliance, strict film feasibility, rejected steps, Armijo retry,
+load-step retry and explicit MG setup failure without the legacy ILU fallback.
+
+The moderate signed mathematical benchmark uses the existing reference
+parameters (Rx=.01 m, Ry=.02 m, E*=1e7 Pa, href=20 um), not the 200 N material
+case. Three full Newton solves per mode follow an excluded warm-up; times
+include construction and all corrections. Independently recomputed final
+Reynolds/load checks use 1e-9, with no cavitation or pressure clipping:
+
+| (ny,nx) | ILU median s | MG median s | ILU/MG | Newton corrections both | Relative pressure difference |
+|---|---:|---:|---:|---:|---:|
+| 13x17 | .04583 | .05516 | .83x | 4 | 1.28e-10 |
+| 25x33 | .42519 | .60581 | .70x | 4 | 1.46e-10 |
+| 49x65 | 2.51847 | 2.28394 | 1.10x | 4 | 2.44e-10 |
+
+MG is slower on the first two grids and modestly faster on the third.
+Default ILU is retained. The signed solution can contain tensile pressure;
+this remains a mathematical reference, not physical EHL validation.
+
+Evidence: `results/multigrid_20261028_final` and
+`results/multigrid_bordered_20261028_verified`. Full material/JFO multigrid,
+nonlinear FAS, GPU multigrid and a converged 129x193 material result remain
+unfinished. The next integration needs a separately verified pressure/
+content block preconditioner, preserving active constraints and the load
+border; the new SPD operator cannot simply replace that entire system.
+
+Final verification: `ruff check .` clean; complete CPU/CUDA `pytest -q`
+**490 passed, one skipped in 243.33 s**. The skip is the existing Windows
+wider-longdouble diagnostic. All 65 selected refinement-resource, multigrid
+and monolithic CPU tests also pass with torch imports deliberately blocked
+(9.97 s). No tolerances were weakened. Pre-existing packaging modifications
+are preserved and generated evidence remains outside Git.

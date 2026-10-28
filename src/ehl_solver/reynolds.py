@@ -323,6 +323,7 @@ def solve_reynolds_pressure(
     atol: float = 0.0,
     max_iterations: int | None = None,
     initial_pressure: ArrayLike | None = None,
+    preconditioner: str | None = None,
 ) -> ReynoldsSolution:
     """Solve the unconstrained dimensionless full-film Reynolds problem.
 
@@ -339,10 +340,15 @@ def solve_reynolds_pressure(
     ``atol`` are passed to SciPy's solver for the algebraic convergence
     criterion ``||A p - b|| <= max(rtol*||b||, atol)``. Failure to converge
     raises ``RuntimeError`` rather than returning a success-shaped result.
+    Optional ``preconditioner="multigrid"`` uses a symmetric geometric
+    Galerkin V-cycle and independently verifies the true residual. Unsupported
+    grid hierarchies raise explicitly; default unpreconditioned CG is preserved.
     The result reports algebraic residual norms and a separately computed
     global flux balance. No elasticity, load control, pressure-dependent
     properties, GPU acceleration, or cavitation model is included.
     """
+    if preconditioner not in (None, "multigrid"):
+        raise ValueError("preconditioner must be None or multigrid")
     if not math.isfinite(rtol) or rtol < 0 or not math.isfinite(atol) or atol < 0:
         raise ValueError("rtol and atol must be finite and nonnegative")
     if rtol == 0 and atol == 0:
@@ -373,6 +379,11 @@ def solve_reynolds_pressure(
         h, dx, dy, reynolds_parameter, manufactured_source
     )
     iterations = 0
+    inverse = None
+    if preconditioner == "multigrid":
+        from ehl_solver.multigrid import ReynoldsMultigrid
+
+        inverse = ReynoldsMultigrid(h, dx, dy).aslinearoperator()
 
     def count_iteration(iterate: NDArray[np.float64]) -> None:
         nonlocal iterations
@@ -388,6 +399,7 @@ def solve_reynolds_pressure(
         atol=atol,
         maxiter=max_iterations,
         callback=count_iteration,
+        M=inverse,
     )
     if info != 0:
         reason = f"did not converge within {info} iterations" if info > 0 else "illegal input"
@@ -400,6 +412,8 @@ def solve_reynolds_pressure(
     residual_inf = float(np.linalg.norm(algebraic_residual, ord=np.inf))
     rhs_l2 = float(np.linalg.norm(rhs))
     relative_residual_l2 = residual_l2 / max(rhs_l2, np.finfo(np.float64).tiny)
+    if preconditioner == "multigrid" and residual_l2 > max(rtol*rhs_l2, atol)*(1+1e-12):
+        raise RuntimeError("multigrid-CG failed independent true residual verification")
     mass_absolute, mass_relative = _global_mass_balance(
         pressure, h, dx, dy, reynolds_parameter, manufactured_source
     )

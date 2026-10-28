@@ -2482,3 +2482,68 @@ Both modes use NumPy/SciPy on CPU without requiring PyTorch. No CUDA material
 or JFO implementation is added. Tiny FFT roundoff differences can change a
 Krylov iteration count; equal iteration histories are not assumed or forced.
 Matched-field/load convergence is checked with the original tolerances.
+
+## Bounded mesh assessment and linear geometric multigrid (2026-10-28)
+
+Material force systems retain a default 20,000 physical-node limit. An
+explicit `maximum_physical_nodes=30000` allows the next 129x193 CPU mesh;
+the registered case builder, transfer and repair use the same allowance.
+There is no unlimited mode. The refinement runner verifies its initial
+sparse factor residual and checks worker-lifetime peak resident memory below
+1 GiB before Newton. Nonlinear budgets and every original physical gate are
+unchanged. A failed field is retained and independently audited as rejected;
+force closure alone never qualifies it as a refined solution.
+
+Mesh comparison uses identical 200 N force, material laws and +/-3a physical
+domain. Shared-node pressure norms use only coordinates present in both
+grids, with no resampling. Raw profiles and sampled extrema/locations are
+retained. Three-point Q(h)=Q0+C*h^p fits allow unequal spacing and require
+monotone resolved differences and positive p. They remain provisional, not
+asymptotic error certificates; nonmonotone quantities receive no fit.
+
+`ReynoldsMultigrid` constructs the original homogeneous-Dirichlet SPD
+`-div(H^3 grad(P))` matrix for prescribed positive dimensionless film. It
+does not change face mobilities or flux conservation. Bilinear interior
+correction prolongation includes exact zero boundary contributions;
+restriction is P.T and coarse matrices are Galerkin P.T A P. Omitting a
+constant full-weighting scale is consistent because it cancels between the
+restricted RHS and coarse operator. Coarse equations use Cholesky with at
+most 64 unknowns by default. Unsupported grid hierarchies raise instead of
+silently factoring a large matrix. The foundation is capped at 300,000
+interior unknowns before sparse assembly.
+
+Each V-cycle starts at zero and uses equal pre/post weighted-Jacobi sweeps
+(two by default). The per-level relaxation factor is at most 2/3, reduced
+if necessary using an absolute row-sum bound on the spectrum of D^-1 A.
+Transfers, exact coarse solve and symmetric smoothing give a fixed linear
+symmetric positive preconditioner for this SPD operator. CG independently
+checks its final true residual against its original tolerance. Default
+unpreconditioned CG, dimensionless units and pressure edges are unchanged;
+no pressure is clipped and there is no silent fallback.
+
+Loaded frozen-mobility studies use H_eff^3=(rho/rho0)*(h/href)^3/(eta/eta0)
+to represent positive diffusion coefficients. They omit density/viscosity
+directions, nonlocal elasticity, content transport, complementarity and force
+borders. Their convergence is not evidence of a complete coupled multigrid
+solver. A separate known-pressure check uses symmetric diagonal equilibration
+and checks forward error as well as the original true residual, because
+extreme mobility contrast can hide weak rows in a global residual norm.
+This diagnostic scaling does not alter material Newton stopping rules.
+
+Full material/JFO multigrid requires a separately verified nonsymmetric
+block preconditioner and active-front/coarse-constraint treatment. Nonlinear
+FAS and CUDA multigrid are not implemented. Multigrid accelerates a discrete
+solve; it cannot by itself validate its mesh accuracy or remove a pressure
+pattern that already belongs to a converged discrete root.
+
+The signed constant-property mathematical BorderedReynoldsElasticityProblem
+now optionally selects `preconditioner="multigrid"`. Its pressure Jacobian
+uses the sign/scaling `-A/reynolds_residual_scale`, so the inverse V-cycle
+action is `-reynolds_residual_scale*B_MG`. The same fixed operator is reused
+for pressure Schur solves and full bordered recovery inside the original
+nonsymmetric GMRES path. Default ILU and its legacy explicit recovery remain
+unchanged; MG setup/application failures propagate without ILU/Jacobi fallback.
+Independent complete-correction, zero/weak/moderate compliance, final
+Reynolds/load, strict feasibility, Armijo retry, Krylov-failure and load-step
+retry tests cover this optional path. These signed, low-pressure cases remain
+mathematical references and do not establish a physical material/JFO solution.

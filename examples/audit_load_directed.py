@@ -31,7 +31,8 @@ def main(source, directory):
     maxlinear = 0.0
     for name, grid in report["grids"].items():
         ny, nx = grid["shape_ny_nx"]
-        problem = c.problem(0.5e-6, ny=ny, nx=nx)
+        problem = c.problem(0.5e-6, ny=ny, nx=nx,
+                            maximum_physical_nodes=report.get("maximum_physical_nodes", 20000))
         for entry in grid["attempts"]:
             if not entry["accepted"]:
                 continue

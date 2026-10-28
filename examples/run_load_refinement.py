@@ -3,15 +3,18 @@
 import argparse
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import numpy as np
+from scipy.sparse.linalg import splu
 
 from ehl_solver.benchmark_200n import Circular200N
 from ehl_solver.elasticity_audit import direct_midpoint_displacement
 from ehl_solver.property_coupled import PropertyCoupledSolution
-from ehl_solver.property_load_newton import PropertyLoadNewtonError
+from ehl_solver.property_load_newton import PropertyLoadNewtonError, PropertyLoadSystem
 from ehl_solver.property_transfer import prolongate_property_guess, repair_property_load_guess
+from examples.benchmark_cached_material import peak_memory
 from examples.run_load_directed_200n import finite_json
 from examples.run_property_load_verification import save_state
 from examples.run_scientific_validation import provenance, save_json
@@ -26,9 +29,11 @@ def main(
     refinement_factor=2,
     lookahead_selection="best",
     content_bound_pivots=True,
+    elasticity_mode="reference",
+    maximum_physical_nodes=20000,
 ):
-    if refinement_factor not in (2, 3):
-        raise ValueError("refinement factor must be 2 or 3")
+    if refinement_factor not in (2, 3, 4):
+        raise ValueError("refinement factor must be 2, 3 or 4")
     old = json.loads((source / "summary.json").read_text())
     c = Circular200N()
     fluid = c.fluid()
@@ -45,7 +50,8 @@ def main(
     source_path = source / entry["state_file"]
     coarse = c.problem(0.5e-6, ny=ny, nx=nx)
     target = c.problem(
-        0.5e-6, ny=refinement_factor * (ny - 1) + 1, nx=refinement_factor * (nx - 1) + 1
+        0.5e-6, ny=refinement_factor * (ny - 1) + 1, nx=refinement_factor * (nx - 1) + 1,
+        maximum_physical_nodes=maximum_physical_nodes,
     )
     with np.load(source_path) as a:
         np.testing.assert_array_equal(a["x_m"], coarse.x_m)
@@ -83,6 +89,8 @@ def main(
         "content_bound_pivots": content_bound_pivots,
         "refinement_factor": refinement_factor,
         "matched_loads": [],
+        "elasticity_mode": elasticity_mode,
+        "maximum_physical_nodes": maximum_physical_nodes,
     }
 
     def checkpoint():
@@ -90,7 +98,8 @@ def main(
 
     checkpoint()
     guess = prolongate_property_guess(
-        coarse, target, fluid, 2.0, seed=seed, seed_offset_m=entry["offset_m"]
+        coarse, target, fluid, 2.0, seed=seed, seed_offset_m=entry["offset_m"],
+        elasticity_mode=elasticity_mode, maximum_physical_nodes=maximum_physical_nodes,
     )
     h, w = target.fields(guess.pressure_pa, central_film_offset_m=guess.central_film_offset_m)
     np.savez_compressed(
@@ -103,7 +112,23 @@ def main(
         displacement_m=w,
     )
     report["initialization"] = guess.diagnostics
+    if maximum_physical_nodes > 20000:
+        preflight = PropertyLoadSystem(target, fluid, 2., load_n, preconditioner="local",
+                                        elasticity_mode=elasticity_mode,
+                                        maximum_physical_nodes=maximum_physical_nodes)
+        matrix = preflight.frozen_matrix(preflight.pack(guess, guess.central_film_offset_m))
+        lu = splu(matrix[:-1, :-1])
+        rhs = np.random.default_rng(28).normal(size=matrix.shape[0]-1)
+        error = np.linalg.norm(matrix[:-1, :-1]@lu.solve(rhs)-rhs)/np.linalg.norm(rhs)
+        memory = peak_memory()
+        report["preflight"] = {"memory": memory, "factor_true_relative_residual": float(error),
+                               "basis_61_bytes": int(61*preflight.size*8)}
+        checkpoint()
+        if memory["peak_resident_bytes"] > 2**30 or error > 1e-8:
+            raise RuntimeError("bounded resource/factor preflight failed")
+        del preflight, matrix, lu
     checkpoint()
+    start = time.perf_counter()
     try:
         root = repair_property_load_guess(
             target,
@@ -114,6 +139,7 @@ def main(
             active_lookahead=active_lookahead,
             lookahead_selection=lookahead_selection,
             content_bound_pivots=content_bound_pivots,
+            elasticity_mode=elasticity_mode, maximum_physical_nodes=maximum_physical_nodes,
         )
     except PropertyLoadNewtonError as exc:
         save_json(
@@ -125,9 +151,13 @@ def main(
             report["failed_offset_m"] = exc.last_root.central_film_offset_m
         output_grid["stall"] = {"reason": str(exc), "target_n": load_n}
         report["status"] = "bounded refinement repair failed; no target root accepted"
+        report["memory"] = peak_memory()
+        report["elapsed_s"] = time.perf_counter()-start
         checkpoint()
         return
     s = root.solution
+    report["elapsed_s"] = time.perf_counter()-start
+    report["memory"] = peak_memory()
     save_state(directory / "solution.npz", target, s, fluid)
     save_json(directory / "history.json", finite_json(s.history))
     peak = np.unravel_index(np.argmax(s.pressure_pa), s.pressure_pa.shape)
@@ -203,9 +233,11 @@ if __name__ == "__main__":
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--load-n", type=float, default=200.0)
     parser.add_argument("--no-active-lookahead", action="store_true")
-    parser.add_argument("--refinement-factor", type=int, choices=(2, 3), default=2)
+    parser.add_argument("--refinement-factor", type=int, choices=(2, 3, 4), default=2)
     parser.add_argument("--lookahead-selection", choices=("best", "legacy"), default="best")
     parser.add_argument("--no-content-bound-pivots", action="store_true")
+    parser.add_argument("--elasticity-mode", choices=("reference", "cached"), default="reference")
+    parser.add_argument("--maximum-physical-nodes", type=int, choices=(20000, 30000), default=20000)
     args = parser.parse_args()
     main(
         args.input_directory,
@@ -215,4 +247,6 @@ if __name__ == "__main__":
         args.refinement_factor,
         args.lookahead_selection,
         not args.no_content_bound_pivots,
+        args.elasticity_mode,
+        args.maximum_physical_nodes,
     )

@@ -530,3 +530,44 @@ direct elasticity audits are mandatory. OS peak memory covers each worker's
 entire lifetime, including warm-up and audits. This benchmarks local repair
 of known roots, not cold load continuation or mesh accuracy. See validation-
 report section 26 for measured parity and end-to-end repair speedups.
+
+Mesh assessment now supports an explicit, bounded 30,000-node CPU trial;
+the default remains 20,000 nodes. The refinement runner checks the sparse
+factor and a 1 GiB resident-memory threshold before the larger Newton run.
+It retains failures and never treats an interpolated or rejected field as a root.
+
+```bash
+python -m examples.run_load_refinement --input-directory results/refined_200n_new --output-directory results/mesh129_new --elasticity-mode cached --maximum-physical-nodes 30000
+python -m examples.compare_refined_meshes --input-directories results/source_200n_new results/refined_200n_new results/fine_200n_new --output-directory results/mesh_comparison_new
+```
+
+The first 129x193 trial exhausted its unchanged Newton budget and failed
+the original mass gates. It provides no new converged film prediction.
+Existing-grid shared-node pressure differences remain about 30%, while peak
+pressure changes much less. Three-point fits are explicitly provisional.
+
+CPU geometric multigrid is available for the **prescribed/frozen-film SPD
+Reynolds diffusion operator** via
+`solve_reynolds_pressure(..., preconditioner="multigrid")`. It uses bilinear
+transfer, Galerkin coarse operators, symmetric Jacobi smoothing and bounded
+exact coarse solves. Default CG remains unchanged. This is not yet multigrid
+for the coupled material/JFO Newton solver or nonlinear FAS.
+
+```bash
+python -m examples.benchmark_multigrid --output-directory results/multigrid_new --input-directories results/refined_200n_new results/fine_200n_new
+```
+
+Unsupported hierarchies and convergence failures raise explicitly. The CPU
+benchmark records setup costs, solve timings, true residuals, hierarchy
+complexity and failed attempts. PyTorch is not required.
+
+The signed full-film **mathematical** bordered Newton solver also accepts
+`preconditioner="multigrid"`. Its pressure-block V-cycle is reused inside
+the existing nonsymmetric GMRES/Schur workflow with the original sign and
+residual scaling. ILU remains the default. Independent zero/weak/moderate
+compliance and recovery/globalization tests pass; this is not material/JFO
+multigrid or physical-load validation.
+
+```bash
+python -m examples.benchmark_multigrid_bordered --output-directory results/multigrid_bordered_new
+```

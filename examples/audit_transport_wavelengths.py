@@ -25,7 +25,7 @@ from examples.run_scientific_validation import provenance, save_json
 from examples.scientific_figures import figure, save
 
 
-def load_root(source):
+def load_root(source, *, maximum_physical_nodes=20000):
     c = Circular200N()
     summary_file = source / "summary.json"
     summary = json.loads(summary_file.read_text())
@@ -37,7 +37,8 @@ def load_root(source):
         raise ValueError("accepted 200 N root required")
     entry = entries[-1]
     path = source / entry["state_file"]
-    problem = c.problem(.5e-6, ny=grid["shape_ny_nx"][0], nx=grid["shape_ny_nx"][1])
+    problem = c.problem(.5e-6, ny=grid["shape_ny_nx"][0], nx=grid["shape_ny_nx"][1],
+                        maximum_physical_nodes=maximum_physical_nodes)
     with np.load(path) as a:
         np.testing.assert_array_equal(a["x_m"], problem.x_m)
         np.testing.assert_array_equal(a["y_m"], problem.y_m)
@@ -46,7 +47,8 @@ def load_root(source):
     if abs(force/200-1) > 1e-8:
         raise ValueError("original independent force gate failed")
     seed = PropertyCoupledSolution(p, t, h, w, force, {}, (), 1.)
-    system = PropertyLoadSystem(problem, c.fluid(), 2., 200., preconditioner="local")
+    system = PropertyLoadSystem(problem, c.fluid(), 2., 200., preconditioner="local",
+                                maximum_physical_nodes=maximum_physical_nodes)
     state = verify_seed(system, seed, entry["offset_m"])
     return system, state, seed, {
         "source": str(path), "force_n": force, "shape_ny_nx": list(p.shape),

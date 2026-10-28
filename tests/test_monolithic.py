@@ -82,6 +82,7 @@ def _problem(
     compliance_factor=1.0,
     krylov_rtol=1e-8,
     film_floor_m=1e-12,
+    preconditioner="ilu",
 ):
     x, y = _grid()
     return BorderedReynoldsElasticityProblem(
@@ -100,6 +101,7 @@ def _problem(
         film_floor_m=film_floor_m,
         krylov_rtol=krylov_rtol,
         krylov_max_iterations=300,
+        preconditioner=preconditioner,
     )
 
 
@@ -208,11 +210,12 @@ def test_complete_small_grid_jacobian_matches_residual_finite_differences(
     assert relative_errors[1] < relative_errors[0]
 
 
-def test_schur_correction_satisfies_complete_bordered_linearization():
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_schur_correction_satisfies_complete_bordered_linearization(preconditioner):
     x, y = _grid()
     pressure = _pressure_at_h0(x, y, 18e-6)
     target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
-    problem = _problem(target)
+    problem = _problem(target, preconditioner=preconditioner)
     state = np.concatenate(
         (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
     )
@@ -244,6 +247,22 @@ def test_schur_correction_satisfies_complete_bordered_linearization():
         <= max(record.effective_rtol * 1.25, 1e-12)
         for record in correction.krylov_diagnostics
     )
+
+
+def test_multigrid_setup_failure_is_not_hidden_by_legacy_ilu_fallback(monkeypatch):
+    import ehl_solver.multigrid as multigrid
+
+    x, y = _grid()
+    pressure = _pressure_at_h0(x, y, 18e-6)
+    problem = _problem(_load(_pressure_at_h0(x, y, 20e-6), x, y), preconditioner="multigrid")
+    state = np.r_[pressure[1:-1, 1:-1].ravel(), .9]
+
+    def failed(*args, **kwargs):
+        raise RuntimeError("injected multigrid setup failure")
+
+    monkeypatch.setattr(multigrid, "ReynoldsMultigrid", failed)
+    with pytest.raises(RuntimeError, match="injected multigrid"):
+        build_frozen_film_preconditioner(problem, state)
 
 
 def test_inexact_krylov_forcing_has_a_hard_accuracy_ceiling():
@@ -359,11 +378,12 @@ def test_preconditioner_benchmark_compares_true_residuals_without_mutating_probl
     assert problem.preconditioner == original_strategy
 
 
-def test_singular_schur_indicator_recovers_with_full_bordered_gmres():
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_singular_schur_indicator_recovers_with_full_bordered_gmres(preconditioner):
     x, y = _grid()
     pressure = _pressure_at_h0(x, y, 18e-6)
     target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
-    problem = _problem(target)
+    problem = _problem(target, preconditioner=preconditioner)
     state = np.concatenate(
         (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
     )
@@ -404,11 +424,12 @@ def test_failed_pressure_krylov_recovers_through_full_bordered_solve(monkeypatch
     assert calls >= 2
 
 
-def test_failed_bordered_krylov_preserves_true_residual_diagnostics(monkeypatch):
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_failed_bordered_krylov_preserves_true_residual_diagnostics(monkeypatch, preconditioner):
     x, y = _grid()
     pressure = _pressure_at_h0(x, y, 18e-6)
     target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
-    problem = _problem(target)
+    problem = _problem(target, preconditioner=preconditioner)
     state = np.concatenate(
         (pressure[1:-1, 1:-1].ravel(), [18e-6 / FILM_SCALE_M])
     )
@@ -450,13 +471,14 @@ def test_newton_error_preserves_failed_krylov_diagnostics(monkeypatch):
     assert failure.value.diagnostics["linear_solver_error"]
 
 
-def test_zero_compliance_load_newton_matches_reynolds_reference():
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_zero_compliance_load_newton_matches_reynolds_reference(preconditioner):
     x, y = _grid()
     target_pressure = _pressure_at_h0(x, y, 20e-6)
     target = _load(target_pressure, x, y)
     initial_pressure = _pressure_at_h0(x, y, 18e-6)
     solution = solve_monolithic_full_film_load(
-        _problem(target, compliance_factor=0.0),
+        _problem(target, compliance_factor=0.0, preconditioner=preconditioner),
         initial_pressure,
         18e-6,
         reynolds_tolerance=1e-10,
@@ -479,7 +501,8 @@ def test_zero_compliance_load_newton_matches_reynolds_reference():
     assert np.linalg.norm(residual) / np.sqrt(residual.size) / 100.0 <= 1e-10
 
 
-def test_full_compliance_newton_matches_weak_coupling_reference():
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_full_compliance_newton_matches_weak_coupling_reference(preconditioner):
     x, y = _grid()
     reference = solve_coupled_reynolds_elasticity(
         x,
@@ -499,7 +522,7 @@ def test_full_compliance_newton_matches_weak_coupling_reference():
     )
     initial = _pressure_at_h0(x, y, 18e-6)
     solution = solve_monolithic_full_film_load(
-        _problem(target),
+        _problem(target, preconditioner=preconditioner),
         initial,
         18e-6,
         reynolds_tolerance=1e-7,
@@ -528,10 +551,11 @@ def test_full_compliance_newton_matches_weak_coupling_reference():
     )
 
 
-def test_moderate_compliance_closes_load_with_measurable_deformation(caplog):
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_moderate_compliance_closes_load_with_measurable_deformation(caplog, preconditioner):
     x, y = _grid()
     target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
-    problem = _problem(target, e_star=1e7)
+    problem = _problem(target, e_star=1e7, preconditioner=preconditioner)
 
     with caplog.at_level(logging.INFO, logger="ehl_solver.monolithic"):
         solution = solve_monolithic_full_film_load(
@@ -623,11 +647,12 @@ def test_feasible_initialization_adjusts_only_h0_and_reports_change():
     np.testing.assert_array_equal(feasible.pressure_dimensionless, pressure)
 
 
-def test_dual_line_search_rejects_infeasible_steps_and_keeps_diagnostics():
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_dual_line_search_rejects_infeasible_steps_and_keeps_diagnostics(preconditioner):
     x, y = _grid()
     target_pressure = _pressure_at_h0(x, y, 10e-6)
     target = _load(target_pressure, x, y)
-    problem = _problem(target, film_floor_m=17.5e-6)
+    problem = _problem(target, film_floor_m=17.5e-6, preconditioner=preconditioner)
     with pytest.raises(MonolithicNewtonError) as failure:
         solve_monolithic_full_film_load(
             problem,
@@ -648,10 +673,11 @@ def test_dual_line_search_rejects_infeasible_steps_and_keeps_diagnostics():
     )
 
 
-def test_armijo_failure_retries_with_tighter_krylov_solve(monkeypatch):
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_armijo_failure_retries_with_tighter_krylov_solve(monkeypatch, preconditioner):
     x, y = _grid()
     target = _load(_pressure_at_h0(x, y, 20e-6), x, y)
-    problem = _problem(target)
+    problem = _problem(target, preconditioner=preconditioner)
     original_line_search = monolithic._armijo_line_search
     original_correction = monolithic.solve_bordered_correction
     line_search_calls = 0
@@ -716,12 +742,13 @@ def test_newton_reports_nonconvergence_instead_of_accepting_small_steps():
         )
 
 
-def test_adaptive_load_continuation_retries_from_last_converged_state(monkeypatch):
+@pytest.mark.parametrize("preconditioner", ["ilu", "multigrid"])
+def test_adaptive_load_continuation_retries_from_last_converged_state(monkeypatch, preconditioner):
     x, y = _grid()
     first_pressure = _pressure_at_h0(x, y, 20e-6)
     first_load = _load(first_pressure, x, y)
     second_load = _load(_pressure_at_h0(x, y, 22e-6), x, y)
-    problem = _problem(first_load, compliance_factor=0.0)
+    problem = _problem(first_load, compliance_factor=0.0, preconditioner=preconditioner)
     initial = solve_monolithic_full_film_load(
         problem,
         _pressure_at_h0(x, y, 18e-6),

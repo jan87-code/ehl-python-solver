@@ -1518,3 +1518,48 @@ matched-force mesh trends using explicitly bounded resource controls before
 attempting the next 129x193 mesh above the current cap. Peak-memory evidence
 from local repairs does not validate that larger mesh or cold continuation.
 Physical film accuracy and full material/JFO CUDA solving remain open.
+
+## Bounded fourth-mesh attempts and multigrid foundation (2026-10-28)
+
+Starting at 4b1c55c, added an explicit 30,000-node allowance, preserving the
+20,000-node default and every original physical/nonlinear gate. The 129x193
+target retained the same 200 N case and +/-3a reservoir. Two independent
+initializations (65x97 factor two and 33x49 factor four) passed resource/
+factor preflights but exhausted 30 Newton corrections. Rejected states and
+full histories are preserved; neither is a converged fourth mesh. Independent
+audits find scaled mass defects .002841 and .079187 despite force closure.
+No convergence order or new film-height prediction is established.
+
+The accepted three-grid comparison quantifies shared-node pressure L2
+differences 31.44% and 29.90%. Minimum film changes decrease, but central film
+and peak pressure are nonmonotone over all three grids. Provisional unequal-
+spacing fits are explicitly unqualified; no stencil is changed to smooth
+the profiles. Numerical accuracy and the origin of the pressure pattern remain open.
+
+Implemented and independently tested CPU geometric Galerkin V-cycles for
+the prescribed/frozen-film SPD Reynolds operator: bilinear interpolation,
+transpose restriction, Galerkin coarse matrices, symmetric damped Jacobi,
+bounded exact Cholesky and true-residual checks. Smooth 33..513 square-grid
+tests take eight preconditioned CG iterations across the range. Frozen
+material-mobility surrogates converge in 21-22 iterations, with separate
+known-pressure forward-error checks; full material derivatives are absent.
+
+Optional MG also enters the existing signed full-film mathematical bordered
+Newton solver through its pressure preconditioner, retaining nonsymmetric
+GMRES, Schur/fallback, inexact forcing, dual line search and convergence
+criteria. Zero/weak/moderate compliance and recovery tests pass. Small-grid
+timings do not justify replacing default ILU: MG is slower on two tested
+grids and only modestly faster on the largest. These are mathematical tests,
+not physical 200 N material/JFO validation.
+
+Next: develop and independently verify a pressure/content block preconditioner
+that incorporates MG while preserving the material/JFO active constraints,
+full elastic/material JVP and load border. Revisit 129x193 only with explicit
+resource/iteration diagnostics and original gates. Nonlinear FAS, robust
+anisotropic/high-contrast scaling, material/JFO MG and CUDA MG remain open.
+Do not infer nonlinear convergence or mesh accuracy from elliptic MG speedups.
+
+Verification: complete CPU/CUDA suite 490 passed, one Windows precision skip
+(243.33 s); Ruff clean. Sixty-five resource/MG/monolithic tests also pass
+with torch imports blocked. Validation report sections 27-28 retain actual
+failed-refinement residuals and both useful and slower MG timings.

@@ -2,10 +2,10 @@
 
 **Status: research foundation, NOT a complete validated EHL solver.** It includes
 Hertz references, tested convolution/elasticity, prescribed-film Reynolds/JFO
-solvers, and experimental monolithic cavitation/elasticity with positive-load
-closure on documented small isoviscous benchmarks. Independent film-height
-validation, broad grid/domain/material coverage and pressure-dependent
-properties remain unfinished.
+solvers, pressure-dependent density/viscosity and experimental monolithic
+material/JFO/elasticity with audited 200 N closure on three finite-reservoir
+grids. Independent physical film-height validation, resolved mesh/domain
+accuracy and broad material coverage remain unfinished.
 
 The signed full-film Picard, nested load and bordered Newton solvers remain
 mathematical references. Their negative-pressure tensile contributions must
@@ -409,7 +409,8 @@ A separate warm signed-offset Newton reference is available in
 bounded circular branch with `python -m examples.run_signed_200n
 --output-directory results/signed_new`, using `PYTHONPATH=src` and one
 BLAS/OpenMP thread. It crosses zero rigid offset with positive total film;
-the verified branch reaches 8.97 N, while 200 N closure remains open.
+this bounded dense branch reaches 8.97 N; the later matrix-free path below
+closes 200 N.
 See section 16 of `docs/VALIDATION_REPORT.md` for independent verification,
 retained retries and the current computational/resolution limits.
 
@@ -428,3 +429,36 @@ Explicit nested-grid initialization and safeguarded active repair now close
 Film changes remain large and pressure variation persists; see section 19
 of `docs/VALIDATION_REPORT.md` and `examples.run_load_refinement` for the
 matched-force evidence, retained failures and bounded reproduction.
+
+The targeted content-bound repair also closes **200 N on 97x145 nodes**.
+All three roots were regenerated and independently audited on Windows after
+the missing-archive recovery (2026-10-28). Minimum film still changes by
+15.08% between the two finer grids; alternating pressure/film variation
+persists. Equation/force closure is not physical film-height validation.
+
+Recover the 33x49 source from a cold prescribed-offset solve, then repair
+the two nested guesses (set BLAS/OpenMP threads to one as above):
+
+```bash
+python -m examples.regenerate_200n --output-directory results/source_200n_new
+python -m examples.run_load_refinement --input-directory results/source_200n_new --output-directory results/refined_200n_new --refinement-factor 2
+python -m examples.run_load_refinement --input-directory results/source_200n_new --output-directory results/fine_200n_new --refinement-factor 3
+```
+
+The recovery checkpoints every accepted force step, retains failures and
+refuses existing output directories. `--input-directory` resumes an audited
+partial source into a new directory. Run `examples.audit_load_directed` on
+each recovered directory to independently audit its fields and histories.
+The optional loaded-root audit decomposes the physical directional mass flux
+into seven terms, checks the complete material/elastic JVP and raw alternating
+pressure projections, and saves unsmoothed centerlines:
+
+```bash
+python -m examples.audit_loaded_transport --input-directories results/source_200n_new results/refined_200n_new results/fine_200n_new --output-directory results/loaded_transport_new --cuda-elasticity-check
+```
+
+Omit `--cuda-elasticity-check` for CPU-only execution. This option verifies
+GPU deformation of the accepted real-pressure fields and probe directions;
+it does not port the material/JFO solver to CUDA. The diagnostic quantifies
+static responses, not temporal stability or the cause of the pressure pattern.
+See validation-report section 23 for evidence, limits and next experiments.

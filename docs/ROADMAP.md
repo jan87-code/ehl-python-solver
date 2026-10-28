@@ -18,9 +18,10 @@
     experimental comparison remain planned. Separate coupled JFO/elasticity
     and positive-load numerical benchmarks are now recorded below.
 - [ ] Coupling of Reynolds + elasticity + film thickness + physical load control
-  - Separate monolithic JFO pressure/content/offset coupling now closes positive
-    force on limited isoviscous numerical benchmarks. Independent physical
-    film-height validation and broad domain/material robustness remain open.
+  - Monolithic JFO pressure/content/offset coupling closes positive force on
+    limited isoviscous and pressure-dependent cases, including the registered
+    200 N benchmark on three grids. Physical film-height validation, resolved
+    mesh/domain accuracy and broad material robustness remain open.
   - A signed full-film h0 root finder and bordered Newton-Krylov solver with
     an analytic matrix-free discrete JVP, Schur correction, verified sparse
     preconditioners, directional-derivative Armijo line search with bounded
@@ -45,8 +46,9 @@
     diagnostics remain unfinished.
 - [x] Pressure-dependent density and viscosity: verified SI laws, conservative
   prescribed-film JFO and initial uniform elastic numerical cases.
-  - Published classical-EHL agreement, resolved mesh accuracy and variable-
-    property positive-load control remain open; see the 2026-10-27 milestones.
+  - Limited variable-property positive-load control now closes 200 N.
+    Published classical-EHL agreement, resolved mesh accuracy and broad
+    physical-load validation remain open; see the latest milestones below.
 - [ ] Shear thinning and thermal EHL when isothermal validation passes
 - [ ] Optional CUDA / ROCm benchmarks, parity tests and profiling
   - [x] Explicit PyTorch CUDA cached DC-FFT elasticity, full-film Reynolds
@@ -1328,3 +1330,63 @@ audits and the unsmoothed three-grid plot are preserved under
 Final checks: Ruff clean; full pytest 372 passed, 62 optional device skips
 (307.78 s), one BLAS/OpenMP thread. Production equations and budgets are
 unchanged; only bounded model selection has been extended.
+
+## Windows recovery and loaded-root transport audit (2026-10-28)
+
+Starting at 5c9d723, the missing archives were regenerated with the registered
+R=15 mm, E*=113 GPa, G=2497.3, 200 N case. New reusable recovery orchestration
+cold-starts the 33x49 prescribed-offset source and reproduces 44 accepted
+local-preconditioned load steps. Every accepted state is checkpointed. The
+existing factor-two/three repairs then recover 65x97 and 97x145 roots within
+the original nine/28 correction and 18/141 model counts. Separate archive
+audits pass for all 46 accepted roots. Reproduced film values match the
+reported values; no missing root was reconstructed from a correlation or
+accepted by interpolation. Production solvers, stencils and budgets are unchanged.
+
+Added an independent seven-term SI directional flux decomposition, tested
+against flux finite differences and an analytical alternating-pressure symbol.
+At all three accepted 200 N roots, five zero-force, zero-edge pressure probes
+exercise density/viscosity, diffusion, advection and full-source elastic film.
+The independent mass action agrees with the analytic JVP within 1.62e-14
+relative; best feasible centered residual differences are below 9.41e-9.
+Both global and centerline raw alternating projections are reported because
+opposite transverse phases can cancel in a global projection. The finer-grid
+x-centerline projections remain .33518/.30067, versus .001987/.001042 for
+the sampled dry Hertz reference. The latter is an aliasing reference, not an
+EHL solution. These are diagnostics, not a stability or causality proof.
+
+Elastic film contributions remain non-negligible: for alternating x probes,
+their action norm relative to frozen-film material action is .889/.250/.109;
+for smooth x probes it is 5.15/2.80/1.81. The earlier uniform frozen-film
+density null mode therefore cannot stand in for the loaded coupled analysis.
+The production pressure pattern remains unresolved; no transport change,
+filtering, clipping or physical film-height claim is introduced.
+
+The optional CUDA cross-check uses the RTX A2000 only for deformation of
+accepted pressure fields and five pressure directions per grid. Float64 root
+displacement differences are below 2.55e-21 m; direction differences below
+1.45e-24 m. The production material/JFO continuation remains CPU-only.
+
+Evidence: `results/recovered_200n_20261028*` and separate `_audit` directories;
+`results/loaded_transport_20261028_final` contains all diagnostic arrays,
+source hashes and the inspected raw three-grid plots. Recovery source
+snapshots and SHA-256 manifests retain provenance; generated data are not
+committed. New output directories are required. Validation report section 23
+and README document reproduction without the lost archives.
+
+Next: compare resolved pressure wavelengths and feasible active-front
+directions at these accepted roots, then perform separately verified
+fixed-spacing inlet/outlet/transverse extent changes. Do not infer temporal
+stability from a steady Jacobian or change the stencil solely to suppress
+the plotted pattern. The next integer nested mesh would exceed the existing
+20,000-node cap; plan and verify resource/scaling changes before raising it.
+Mesh/domain and physical validation remain open.
+
+Checks: Ruff clean; complete Windows CPU/CUDA pytest 439 passed, one skipped
+(237.00 s), BLAS/OpenMP threads one. The skip is the wider-longdouble diagnostic:
+Windows does not provide extra precision over float64. Six new diagnostic
+regressions pass. Pre-existing tracked packaging metadata changes are preserved.
+An explicit simulated interruption at the accepted 186.375 N root resumes
+through four newly audited steps to 200 N; final pressure differs by
+6.65e-12 relative L2 and offset by 1.27e-18 m from the cold path. The
+loaded-root audit also passes with torch imports deliberately blocked.

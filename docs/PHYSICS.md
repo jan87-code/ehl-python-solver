@@ -2268,3 +2268,63 @@ Warm-root continuation remains unchanged; the new option is enabled only
 by default for explicit unaccepted-guess repair. Analytic bounded-complement-
 arity tests cover root recovery, ties, competing bounds, roundoff and cycling;
 they are algorithm verification, not a physical EHL benchmark.
+
+## Loaded-root conservative transport decomposition (2026-10-28)
+
+`transport_audit.mass_direction_components` is an independent diagnostic; no
+production stencil is modified. For SI fields in (ny,nx), +x entrainment,
+write M=rho*h^3/(12*eta), C=rho*h and
+q=-M_face grad(p)+Ue*C_face*theta_up*e_x. Face coefficients use arithmetic
+averages and content uses the existing west/upwind value. For prescribed
+directions dp [Pa], dh [m], dtheta [dimensionless],
+
+```
+dM = rho_p*dp*h^3/(12*eta) - M*eta_p*dp/eta + 3*M*dh/h,
+dC = h*rho_p*dp + rho*dh,
+dq = -M_face grad(dp) - dM_face grad(p)
+     + Ue*(dC_face*theta_up + C_face*dtheta_up)*e_x.
+```
+
+The seven returned opposing-face divergences separate direct pressure
+diffusion, density diffusion, viscosity diffusion, film diffusion, density
+advection, film advection and content advection. Units are kg/(m^2 s).
+Summing them gives the complete directional mass equation. The uniform-state
+density-advection tangent of an alternating pressure direction has the centered
+null response, while direct diffusion reproduces its nonzero analytical
+symbol. A separate finite-difference test changes pressure, film and content
+together and checks the sum against independently evaluated physical fluxes.
+
+The loaded-root runner requires an accepted 200 N archive with matching
+benchmark metadata and freshly verifies original physical/film/boundary
+criteria and independently integrated SI force. Its probes have 1 MPa peak
+pressure direction, zero pressure edges and zero uniform-grid force direction.
+Pressure support is p>0.1*pmax, with a fixed physical window
+exp(-2*((x/a)^4+(y/a)^4)), where a is the registered dry Hertz radius.
+Subtracting the window-weighted mean makes each probe force-free; this
+changes only the artificial direction, never the production state. Modes
+are alternating x, y, xy and windowed smooth x/y; dtheta=dh0=0. Nonlocal
+elastic dh is computed on the whole physical domain, not just that support.
+
+The complete analytic mass JVP is checked against the independently summed
+SI components with the original mass nondimensionalization. Complementarity
+and force rows are checked as well. Feasible two-sided residual differences
+at factors .01/.001/.0001 retain all errors, rather than declaring the smallest
+step best. These pressure-supported directions avoid changing active fronts;
+front/tie perturbations remain a distinct next benchmark. The accepted
+three-grid test gives decomposition errors below 1.62e-14 and best complete
+residual-difference errors below 9.41e-9. It verifies derivative actions,
+not a temporal stability criterion or continuum accuracy.
+
+Raw alternating pressure projections use the same fixed physical window:
+abs(sum(window*p*parity))/sum(abs(window*p)), for x, y and xy index parity.
+Nearest-axis-zero centerline projections expose cancellation between opposite
+row/column phases. No pressure is smoothed, detrended or filtered. The same
+diagnostic on independently sampled dry Hertz pressure establishes a finite-
+sampling reference, not an EHL solution. Nonzero projection alone is not an
+instability test, and a small global projection need not mean a smooth field.
+See validation-report section 23 for actual values, recovered fields and plots.
+
+Optional CUDA checks evaluate only the unchanged linear elastic operator at
+the accepted pressure fields and those five directions. They preserve Pa to m,
+positive gap increase and the existing source-integrated kernel. They are
+component parity checks; no GPU material/JFO solve or speedup is claimed.

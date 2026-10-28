@@ -1,9 +1,9 @@
 # EHL scientific verification report
 
-Audit history: 2026-10-26 through 2026-10-27. Sections 1–10 retain the
+Audit history: 2026-10-26 through 2026-10-28. Sections 1–10 retain the
 original incompressible/isoviscous audit; sections 11 onward document
 pressure-dependent NumPy/SciPy CPU developments. The latest bounded
-matrix-free force path now closes 200 N on 33x49 and 65x97 nodes;
+matrix-free force path now closes 200 N on 33x49, 65x97 and 97x145 nodes;
 mesh/domain accuracy remain open. This report records numerical verification,
 **not complete physical validation of classical piezoviscous EHL**.
 
@@ -2789,3 +2789,182 @@ pressure oscillations and mesh error remain unresolved.
 Final checks: `ruff check .` clean; full `pytest -q` 372 passed, 62 optional
 device skips (307.78 s), with BLAS/OpenMP threads set to one. No GPU execution
 or physical EHL validation is claimed by this CPU model-selection milestone.
+
+## 23. Recovered Windows archives and loaded-root directional transport (2026-10-28)
+
+Starting revision: 5c9d7239e16a75f6be2f99e954468585648e707f. The benchmark
+definition and numerical code survived in Git, but the October 27 raw root
+archives were not present on this machine. This increment regenerates them
+from the registered Circular200N physics; it does not reconstruct pressure
+from reported film values, a correlation or a failed partial. Production
+equations, acceptance criteria, sparse preconditioners, iteration/node caps
+and the two older active-recovery policies remain unchanged.
+
+### Recovery and independent field/history audits
+
+`examples.regenerate_200n` cold-starts the 33x49 h0=0.5 um prescribed-offset
+source, then uses the documented local-preconditioned force targets
+2/4/8/10/20/40/80/120/160/200 N. Each target retains at most twelve load
+attempts and the original 30-correction/eight-active-model solver budgets.
+Every accepted force step and its full history are checkpointed immediately.
+Failures and any unaccepted partial remain separately named. Optional resume
+reads an accepted source, independently re-audits it and writes a new output
+directory; an already completed 200 N source is used directly, not relabeled
+as a new resumed solve. Output directories are never reused.
+
+The cold path reproduces 44 accepted load steps. The two existing nested
+repairs reproduce nine corrections/18 models on 65x97 and 28 corrections/
+141 models on 97x145, all within their unchanged budgets. Independent
+`examples.audit_load_directed` passes for all 46 accepted states: original SI
+mass, local/global balance, complementarity, pressure/content boundaries,
+positive exact total film, full-source displacement, integrated force and
+original directional Armijo/linear-correction histories. Source production
+files were not changed during these runs.
+
+| Grid (ny,nx) | h0 [um] | Sampled minimum film [um] | Central film [um] | Peak pressure [MPa] |
+| --- | ---: | ---: | ---: | ---: |
+| 33x49 | -4.6305589082 | .01960927772 | .3320824786 | 1725.253140 |
+| 65x97 | -4.5217727964 | .1629378195 | .4429945326 | 1741.100421 |
+| 97x145 | -4.4984024160 | .1875122800 | .3961280370 | 1716.683723 |
+
+These match the previously reported scalar roots; bytewise equality with
+the missing original arrays is not claimed. Across the recovered final
+roots, maximum original scaled mass defect is 3.186e-15, maximum relative
+local mass defect 1.620e-14 and maximum complementarity 1.487e-28. Sampled
+direct source-cell integration differs from FFT by at most 4.236e-21 m.
+All force targets close 200 N. Maximum true correction error across the
+44-step source is 1.749e-9 and across the repaired 97x145 history 9.757e-10.
+Cross-platform last-bit differences in those diagnostics are retained.
+
+Resume was tested separately by constructing an incomplete checkpoint from
+the accepted 186.375 N root (no failed partial). Four further accepted steps
+close 200 N and pass the separate archive/globalization audit. Final pressure
+differs from the cold-path endpoint by 6.650e-12 relative L2 and offset by
+1.263e-18 m. The source root/arrays are unchanged. These extra resumed roots
+are separate from the 46-state cold/refinement audit count above.
+
+The 65x97->97x145 minimum/central/peak changes remain +15.08%, -10.58%
+and -1.402%. The combined 1% mesh gate is false. Fixed physical bounds are
+still +/-3a in both axes; this regeneration is not a reservoir-convergence
+study, a physical pressure-spike validation or an experimental film comparison.
+
+### Independent complete directional mass actions
+
+`transport_audit.mass_direction_components` independently implements the
+seven SI contributions described in PHYSICS.md: pressure, density,
+viscosity and film diffusion; density, film and content advection. Face
+arithmetic averages, established content upwinding and original units are
+preserved. Tests compare their sum with physical-flux finite differences
+when pressure, film and content all change; an analytical uniform
+alternating-pressure symbol separately checks diffusion and the density-
+advection null response. No production residual/JVP function is reused to
+assemble the decomposition.
+
+For each newly audited 200 N root, five pressure probes use alternating x,
+y, xy and smooth x/y directions. Peak direction is 1 MPa, pressure edges
+and force direction are zero, and support is restricted to p>0.1*pmax with
+the fixed physical exp(-2*((x/a)^4+(y/a)^4)) window. Content and rigid-offset
+directions are zero. Elastic film directions retain the full-domain source
+convolution, including effects outside the pressure-probe support.
+
+The summed SI divergence is scaled with the original flux/mass scales and
+compared with the complete analytic material/elastic JVP, including unchanged
+complementarity and force rows. Its relative discrepancy is below 1.62e-14.
+Centered residual differences at factors .01/.001/.0001 retain both-sign
+pressure/film feasibility and all measured errors. The largest best-step
+relative complete-JVP discrepancy is 9.406e-9. These are nonzero loaded,
+nonuniform, full-material/full-elastic actions, rather than the earlier
+uniform frozen-film observation alone.
+
+| Grid | Alternating-x film / frozen-film material action norm | Smooth-x film / frozen-film material action norm |
+| --- | ---: | ---: |
+| 33x49 | .888662 | 5.154743 |
+| 65x97 | .249511 | 2.803467 |
+| 97x145 | .109440 | 1.809639 |
+
+Frozen-film material action here retains pressure diffusion, density/viscosity
+pressure derivatives and density transport. The separate film action is
+elastic diffusion plus elastic entrainment. These ratios quantify static
+directional contributions, not eigenvalues, energy growth, linear-solver
+condition numbers or a temporal-stability test. All tested complete actions
+are nonzero; the density-only alternating null is not the whole loaded
+Jacobian. The result does not establish why the production pressure varies.
+Feasible active-front/tie directions are not covered by these supported
+pressure probes and remain a separate next experiment.
+
+### Raw alternating projections and inspected figures
+
+No filtering, smoothing or detrending is applied to the production arrays.
+The dimensionless diagnostic is abs(sum(window*p*parity))/sum(abs(window*p)).
+It is a projection, not a peak-to-peak oscillation amplitude. The fixed
+physical window is identical across grids. Both full 2-D and sampled y=0
+centerline values are reported; transverse phase cancellation can strongly
+reduce the global number. An independently sampled dry Hertz pressure
+provides a finite-sampling reference, not an EHL solution.
+
+| Grid | Global x projection | Centerline x projection | Sampled Hertz centerline x |
+| --- | ---: | ---: | ---: |
+| 33x49 | .130938 | .112640 | .00611515 |
+| 65x97 | .0167268 | .335179 | .00198702 |
+| 97x145 | .0950790 | .300669 | .00104169 |
+
+Thus the smaller intermediate-grid global projection does not establish
+disappearance of the pressure pattern. Raw pressure and total-film centerlines,
+including a contact-region film zoom, were inspected on the three grids.
+They retain visible alternating pressure and film variation. Neither that
+observation nor the sampled Hertz comparison establishes continuum
+instability, causality or the correct resolved EHL spike.
+
+### Secondary CUDA elasticity parity
+
+The optional `--cuda-elasticity-check` reuses the existing float64 cached
+cell-integrated elastic operator on the RTX A2000. It checks deformation
+of each accepted GPa pressure field and the five signed probe directions.
+Maximum root displacement discrepancy is 2.542e-21 m and maximum direction
+discrepancy 1.448e-24 m. The largest diagnostic allocated/reserved peaks are
+6,347,264/8,388,608 bytes. These are component parity checks outside the
+production solve; no material/JFO GPU execution or speedup is claimed.
+Omitting the flag keeps the audit on NumPy/SciPy and does not require torch.
+
+### Reproduction and remaining work
+
+Use one BLAS/OpenMP thread, a noninteractive plotting backend and new paths:
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLBACKEND=Agg
+python -m examples.regenerate_200n --output-directory results/source_200n_new
+python -m examples.run_load_refinement --input-directory results/source_200n_new \
+  --output-directory results/refined_200n_new --refinement-factor 2
+python -m examples.run_load_refinement --input-directory results/source_200n_new \
+  --output-directory results/fine_200n_new --refinement-factor 3
+python -m examples.audit_load_directed --input-directory results/source_200n_new \
+  --output-directory results/source_200n_audit_new
+python -m examples.audit_load_directed --input-directory results/refined_200n_new \
+  --output-directory results/refined_200n_audit_new
+python -m examples.audit_load_directed --input-directory results/fine_200n_new \
+  --output-directory results/fine_200n_audit_new
+python -m examples.audit_loaded_transport --input-directories results/source_200n_new \
+  results/refined_200n_new results/fine_200n_new --cuda-elasticity-check \
+  --output-directory results/loaded_transport_new
+```
+
+Equivalent PowerShell thread settings are in README. The retained source,
+refinements and separate audits are in `results/recovered_200n_20261028*`;
+diagnostic directions/component arrays, source hashes, exact inputs and raw
+figures are in `results/loaded_transport_20261028_final/`. These generated
+archives remain outside Git. Cold recovery stores production source snapshots
+and a SHA-256 manifest, and runtime records identify source-file hashes.
+Previously existing outputs and pre-existing packaging changes are preserved.
+
+Next: compare resolved pressure wavelengths and feasible active-front
+directions before testing an alternative conservative flux. Then separate
+fixed-spacing inlet/outlet/transverse reservoir sensitivity from mesh error.
+Do not use a steady directional Jacobian as a time-stability proof, alter
+material laws to fit the supplied film estimates, smooth away the pressure
+pattern, or raise the 20,000-node cap without a verified resource/scaling plan.
+
+Verification: `ruff check .` clean; complete Windows CPU/CUDA `pytest -q`
+439 passed, one skipped (237.00 s). The wider-longdouble correction diagnostic
+skips because Windows longdouble has no additional mantissa precision. Six
+new independent diagnostic regressions pass; physical/model accuracy remains open.
+The loaded-root audit additionally passes with torch imports deliberately blocked.

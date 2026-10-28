@@ -2979,3 +2979,89 @@ verification passes. Size: 7,887,923 bytes. Archive SHA-256:
 The ZIP and raw fields are not in Git; their identity and regeneration
 instructions are. This is verified local packaging, not confirmation of
 an off-machine backup or OneDrive synchronization.
+
+## 24. Resolved pressure carriers, active fronts and finite reservoirs (2026-10-28)
+
+The recovered circular 200 N case remains unchanged: 15 mm radii,
+113 GPa contact modulus, 2 m/s entrainment, 0.04 Pa s reference viscosity,
+and G=2497.3. The three accepted roots are 33x49, 65x97 and 97x145
+arrays in (ny,nx) order, with entrainment along +x. No production residual,
+Jacobian, constitutive law, field gate, force gate or solver budget changed.
+
+`examples.audit_transport_wavelengths` checks windowed sine/cosine pressure
+directions at fixed physical wavelengths a, a/2 and a/4. Carriers with fewer
+than four cells per wavelength are explicitly omitted. Separate two-cell
+Nyquist directions retain the earlier alternating-mode reference. Pressure
+directions have zero discrete force and zero boundary values. Their support
+depends on the accepted pressure field; they are not operator eigenvectors.
+The independently decomposed seven-term mass derivative agrees with the
+complete JVP to 8.94e-15 relative error across all 43 probes. The largest
+best feasible finite-difference error is 9.66e-9. Centered differences cover
+carriers; second-order one-sided differences cover active-front directions.
+
+Each physical root has a transverse-center +x rupture pair. Force-free
+pressure transfers and content loss/gain probes preserve field bounds and
+test the exact one-sided derivative of min(P,D). Near ties are not rounded
+into exact ties. No reformation or exact tie occurs in these roots; reflected
+and exact-tie unit tests provide separate coverage. Front-only best
+finite-difference error is at most 1.09e-10. Trial field feasibility is not
+complementarity convergence: these perturbed fields are not new roots.
+
+The x-Nyquist scaled mass response is respectively .169, .225 and .371
+times the corresponding windowed a-wavelength cosine response. These static
+directional gains depend on state coordinates and the chosen window. They
+do not establish temporal instability, a Jacobian spectrum, a convergence
+order or a cause of the pressure pattern. Raw directions, components,
+differences and figures are retained in
+`results/wavelength_front_20261028_final`.
+
+`examples.run_material_reservoir` separately extends the 65x97 source at
+fixed dx=a/16 and dy=3a/32. Every original coordinate is preserved exactly.
+Added pressure is initially zero; edge content is extrapolated as an
+explicitly unaccepted guess. Full elasticity is recomputed at the original
+signed offset. Tests independently verify force and shared-film preservation
+and repaired-root agreement with a cold solve. The existing force Newton
+engine repairs each extension under its original limits and acceptance gates.
+
+| Added cells | Extended boundary | Target (ny,nx) | Newton corrections | Minimum film change | Central film change | Peak pressure change |
+|---|---|---|---:|---:|---:|---:|
+| 4 | inlet | 65x101 | 3 | -0.032445% | +0.095703% | +0.037536% |
+| 4 | outlet | 65x101 | 1 | roundoff | roundoff | roundoff |
+| 4 per side | transverse | 73x97 | 2 | +0.005928% | -0.007962% | +0.003725% |
+| 8 | inlet | 65x105 | 4 | -0.058302% | +0.156815% | +0.062652% |
+| 8 | outlet | 65x105 | 1 | roundoff | roundoff | roundoff |
+| 8 per side | transverse | 81x97 | 4 | +0.005500% | -0.013514% | +0.005856% |
+
+All six independently reopened roots close 200 N to printed float64
+precision. Maximum scaled mass defect is 4.40e-11 (gate 1e-8), maximum
+relative local mass defect 2.94e-11 (gate 1e-10), maximum complementarity
+defect 1.55e-20, and maximum independently verified true linear residual
+4.19e-10. Saved histories pass both line-search checks and the original
+directional Armijo test. Direct source-cell elasticity checks at the center
+and peak pass. Source file hashes remain unchanged. The largest shared-node
+pressure L2 change is 0.4750%; maximum film difference is 2.335 nm, both for
+the eight-cell inlet extension. Raw shared-node differences are plotted
+without filtering or resampling.
+
+Individual outward mass flows still depend substantially on reservoir extent.
+The baseline west/east/each transverse flows are approximately
+(-3.2753e-5, 1.3674e-5, 9.5396e-6) kg/s. Eight added inlet cells give
+(-4.1612e-5, 1.3681e-5, 1.3965e-5); eight added transverse cells per side
+give (-5.2997e-5, 3.0720e-5, 1.1138e-5). Small inner-film sensitivity over
+this tested range does not prove infinite-domain validity. The earlier
+15.08% minimum-film mesh change remains much larger; physical film-height
+accuracy and the mesh-dependent pressure pattern remain unresolved.
+
+Evidence directories are `results/material_reservoir_20261028` and
+`results/material_reservoir_20261028_cells8`, with independent
+`_audit_final` directories. README gives reproducible commands. Generated
+data stay outside Git. GPU work is secondary; this material/JFO path remains
+CPU-only and retains the existing 20,000-node cap.
+
+Verification: Ruff clean; complete Windows CPU/CUDA suite **453 passed,
+one skipped in 237.98 s**. The existing wider-longdouble test skips because
+Windows longdouble provides no additional precision. Fourteen new CPU
+regressions pass, including independent discrete Fourier symbols, exact
+one-sided ties, reflected reformation, integer-input dtype handling and
+same-spacing reservoir repair. The two new test modules also pass with
+torch imports deliberately blocked. No full physical EHL validation is claimed.

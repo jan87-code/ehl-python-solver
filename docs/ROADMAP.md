@@ -1397,3 +1397,58 @@ source snapshot at 47f70c2ae19b64d5cc065846a3ce4698347bacb2. Archive SHA-256:
 `10c55aab7b0f963d9713db798f57fc80bfa22ecf40924510c9c5a9abb39beaf6`.
 The package is local/Git-ignored; only the reproducible code, evidence and
 archive identity are committed. No off-machine synchronization is asserted.
+
+## Resolved carriers, fronts and material reservoir budget (2026-10-28)
+
+Starting at 9afbd68, added fixed physical sine/cosine pressure carriers at
+wavelengths a, a/2 and a/4, with explicit four-cell sampling omissions and
+separate Nyquist references. These are not a convergence fit.
+Added one-sided bound-feasible rupture/content probes
+and an exact min(P,D) directional derivative check. Production fields are
+not rounded into ties, filtered or changed. All 43 accepted-root probe checks
+pass: complete mass decomposition error <8.94e-15, best feasible residual
+differences <9.66e-9, front-only <1.09e-10. No reformation/exact tie is present
+in these roots; analytic/reflected tests cover those paths separately.
+
+The checked x-Nyquist mass gains are .169/.225/.371 times the corresponding
+windowed a-wavelength cosine gains on the three meshes. This quantifies the
+selected static responses; it does not establish a Jacobian spectrum,
+instability or the cause of the pressure pattern. All accepted fields and
+the pressure pattern remain intact.
+
+Added an explicitly unaccepted same-spacing reservoir extension initializer;
+existing fixed-reservoir interpolation and source-audit rules remain strict.
+Six independent 200 N repairs use four/eight-cell inlet, outlet and transverse
+extensions of the same 65x97 root. All pass original field/force and independent
+saved-state/history/source audits within existing 30-correction/eight-model
+budgets. The node cap remains 20,000; maximum tested target is 81x97.
+Initializer tests verify exact coordinate/force preservation and independent
+cold-root parity; no offset lift, pressure/content projection or new boundary
+condition is introduced.
+
+Largest tested minimum/central-film changes are .058302%/.156815%, versus
+the earlier 15.08%/-10.58% finer-grid changes. Largest peak-pressure change
+is .062652%; outlet extensions are invariant to roundoff here. Individual
+boundary mass flows vary substantially. Thus the tested finite-reservoir
+range is a smaller inner-field effect than the measured mesh error, not a
+proof of infinite-domain or physical film-height accuracy.
+
+Evidence: `results/wavelength_front_20261028_final`,
+`results/material_reservoir_20261028` and `_cells8`, with separate
+`_audit_final` directories and raw shared-node difference figures. Source
+hashes are unchanged. Production residual/JVP, force/field criteria,
+constitutive laws, preconditioners and nonlinear budgets are unchanged;
+GPU work remains secondary and the material/JFO model stays CPU-only.
+
+Next: independently benchmark a conservative transport alternative against
+smooth source/symbol/constant-law limits before any adoption; retain the
+current stencil as the reference. Continue matched-force mesh comparisons
+only with verified resource/scaling changes before exceeding the node cap.
+These diagnostics prioritize the unresolved discrete pressure pattern; they
+do not justify tuning material laws or interpreting correlation agreement
+as physical validation. Larger-domain and additional-mesh verification remain open.
+
+Verification: Ruff clean; complete Windows CPU/CUDA suite 453 passed, one
+skipped (237.98 s). The existing wider-longdouble diagnostic skips because
+Windows supplies no extra precision. Fourteen new CPU regressions cover the
+diagnostics and reservoir initialization/repair; optional torch remains optional.

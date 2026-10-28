@@ -462,3 +462,34 @@ GPU deformation of the accepted real-pressure fields and probe directions;
 it does not port the material/JFO solver to CUDA. The diagnostic quantifies
 static responses, not temporal stability or the cause of the pressure pattern.
 See validation-report section 23 for evidence, limits and next experiments.
+
+Resolved physical carriers and bound-feasible front directions are now
+independently checked at those three 200 N roots. Under-resolved carriers
+are explicitly omitted; exact min-function ties are handled one-sided,
+without rounding near-zero fields. These are static derivative diagnostics,
+not a temporal-stability or oscillation-causality proof.
+
+```bash
+python -m examples.audit_transport_wavelengths --input-directories results/source_200n_new results/refined_200n_new results/fine_200n_new --output-directory results/carriers_fronts_new
+```
+
+A separate fixed-spacing material/JFO reservoir study extends the inlet,
+outlet and transverse bounds independently, retaining every original node.
+The extension is explicitly unaccepted until repaired by the original force
+Newton engine. All six four-/eight-cell cases on the audited 65x97 source
+close 200 N and pass independent saved-field/history audits. Maximum tested
+minimum/central-film changes are .0583%/.1568%; the previous 15.08% minimum-
+film mesh change is much larger. Individual boundary flows still change
+substantially. Infinite-domain validity and physical film-height accuracy
+are not established, and production transport is unchanged.
+
+```bash
+python -m examples.run_material_reservoir --input-directory results/refined_200n_new --output-directory results/reservoir4_new --cells 4
+python -m examples.run_material_reservoir --input-directory results/refined_200n_new --output-directory results/reservoir8_new --cells 8
+python -m examples.run_material_reservoir --audit-only --input-directory results/reservoir4_new --output-directory results/reservoir4_audit_new
+python -m examples.run_material_reservoir --audit-only --input-directory results/reservoir8_new --output-directory results/reservoir8_audit_new
+```
+
+Use one BLAS/OpenMP thread and new output paths. The study retains raw
+initializations, roots, histories, flow budgets and shared-node differences.
+See validation-report section 24 and PHYSICS.md for the metrics and limits.

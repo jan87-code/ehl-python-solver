@@ -2328,3 +2328,85 @@ Optional CUDA checks evaluate only the unchanged linear elastic operator at
 the accepted pressure fields and those five directions. They preserve Pa to m,
 positive gap increase and the existing source-integrated kernel. They are
 component parity checks; no GPU material/JFO solve or speedup is claimed.
+
+## Resolved carriers and active-front diagnostics (2026-10-28)
+
+`transport_probes.resolved_pressure_probes` uses the same pressure-supported
+physical window as the preceding audit, with zero pressure edges and zero
+uniform-grid force direction. Sine/cosine carriers have nominal physical
+wavelength a, a/2 or a/4 in x or y, where a is the registered dry Hertz
+radius. A carrier is tested only with at least four cells per wavelength;
+omissions are recorded. Grid-relative two-cell Nyquist references are
+separately labelled. The window/support/mean subtraction modify the carrier
+spectrum; neither the probes nor their responses are eigenfunctions. With
+the original dimensionless state and mass scale, reported static mass gain
+is ||dR_mass||_2/||v_state||_2. Its coordinate scaling matters; this is not a
+Jacobian condition estimate or a temporal growth rate.
+
+Uniform-state independent checks use the exact symbols of pressure diffusion
+and centered density advection. At xi=k*dx, their continuum attenuation
+factors are 4*sin(xi/2)^2/xi^2 and sin(xi)/xi. At four cells/wavelength they
+are .810569/.636620, at eight .949641/.900316 and at sixteen .987215/.974495.
+These are smooth uniform-state symbols, not a model of the loaded nonlinear
+front or an explanation of the production pressure pattern.
+
+`active_front_probes` selects a representative adjacent full/cavitated pair
+nearest y=0 at each existing +x rupture/reformation. Distinct margins are
+required; missing front types and exact P=D tie counts are explicit. The
+loaded roots have a selected rupture and no reformation or exact ties.
+Probes transfer pressure from the full cell to its neighbor at zero total
+force, remove content from the full cell, or add content to the cavitated
+cell. West content is fixed and copied east/north/south content-direction
+boundaries match the production state map. Pressure/content inequalities
+and strict positive film are required. Intermediate diagnostic states may
+violate mass/complementarity; they are never accepted physical roots.
+
+For min(P,D), the true one-sided derivative equals dP if P<D, dD if D<P,
+and min(dP,dD) at EXACT equality. A selected generalized Jacobian may differ
+at a tie for some directions. The unchanged production merit_slope already
+uses this directional rule; a separate analytical non-root tie test verifies
+it. No near-zero field is rounded into a tie. Non-tied branch-switch limits
+bound finite-difference sample sizes; the directions/states are not projected.
+Second-order forward differences use two positive feasible steps at fronts;
+centered differences apply to pressure-supported carriers. Every step and
+error, unchanged-by-roundoff trials and feasibility status are recorded.
+
+Across 43 loaded-root probes, independent seven-term SI mass actions agree
+with complete analytic products within 8.94e-15 relative. Best feasible
+residual-difference errors are below 9.66e-9, and front-only errors below
+1.09e-10. All modes have nonzero action. Tests also cover the exact-tie rule,
+reflected reformation selection, copied content boundaries, uniform symbols,
+force/edge preservation, explicit sampling omissions and float64 conversion
+of integer pressure/content inputs. This does not establish spectral or
+temporal stability, continuum pressure-spike accuracy or causality.
+
+## Same-spacing finite-reservoir extension (2026-10-28)
+
+`property_reservoir.extended_reservoir_problem` adds integer original cells,
+retaining every original coordinate exactly. The original geometry, material,
+scales, supply, pressure/content/film gates and 20,000-node cap are retained.
+The separate extension initializer verifies its source root, embeds its
+pressure unchanged, sets added pressure to zero and edge-extrapolates content.
+It changes no offset and clamps no field. Full target FFT reconstructs film;
+shared-source film and integrated force must be preserved to the declared
+1e-18 m/1e-12 relative initialization checks. The result is an explicit
+PropertyLoadGuess, not a root. The existing repair and all original final
+mass/complementarity/force/globalization gates remain mandatory.
+
+This tests existing finite ambient-pressure/flooded-inlet boundary models
+at new bounds, not a new infinite-domain condition. Each case starts from
+the same accepted 65x97 200 N root; no failed partial seeds another case.
+Inlet and outlet each extend four/eight original x cells; both transverse
+edges extend four/eight original y cells. Spacings are fixed at dx=a/16,
+dy=3a/32. All cases pass separate saved-field/force/history and sampled
+direct elastic-source audits. The small-case test additionally compares a
+repaired extension with independent cold initialization at the same force.
+
+Largest tested changes are .058302% in sampled minimum film, .156815% in
+central film and .062652% in peak pressure. Shared-source pressure changes
+are at most .4750% relative L2 and shared film differences at most 2.335 nm.
+The material outlet extension leaves the upstream root/fluxes unchanged to
+roundoff on these cases. Inlet and transverse boundary mass flows change
+substantially despite small inner-film changes; net balance still passes.
+This limited sensitivity range is smaller than the existing mesh changes,
+but proves neither infinite-domain convergence nor physical film accuracy.

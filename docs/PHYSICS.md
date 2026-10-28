@@ -2547,3 +2547,39 @@ Independent complete-correction, zero/weak/moderate compliance, final
 Reynolds/load, strict feasibility, Armijo retry, Krylov-failure and load-step
 retry tests cover this optional path. These signed, low-pressure cases remain
 mathematical references and do not establish a physical material/JFO solution.
+
+## Diagnostic active pressure/content MG inverse
+
+`property_block_multigrid.PropertyBlockMultigrid` accepts the existing internal
+material load system and its dimensionless state `(P,D,h0/H0)`, where
+`P=p/p_ref`, `D=1-theta`, and C-order interior fields have shape
+`(ny-2,nx-2)`, x along positive entrainment. Physical problem inputs retain
+SI pressure, length, viscosity, speed and force conventions. This class is
+not selected by any production nonlinear solver.
+
+For a fixed full-film selector F, the frozen positive mobility is
+`m=(rho/rho0)*(h/H0)^3/(eta/eta0)`. The existing Reynolds MG hierarchy uses
+`cbrt(m/mass_scale)` as its surrogate film, so its diffusion matrix has the
+same mass-row normalization as the material block. With A that SPD diffusion
+matrix, the masked hierarchy starts from `F A F + (I-F)`. Galerkin coarsening
+preserves SPD. Inactive pressure rows/columns have identity values; callers
+project a finite cycle's output to impose zero inactive pressure corrections.
+This projection applies to correction vectors, never to pressure/film states.
+
+Complementarity rows fix dD on full cells and dP on cavitated cells for every
+right-hand side, including nonzero constraint rows. Subtract those known
+columns from the frozen mass RHS, apply a projected pressure cycle on full
+cells, then solve cavitated donor-content mass rows by lower-triangular
+substitution. Transport must be lower triangular with finite nonzero diagonal;
+unsupported input fails explicitly. Coupling from unknown cavitated deficits
+into full-cell mass rows is omitted, while pressure-to-cavitated-mass coupling
+is retained. The resulting fixed linear inverse is nonsymmetric: use GMRES,
+not CG, for the complete material/JFO system.
+
+Only the frozen preconditioner is supported. Full material derivatives,
+full-source elastic film response and the load border are retained in the
+independent outer-operator tests, rather than approximated by this hierarchy.
+The verified small-grid Schur and full-bordered corrections do not establish
+nonlinear feasibility/globalization, 200 N repair convergence, mesh accuracy,
+performance or physical validation. Production integration requires those
+additional checks.

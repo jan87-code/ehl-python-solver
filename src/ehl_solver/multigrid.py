@@ -8,7 +8,7 @@ operator. No nonlinear constraints or fields are clipped or rediscretized.
 
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
-from scipy.sparse import coo_matrix, kron
+from scipy.sparse import coo_matrix, diags, kron
 from scipy.sparse.linalg import LinearOperator
 
 from ehl_solver.reynolds import assemble_reynolds_system
@@ -42,9 +42,17 @@ class ReynoldsMultigrid:
     absolute row-sum spectral bound for D^-1 A. A cycle always starts at zero,
     so the inverse action stays fixed and linear. Setup rejects unsupported
     coarsening instead of silently factoring a large fine matrix.
+
+    Optional boolean interior pressure_active imposes zero corrections on
+    inactive pressure nodes through A_mask=F*A*F+(I-F), before Galerkin
+    coarsening. Its active principal block remains SPD. This is a frozen
+    linear surrogate, not a JFO complementarity or material Jacobian solve.
+    Callers requiring exact inactive zeros must project the approximate
+    cycle output; a finite V-cycle can couple them through coarse levels.
     """
 
-    def __init__(self, film, dx, dy, *, smoothing_steps=2, omega=2/3, coarse_maximum=64):
+    def __init__(self, film, dx, dy, *, smoothing_steps=2, omega=2/3, coarse_maximum=64,
+                 pressure_active=None):
         if (type(smoothing_steps) is not int or not 1 <= smoothing_steps <= 8
                 or type(coarse_maximum) is not int or not 1 <= coarse_maximum <= 256
                 or not np.isfinite(omega) or not 0 < omega < 1):
@@ -54,6 +62,12 @@ class ReynoldsMultigrid:
             raise ValueError("multigrid foundation limited to 300000 interior unknowns")
         with np.errstate(over="raise", invalid="raise"):
             matrix, _ = assemble_reynolds_system(film, dx, dy, 0.)
+        if pressure_active is not None:
+            active = np.asarray(pressure_active)
+            if active.shape != (shape[0]-2, shape[1]-2) or active.dtype != np.bool_:
+                raise ValueError("pressure_active must be a boolean interior (ny-2,nx-2) mask")
+            mask = diags(active.ravel().astype(float))
+            matrix = (mask@matrix@mask + diags((~active).ravel().astype(float))).tocsr()
         self.matrix = matrix
         self.smoothing_steps = smoothing_steps
         self.levels = []

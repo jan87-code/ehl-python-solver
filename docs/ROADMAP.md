@@ -1563,3 +1563,40 @@ Verification: complete CPU/CUDA suite 490 passed, one Windows precision skip
 (243.33 s); Ruff clean. Sixty-five resource/MG/monolithic tests also pass
 with torch imports blocked. Validation report sections 27-28 retain actual
 failed-refinement residuals and both useful and slower MG timings.
+
+## Active pressure/content multigrid prototype (2026-10-28)
+
+Continued from `1ab27ba` on `develop`.
+
+Added a diagnostic-only `PropertyBlockMultigrid` inverse for the frozen
+material/JFO pressure-content block. Boolean active pressure constraints enter
+the SPD hierarchy before Galerkin coarsening. Known complementarity corrections
+are eliminated exactly; projected pressure V-cycles and exact lower-triangular
+cavitated donor-content solves form a fixed nonsymmetric block inverse. It
+omits unknown cavitated-content coupling into full-cell mass rows. The complete
+elastic/material Jacobian and force border remain outer Krylov operators.
+
+Independent tests cover full, cavitated, front and disconnected active sets;
+masked SPD/Galerkin structure; known-pressure recovery; linearity and exact
+constraint rows; dense surrogate parity at the exact coarse level; material
+JVP finite differences; and true-residual/dense-reference checks for both
+Schur-reconstructed and full bordered GMRES corrections on a small material
+case. This is algebraic verification of a prototype, not nonlinear JFO MG,
+129x193 convergence, timing/scaling evidence or physical film validation.
+Production solver selection, stencils, line searches, fallback paths and
+resource/nonlinear acceptance budgets remain unchanged.
+
+Next: compare this block inverse with existing frozen/material/local sparse
+preconditioners on accepted and rejected loaded states, recording true Krylov
+residuals, iterations, setup/application time and memory. Only after that
+comparison should an explicit production option be considered, with complete
+nonlinear feasibility, dual-globalization, recovery and continuation tests.
+Do not infer material/JFO scalability from the masked SPD tests.
+
+Verification on Linux CPU: repository-wide `ruff check .` and `git diff
+--check` pass. With `OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=.:src`,
+`.venv/bin/pytest -q` reports 440 passed, 62 optional GPU/backend skips
+(332.47 s). The final targeted prototype run reports 13 passed (19.42 s),
+including two transport-rejection tests added after full-suite collection.
+The MG/prototype combined run before those last two cases reports 19 passed.
+No GPU execution or loaded-state performance is asserted by these checks.

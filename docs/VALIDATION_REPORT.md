@@ -3369,3 +3369,42 @@ benchmarks, the prior verified archive and exact source snapshot at
 `077367498c4d4af7864fd26c2b1e72b562c70b42`. Archive SHA-256:
 `85f52199152f76c69a95ed87a33d7d31c5953080caa23767973be819774e89a9`.
 Raw data remain Git-ignored; no off-machine backup or synchronization is asserted.
+
+## 29. Diagnostic material/JFO block MG foundation (2026-10-28)
+
+Based on `1ab27ba`, adds a frozen-active-set pressure/content inverse as an
+isolated CPU diagnostic, not a production Newton option. Physical definitions,
+normalizations and the omitted mass coupling are specified in PHYSICS.md.
+
+`tests/test_property_block_multigrid.py` independently verifies:
+
+- Positive masked diffusion and exact Galerkin identities on 17x25 grids
+  with full, cavitated, front and disconnected active sets; known-vector
+  recovery with independently measured residuals.
+- Fixed inverse linearity and exact complementarity rows for arbitrary RHS;
+  exact cavitated mass rows and a dense lower-block surrogate comparison.
+  A 7x9 case makes the pressure coarse solve exact and verifies the complete
+  surrogate inverse against a dense solve.
+- Full elastic/material JVP differences at a smooth state and complete
+  load-border correction on a 9x13 pressure-dependent case, using both
+  true-operator Schur reconstruction and full bordered GMRES. True linear
+  residuals must be below 5e-9; corrections are compared with a separately
+  assembled dense Jacobian solution.
+- Explicit failures for invalid masks/RHS, unsupported material/local tangent
+  modes, zero cavitated transport diagonal and nontriangular transport.
+
+Linux CPU verification command uses the existing virtual environment:
+`OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=.:src .venv/bin/pytest -q`.
+The complete run reports 440 passed, 62 optional backend/GPU skips in 332.47 s;
+its collection preceded the last two transport-rejection tests. The final
+prototype run reports all 13 passed in 19.42 s. The combined MG/prototype
+run before those final two cases reports 19 passed in 22.20 s.
+Repository-wide `.venv/bin/ruff check .` and `git diff --check` pass.
+
+No production line search, retry, Krylov/Schur fallback, stencil, acceptance
+criterion, nonlinear budget or node cap changes. Existing production
+regressions pass, but they do not validate nonlinear use of the new prototype.
+Next evidence must compare setup/action cost, memory and true Krylov work
+against sparse preconditioners on loaded accepted/rejected states. Nonlinear
+material/JFO MG, the unresolved 129x193 mesh and physical film accuracy remain
+open; no performance or convergence improvement is claimed here.

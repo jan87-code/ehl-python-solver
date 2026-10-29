@@ -3760,3 +3760,130 @@ It retains unchanged inputs, measured source snapshot, all histories/hashes,
 raw timings, inspected plots, independent audit and validation source.
 The package is Git-ignored, with no asserted off-machine archive synchronization;
 only code, tests and documented evidence are committed.
+
+## 33. Exact-state fourth-mesh Newton diagnosis (2026-10-29)
+
+Based on `79a2b74`, added an internal observational hook and separate diagnostic
+helpers/runners. Normal solver selection and every physical/nonlinear rule are
+unchanged. The hook receives copied exact dimensionless state and deeply copied
+SI fields/history, and records selected-row indices only when enabled. Default
+runs do not copy or annotate observer data. Callback failure is distinct from
+Newton failure. Raw state avoids reconstructing tiny D=1-theta deficits or
+active ties from rounded saved physical fields.
+
+Independent regressions verify observer mutation isolation (including forced
+writes to the copied raw state), identical numerical outputs with/without
+observation, initial/terminal state capture, zero-budget nonpromotion and exact
+failed-linear selected-row metadata. SI bound tests cover pressure/content/
+whole-grid film, non-square axes, uncapped limits, exact ties, strict film
+boundary, SI rescaling, invalid/infeasible input and zero directions. Replay
+regressions verify dense/true-correction consistency through the existing
+linear solver, original merit/next-state reproduction, selected-row metadata
+and corrupted history/state rejection. No numerical step choice is made by
+the diagnostic bound helper.
+
+One factor-two interpolation of the accepted 65x97 registered 200 N source
+starts the explicit 129x193 trial on the unchanged +/-3a reservoir. The
+original 20,000 default cap remains; the existing explicit 30,000 allowance is
+used. Local sparse tangent, cached CPU elasticity and full field LU are used,
+with 30 corrections, at most eight models, restart 60 and at most ten Krylov
+cycles per solve. Sparse factor preflight residual is 3.51e-13 and resident
+peak about 195.88 MiB, below the existing 1 GiB check; 61 basis vectors require
+23,675,320 bytes (22.58 MiB). This is not a new resource allowance.
+
+The diagnostic run ends at the original budget with 31 raw state snapshots.
+It remains rejected by independently reopened original SI gates:
+
+| Diagnostic | Observed value | Original gate |
+| --- | ---: | ---: |
+| Force | 200 N | relative error <=1e-8 |
+| Scaled mass maximum | .0028407992 | <=1e-8 |
+| Relative local balance | .05743805 | <=1e-10 |
+| Relative global balance | 8.0948e-7 | <=1e-10 |
+| Complementarity maximum | 9.13e-14 | <=1e-10 |
+| Reference film reconstruction difference | 6.78e-21 m | <=1e-10 Href |
+
+No fourth root, mesh convergence rate or physical film-height prediction is
+accepted. The endpoint agrees with the earlier rounded .00284080 result in
+section 27. Observed run time is 400.82 s, including snapshot I/O; terminal
+worker-lifetime RSS is about 215.39 MiB. Verification work also ran during the
+trial, so these are diagnostic wall/resource observations, not speedup numbers
+or a cross-platform timing comparison with section 27.
+
+All 118 returned linear models pass their complete true residual checks,
+maximum 8.71e-10 (gate 5e-9); 8,236 Krylov iterations are recorded. There are no
+field-factor setup failures, failed block true-residual checks, full-border
+recoveries or active-recovery linear failures in this trial. Of these models,
+79 have nonnegative original directional-merit slopes and are not line-searched.
+The 39 descending models yield 30 accepted steps and nine deferred alternatives.
+The nonaccepted trial log contains 38 pressure/content infeasibilities and nine
+deferred feasible Armijo steps, with no Armijo-only rejection. Deferred steps
+are not misclassified as physical failures.
+
+Replaying exact raw state and recorded selected rows reproduces each accepted
+next state and original slope with zero difference on this environment:
+
+| Zero-based iteration | First internal constraint | Raw alpha limit | Accepted alpha | Limiting cell (iy,ix) |
+| --- | --- | ---: | ---: | --- |
+| 0 | Content upper | .0033667892 | .0033331213 | (5,109) |
+| 15 | Content upper | 8.7898286e-7 | 8.7019303e-7 | (124,110) |
+| 17 | Pressure lower | .80576967 | .79771197 | (83,108) |
+| 29 | Content upper, beyond full step | 1.0000000018 | 1 | (83,105) |
+
+At state 15 the limiter is at x=.11858036 mm, y=.76230229 mm (y=2.8125a),
+outside the high-pressure contact. Saved pressure is about -6.71e-13 Pa,
+within the original pressure tolerance, theta=.9999999987897328 and exact
+D=1.210267180483277e-9. No pressure/content value is clipped or rounded into a
+tie. SI and exact internal-variable bounds are both retained to expose
+cancellation differences in theta=1-D. This is a recorded affine step limit,
+not proof of a physical front instability or the cause of the pressure pattern.
+
+All alternatives at iteration 15 were replayed independently:
+
+| Model | Changed active rows | Original slope | Limiting raw alpha | Recorded outcome |
+| --- | ---: | ---: | ---: | --- |
+| 0 | 0 | -2.82504e-7 | 8.78983e-7 (content upper) | safeguarded backup selected |
+| 1 | 147 | -9.43826e-9 | 1.19945e-7 (pressure lower) | feasible smaller-progress step deferred |
+| 2 | 141 | +6.72028e-9 | 1.57620e-7 (content upper) | non-descending, no trial |
+| 3 | 143 | +6.87376e-9 | 1.0000000010 (pressure lower) | non-descending, no trial |
+
+For models 0/1, full trials independently fail the original pressure/content
+bounds; the recorded bounded trial merits are reproduced exactly and satisfy
+original Armijo/progress checks. Model 0 has the lower verified merit, so the
+existing selection is reproduced. A larger feasible direction is not enough
+when its original merit slope is non-descending. The final full step makes
+substantial progress; no assertion of nonexistence or static total stagnation
+follows from the 30-correction rejection.
+
+A separate audit recomputes seven distinct selected directional actions using
+the independent seven-term SI mass-flux decomposition and trapezoidal force.
+Maximum relative mass-action discrepancy is 1.89e-16; maximum force-row
+absolute discrepancy is 2.22e-18. Selected complementarity rows agree exactly.
+This supports the recorded linear actions, not a temporal stability claim.
+
+Evidence: `results/mesh_newton129_20261029` contains all exact/SI states,
+history, source hashes and inspected `convergence_and_models.png` and
+`raw_fields_and_limiter.png`; `_analysis` retains four accepted-model replays,
+`_allmodels` retains every state-15 alternative, and `_flux_audit` retains raw
+directions and the independent script/checks. Historical outputs are preserved.
+
+Next testable hypothesis: a separately verified targeted content-upper-bound
+active pivot may avoid coupling one weak-cell restriction to broad simultaneous
+whole-step flips. Retain the current reference, original Jacobian/merit and
+all bounds/budgets. Verify manufactured cases and physical benchmark behavior
+before selection. Increasing the budget or clipping this partial would not
+supply the missing convergence evidence. Physical film accuracy stays open.
+
+Final checks: full Linux CPU suite 542 passed, 62 optional backend/GPU skips
+in 337.33 s, BLAS/OpenMP/MKL threads one. Seventeen new CPU regressions pass;
+repository-wide Ruff and whitespace checks are clean. Both figures were
+visually inspected. No GPU ran for this change.
+
+Local package: `results/mesh_newton_evidence_20261029_verified.zip`,
+32,913,819 bytes, 477 files, all manifest hashes and ZIP CRCs verified.
+Archive SHA-256:
+`035f719ae23a2477362a8d2d81793f68cab1eea6e892e7fe412b034f9a4424ad`.
+Original inputs, exact measured/replay sources, every state/history, all
+alternative checks, independent flux audit/directions and plots are retained.
+Generated data/archive remain Git-ignored, with no asserted off-machine
+synchronization. Only code, tests and documented evidence are committed.

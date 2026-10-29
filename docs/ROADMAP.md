@@ -1866,3 +1866,84 @@ SHA-256: `acf02d4af362a397bc666a11e3d90ce6962d8228435a93bd5b4aeb42cce7e872`.
 It preserves source inputs/provenance, exact measured sources, all audits,
 histories/output hashes, raw timings, inspected plots and validation source.
 Data/archive remain Git-ignored; no off-machine copy is asserted.
+
+## Bounded fourth-mesh Newton diagnosis (2026-10-29)
+
+Continued from `79a2b74`: added isolated read-only state observation, exact
+internal-state/selected-row snapshots, SI feasibility-limit diagnostics and
+replay tools. The default numerical path has no observer. Public repair and
+instrumented runs share original guess-field validation. Observer failures are
+reported separately from convergence failures. No residual, JVP, line-search
+choice, active-pivot rule, physical gate, node cap or nonlinear budget changes.
+
+Reproduce from the existing accepted 65x97 source, using new output directories:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+MPLCONFIGDIR=/tmp/ehl-mpl-cache PYTHONPATH=.:src .venv/bin/python \
+  -m examples.diagnose_mesh_newton \
+  --input-directory results/block_mg_inputs_20261028/accepted_65x97 \
+  --output-directory results/mesh_newton129_REPRODUCE \
+  --maximum-physical-nodes 30000
+
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+MPLCONFIGDIR=/tmp/ehl-mpl-cache PYTHONPATH=.:src .venv/bin/python \
+  -m examples.analyze_mesh_newton \
+  --input-directory results/mesh_newton129_REPRODUCE \
+  --output-directory results/mesh_newton129_REPLAYS --iterations 0 15 17 29
+
+# Separately inspect every alternative at the smallest accepted step.
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+MPLCONFIGDIR=/tmp/ehl-mpl-cache PYTHONPATH=.:src .venv/bin/python \
+  -m examples.analyze_mesh_newton \
+  --input-directory results/mesh_newton129_REPRODUCE \
+  --output-directory results/mesh_newton129_ALTERNATIVES --iterations 15 --all-models
+```
+
+The 129x193 run passes preflight (3.51e-13 factor residual; about 196 MiB RSS)
+but exhausts the original 30 corrections. Force remains 200 N; mass defect
+ends at .0028407992 versus the 1e-8 gate, with local/global balance also failing.
+This is still NOT an accepted fourth mesh. It records 31 exact states,
+118 active models and 8,236 Krylov iterations. All returned linear models pass
+true residual checks (maximum 8.71e-10); no field setup failure, block Krylov
+failure or full-border recovery is recorded in this run.
+
+Of 118 directions, 79 are non-descending for the original merit and therefore
+receive no line-search trial. The 39 descending models yield 30 accepted
+steps plus nine deferred alternatives. Recorded nonaccepted trial reasons are
+38 pressure/content infeasibilities and nine deferred feasible Armijo steps;
+there are no recorded Armijo-only rejections. At iteration 15, a weak-pressure
+outer-reservoir content-upper limiter restricts the chosen safe alpha to
+8.70e-7. A 147-row alternative is more pressure-limited (alpha 1.19e-7) and
+less effective; the remaining two alternatives are non-descending. The original
+best verified backup is reproduced. Iteration 17 takes alpha .798 and the final
+iteration takes a full step and makes substantial progress: this is budget
+exhaustion with restricted intermediate progress, not proof of a nonexistent
+root or complete stagnation.
+
+All four accepted-step replays reproduce their stored next states and slopes
+exactly on this environment. All four models at iteration 15 are separately
+checked. Seven distinct directional products agree with the independent SI
+flux decomposition within 1.89e-16 relative error. No field smoothing or
+pressure/content clipping is introduced. Validation report section 33 records
+full terminal gates, coordinates, alternative-model checks and limitations.
+
+Next bounded hypothesis: independently prototype prioritizing only the earliest
+content-upper (D-lower) blocker before broad whole-step active flips, retaining
+the current reference/default and all true-JVP/merit/feasibility checks. Verify
+manufactured active-bound cases and existing physical benchmarks before any
+adoption. Do not increase the iteration budget or relax bounds to accept this
+partial. Mesh/domain and physical film-height validation remain open.
+
+Verification: complete Linux CPU suite 542 passed, 62 optional backend/GPU
+skips (337.33 s), BLAS/OpenMP/MKL threads one. The 17 new CPU regressions cover
+SI bounds, observational isolation, terminal/failure capture and raw model
+replay/classification. Ruff and whitespace checks pass. Both raw convergence/
+spatial figures were visually inspected. No GPU execution is asserted.
+
+Local evidence archive: `results/mesh_newton_evidence_20261029_verified.zip`,
+32,913,819 bytes and 477 files; every manifest SHA-256 and ZIP CRC verified.
+SHA-256: `035f719ae23a2477362a8d2d81793f68cab1eea6e892e7fe412b034f9a4424ad`.
+It retains unchanged inputs, exact solver/replay sources, all states/histories,
+alternative checks, independent SI-flux directions/audit and inspected plots.
+The archive is Git-ignored; no off-machine copy is asserted.

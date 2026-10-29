@@ -606,3 +606,14 @@ runtime ratios 0.927/1.140/0.997), so the default is unchanged. Reproduce with
 `python -m examples.benchmark_reduced_material --help`; validation report
 section 32 records complete repair timings and limits. Earlier isolated inverse
 speedups are not a production Newton speedup or physical-film validation.
+
+### Finer-mesh convergence diagnosis (2026-10-29)
+
+Replayable 129x193 Newton diagnostics reproduce a rejected 30-correction
+200 N trial: force closes, but scaled mass remains .0028408 versus 1e-8.
+Linear checks pass; tight content/pressure bounds and non-descending alternative
+active models restrict progress. Exact state/selected-row replays preserve
+those distinctions without clipping, relaxed gates or a new accepted mesh.
+Use `python -m examples.diagnose_mesh_newton --help` and
+`python -m examples.analyze_mesh_newton --help`; reproduction and limitations
+are recorded in roadmap and validation report section 33.

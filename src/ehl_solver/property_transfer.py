@@ -101,6 +101,23 @@ def prolongate_property_guess(
     )
 
 
+def _validate_property_guess_fields(problem, guess):
+    """Shared original SI shape/boundary/pressure/content checks; no mutation."""
+    p = np.asarray(guess.pressure_pa, dtype=float)
+    t = np.asarray(guess.fractional_film_content, dtype=float)
+    if (
+        p.shape != problem.shape
+        or t.shape != problem.shape
+        or not np.all(np.isfinite(p))
+        or not np.all(np.isfinite(t))
+        or p.min() < -1e-10 * problem.pressure_scale_pa
+        or t.min() < -1e-10
+        or t.max() > 1 + 1e-10
+        or np.any(np.r_[p[0], p[-1], p[:, 0], p[:, -1]] != 0)
+    ):
+        raise ValueError("initial guess fails original shape/pressure/content/boundary bounds")
+
+
 def repair_property_load_guess(
     problem,
     fluid,
@@ -131,19 +148,7 @@ def repair_property_load_guess(
         or not 0 <= maximum_iterations <= 30
     ):
         raise ValueError("Newton correction budget must lie in 0..30")
-    p = np.asarray(guess.pressure_pa, dtype=float)
-    t = np.asarray(guess.fractional_film_content, dtype=float)
-    if (
-        p.shape != problem.shape
-        or t.shape != problem.shape
-        or not np.all(np.isfinite(p))
-        or not np.all(np.isfinite(t))
-        or p.min() < -1e-10 * problem.pressure_scale_pa
-        or t.min() < -1e-10
-        or t.max() > 1 + 1e-10
-        or np.any(np.r_[p[0], p[-1], p[:, 0], p[:, -1]] != 0)
-    ):
-        raise ValueError("initial guess fails original shape/pressure/content/boundary bounds")
+    _validate_property_guess_fields(problem, guess)
     system = PropertyLoadSystem(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,

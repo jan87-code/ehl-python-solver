@@ -2731,3 +2731,52 @@ Measured nonlinear repair parity/performance and its limits are recorded in
 validation report section 32. This optional CPU optimization does not establish
 cold-continuation performance, a fourth converged mesh, physical film accuracy,
 or material/JFO GPU execution. Experimental tangent MG remains diagnostic.
+
+## Replayable Newton diagnostics without changing the step rules
+
+The internal `_solve_property_load_state` accepts an optional `state_observer`.
+It receives iteration number, a read-only **copy** of the exact internal
+float64 state, and a deep copy of the SI root/iterate fields and history.
+Internal state is `(P,D,h0/Href)`, P=p/pref, D=1-theta, with C-order interior
+`(ny-2,nx-2)` arrays; physical fields remain `(ny,nx)`, pressure Pa, film and
+offset m, force N, +x entrainment. Copies prevent diagnostic changes to arrays,
+audits or histories from changing the solver. Default execution has no observer.
+An observer exception propagates as `PropertyStateObserverError`, separately
+from nonlinear convergence errors. An observed iterate has not necessarily
+passed any root gate, including the initial interpolated guess or final
+budget-limited partial.
+
+Instrumented model histories retain exact selected-row override indices relative
+to the canonical P>=D selector. Failed linear-model diagnostics also retain
+iteration/model indices and selected rows. Exact internal state is stored
+because reconstructing D from saved SI theta can lose tiny deficits or alter
+ties. No state or active set is rounded into a tie for replay.
+
+`newton_diagnostics.affine_feasibility_limits` is a separate, read-only SI
+helper. It reports independent uncapped alpha limits for interior pressure
+lower, content lower/upper and full-grid strict film lower bounds. Existing
+pressure/content tolerances are used, including p>=-1e-10*pref and
+-1e-10<=theta<=1+1e-10. Reported equality at the film floor is infeasible.
+None denotes no finite float64 bound; overflow in a diagnostic ratio is not
+a clipped state. Exact-minimum cell indices/tie counts are reported without
+rounding near ties. This helper never chooses or changes a Newton step.
+
+The replay tool also computes the original internal-variable bounds separately,
+including the unchanged 0.99 safeguard when a constraint is crossed before
+alpha=1. SI theta=1-D can introduce cancellation differences, so SI and internal
+bounds are retained separately. Every replay uses recorded selected rows,
+recomputes the complete true-JVP correction and original nonsmooth-merit slope,
+and checks the accepted next state against its exact snapshot. Sampled full/
+bounded trial merit and feasibility are independently recomputed, including
+candidates that were deferred or non-descending. These checks describe the
+algorithm's recorded restrictions, not physical temporal stability or a
+Jacobian spectrum.
+
+`examples.diagnose_mesh_newton` uses the same validated guess fields, fixed
+material case, private Newton engine and original acceptance/budget rules.
+It logs every evaluated state to new files and performs the existing 1 GiB/
+1e-8 sparse-factor preflight. Default physical node cap remains 20,000; the
+previously introduced explicit 30,000 allowance is required for 129x193.
+`examples.analyze_mesh_newton` independently reopens terminal SI fields,
+checks original gates and raw-state hashes, and replays selected or all models.
+A converged root is never inferred from force closure or a diagnostic callback.

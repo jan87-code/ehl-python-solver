@@ -4,7 +4,7 @@ SI interfaces; (ny,nx), +x entrainment. Full-source FFT in every analytic
 product, sparse frozen-property/film preconditioning; no dense Jacobian.
 """
 
-from copy import copy
+from copy import copy, deepcopy
 from dataclasses import dataclass
 
 import numpy as np
@@ -207,6 +207,10 @@ class PropertyLoadSystem:
         return other
 
 
+class PropertyStateObserverError(Exception):
+    """A diagnostic observer failed; this is not a nonlinear convergence result."""
+
+
 class PropertyLoadNewtonError(RuntimeError):
     def __init__(self, message, history, last_root, diagnostics=None):
         super().__init__(message)
@@ -329,8 +333,19 @@ def _solve_property_load_state(
     active_lookahead=False,
     lookahead_selection="best",
     content_bound_pivots=False,
+    state_observer=None,
 ):
-    """Shared Newton engine; callers distinguish audited roots from initial guesses."""
+    """Shared Newton engine; callers distinguish audited roots from initial guesses.
+
+    Optional internal observer receives (iteration, copied dimensionless state,
+    deep-copied SI root). P=p/p_ref, D=1-theta and offset/Href use C-order
+    interior fields. Copies isolate diagnostic mutation from the solve. A state
+    observed before the gate is NOT necessarily a converged root. Observer
+    exceptions propagate separately from Newton failures; no observer runs by
+    default. Diagnostic runs also retain selected active-row override indices.
+    """
+    if state_observer is not None and not callable(state_observer):
+        raise ValueError("state_observer must be callable or None")
     if lookahead_selection not in ("best", "legacy"):
         raise ValueError("lookahead_selection must be best or legacy")
     resolved_lookahead = active_lookahead and lookahead_selection == "best"
@@ -343,6 +358,15 @@ def _solve_property_load_state(
     try:
         for iteration in range(maximum_iterations + 1):
             last = system.solution(z, history)
+            if state_observer is not None:
+                snapshot = z.copy()
+                snapshot.setflags(write=False)
+                try:
+                    state_observer(iteration, snapshot, deepcopy(last))
+                except Exception as exc:
+                    raise PropertyStateObserverError(
+                        f"diagnostic state observer failed at iteration {iteration}"
+                    ) from exc
             s = last.solution
             if (
                 admissible(
@@ -383,6 +407,11 @@ def _solve_property_load_state(
                         schur_tolerance=schur_tolerance,
                     )
                 except CavitatingLinearError as exc:
+                    if state_observer is not None:
+                        exc.diagnostics.update(
+                            iteration=iteration, model=recovery,
+                            active_override_indices=np.flatnonzero(full != system.full(z)).tolist(),
+                        )
                     if backup is None:
                         raise
                     record.setdefault("active_recovery_failures", []).append(
@@ -406,6 +435,10 @@ def _solve_property_load_state(
                     "slope": slope,
                     "trials": [],
                 }
+                if state_observer is not None:
+                    model["active_override_indices"] = np.flatnonzero(
+                        full != system.full(z)
+                    ).tolist()
                 record["models"].append(model)
                 predicted = z + d
                 proposed = full.copy()

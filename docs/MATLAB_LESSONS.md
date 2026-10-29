@@ -11,3 +11,8 @@ Reference *historical* test parameters (not assumed validated EHL results):
 - Previous solver experienced erratic load residuals, non-convergence, and indexing / shape mismatches. Do not reproduce questionable code by rote.
 
 Crucial: clarify the definition of E', E* and equivalent radius before translating formulas; factor-of-two differences are common. Compare independent analytical results with verified reference data.
+
+The newer user-supplied N33 pressure-only continuation checkpoint has now been
+independently evaluated: see [MATLAB_REFERENCE.md](MATLAB_REFERENCE.md) for the
+50 N case, its passing reference gates, operator differences and reproduction
+command. It supersedes the historical parameters above for immediate parity work.

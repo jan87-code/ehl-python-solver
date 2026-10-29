@@ -1947,3 +1947,12 @@ SHA-256: `035f719ae23a2477362a8d2d81793f68cab1eea6e892e7fe412b034f9a4424ad`.
 It retains unchanged inputs, exact solver/replay sources, all states/histories,
 alternative checks, independent SI-flux directions/audit and inspected plots.
 The archive is Git-ignored; no off-machine copy is asserted.
+
+### Supplied MATLAB reference checkpoint (2026-10-29)
+
+Prioritize same-case MATLAB reference comparison before further fine-grid
+active-set tuning. The independently reconstructed 50 N N33 alpha=0.8978125
+checkpoint passes its saved pressure-only FB/load gates. Full target viscosity,
+Python JFO parity and physical/grid validation remain unverified. See
+[MATLAB_REFERENCE.md](MATLAB_REFERENCE.md); the diagnostic evaluator is not a
+new production solver or a MATLAB runtime reproduction.

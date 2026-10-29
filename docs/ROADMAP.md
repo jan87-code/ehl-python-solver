@@ -2006,3 +2006,33 @@ Verification: 563 passed, 62 optional skips (371.67 s); 21 focused reference
 checks passed; Ruff/whitespace clean. Production JFO and all result baselines
 remain unchanged. Raw states, source snapshots, histories, SI re-audits and
 inspected plots are retained in Git-ignored results.
+
+### Matching conservative 50 N roots and Hamrock–Dowson benchmark (2026-10-29)
+
+Added a tested SI Hamrock–Dowson minimum/central correlation helper with
+explicit E'=2 E_contact, mean entrainment and ellipticity conventions. The
+user's linked calculator and primary NASA definitions are documented. Existing
+supplied 200 N references use E_contact in the E' expressions and are retained
+as historical data, not silently rebaselined.
+
+The existing conservative solver closes the matching N33 50 N case in nine
+corrections at both alpha=0.8978125 and full viscosity. Legacy/best lookahead
+policies produce identical roots, so this case does not demonstrate a new
+selection advantage; no solver change is adopted. Nested full-viscosity N65
+and N129 repairs also pass original force/mass/film/complementarity criteria
+in ten and nine corrections. All remain within the 20,000-node default.
+N129 film is 282.97/455.25 nm against HD 284.15/497.97 nm.
+
+The physical comparison does not close the validation milestone: pressure
+shows alternating cells, and shared-node pressure changes 33.60% then 41.93%
+across refinements. Film changes and finite-domain independence remain open.
+Next numerical work should isolate the transport/elastic coupling's
+alternating mode with benchmarks before changing the stencil/Jacobian; retain
+HD comparison and strict mass/load gates. See
+[HAMROCK_DOWSON_VALIDATION.md](HAMROCK_DOWSON_VALIDATION.md).
+
+Verification of this increment: 578 passed, 62 optional skips (337.88 s),
+15 focused checks passed, Ruff/whitespace clean. Independent history audit
+verifies all 55 accepted corrections and true linear residuals <=8.995e-10.
+All raw states, separate SI/elastic audits, source snapshots, correlation
+comparisons and the inspected figure are retained under Git-ignored results.

@@ -2780,3 +2780,24 @@ previously introduced explicit 30,000 allowance is required for 129x193.
 `examples.analyze_mesh_newton` independently reopens terminal SI fields,
 checks original gates and raw-state hashes, and replays selected or all models.
 A converged root is never inferred from force closure or a diagnostic callback.
+
+### Hamrock–Dowson comparison and conservative 50 N benchmark
+
+The SI correlation helper in `film_correlations.py` uses the HD convention
+E'=2 E_contact, mean entrainment Ue and actual ellipticity k. For the full
+50 N circular case its minimum/central estimates are 284.1497/497.9692 nm.
+The existing pressure/content solver, initialized from the supplied MATLAB
+pressure and offset as an unaccepted guess, now has independently audited
+full-viscosity 33²,65²,129² roots at the matching +/-4a reservoir. At 129² the
+sampled film is 282.9728/455.2518 nm (-0.414%/-8.58% relative to HD), with
+strict force, film, complementarity and mass closure. No core solver or
+acceptance gate was changed for these benchmarks.
+
+Correlation agreement is useful physical evidence, not an acceptance substitute:
+pressure still has an alternating-cell pattern and shared-node relative L2
+mesh differences are 33.60% then 41.93%. Central film is nonmonotone. Therefore
+this is not a mesh/domain-converged or fully physically validated EHL result.
+See [HAMROCK_DOWSON_VALIDATION.md](HAMROCK_DOWSON_VALIDATION.md) for formulas,
+primary sources, fluid and modulus conventions, reproduction and limitations.
+Historical supplied 200 N film references and result files are preserved;
+corrected E' correlation estimates are recorded separately.

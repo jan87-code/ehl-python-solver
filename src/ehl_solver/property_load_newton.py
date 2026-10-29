@@ -23,10 +23,14 @@ class PropertyLoadSystem:
     merit_slope = CavitatingNewtonSystem.merit_slope
 
     def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen",
-                 elasticity_mode="reference", maximum_physical_nodes=20000):
+                 elasticity_mode="reference", maximum_physical_nodes=20000,
+                 field_factorization="full"):
         if preconditioner not in ("frozen", "material", "local"):
             raise ValueError("preconditioner must be frozen, material or local")
         self.preconditioner = preconditioner
+        if field_factorization not in ("full", "reduced"):
+            raise ValueError("field_factorization must be full or reduced")
+        self.field_factorization = field_factorization
         if not np.isfinite(target_load_n) or target_load_n <= 0:
             raise ValueError("positive finite SI target load required")
         if (type(maximum_physical_nodes) is not int
@@ -131,6 +135,12 @@ class PropertyLoadSystem:
             [[block, csr_matrix(column[:, None])], [csr_matrix(row[None, :]), csr_matrix((1, 1))]],
             format="csc",
         )
+
+    def reduced_field_factor(self, state, matrix):
+        """Reuse assembled mass/active rows; only the LU representation changes."""
+        from ehl_solver.property_tangent_multigrid import PropertyTangentLU
+
+        return PropertyTangentLU(self, state, matrix=matrix)
 
     def tangent_pressure(self, p, theta, h, r, v, dr, dv):
         """Sparse extra pressure action at frozen film, optionally cell-self film.
@@ -257,6 +267,7 @@ def solve_property_load_newton(
     preconditioner="frozen",
     elasticity_mode="reference",
     maximum_physical_nodes=20000,
+    field_factorization="full",
 ):
     """Bordered force solve; true-JVP-checked Schur/GMRES and bounded globalization.
 
@@ -279,6 +290,7 @@ def solve_property_load_newton(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,
         maximum_physical_nodes=maximum_physical_nodes,
+        field_factorization=field_factorization,
     )
     z = verify_seed(system, seed, seed_offset_m)
     return _solve_property_load_state(
@@ -384,10 +396,13 @@ def _solve_property_load_state(
                     "recovery": recovery,
                     "active_changes": int(np.count_nonzero(full != system.full(z))),
                     "linear_true_residual": linear.true_linear_residual,
+                    "linear_true_residuals": getattr(linear, "linear_true_residuals", ()),
                     "linear_iterations": linear.linear_iterations,
                     "krylov_histories": linear.krylov_histories,
                     "used_bordered_fallback": linear.used_bordered_fallback,
                     "schur_indicator": linear.schur_indicator,
+                    "field_factorization": getattr(system, "field_factorization", "full"),
+                    "field_setup_failures": getattr(linear, "field_setup_failures", ()),
                     "slope": slope,
                     "trials": [],
                 }
@@ -528,6 +543,7 @@ def continue_property_load(
     preconditioner="frozen",
     elasticity_mode="reference",
     maximum_physical_nodes=20000,
+    field_factorization="full",
 ):
     """Adaptive SI-force steps; rejected solves never become continuation seeds."""
     if (
@@ -545,6 +561,7 @@ def continue_property_load(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,
         maximum_physical_nodes=maximum_physical_nodes,
+        field_factorization=field_factorization,
     )
     z = verify_seed(system, seed, seed_offset_m)
     current = system.solution(z)
@@ -578,6 +595,7 @@ def continue_property_load(
                 preconditioner=preconditioner,
                 elasticity_mode=elasticity_mode,
                 maximum_physical_nodes=maximum_physical_nodes,
+                field_factorization=field_factorization,
             )
         except PropertyLoadNewtonError as exc:
             record["reason"] = str(exc)

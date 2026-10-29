@@ -115,6 +115,7 @@ def repair_property_load_guess(
     content_bound_pivots=True,
     elasticity_mode="reference",
     maximum_physical_nodes=20000,
+    field_factorization="full",
 ):
     """Explicitly unaccepted initialization; same original Newton/physical gates.
 
@@ -147,6 +148,7 @@ def repair_property_load_guess(
         problem, fluid, speed_m_s, target_load_n, preconditioner=preconditioner,
         elasticity_mode=elasticity_mode,
         maximum_physical_nodes=maximum_physical_nodes,
+        field_factorization=field_factorization,
     )
     z = system.pack(guess, guess.central_film_offset_m)
     system.solution(z)  # Checks the exact signed-offset film and original law domain.

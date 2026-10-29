@@ -2630,8 +2630,8 @@ allowance, new pressure root or physical film-height claim follows from them.
 `property_tangent_multigrid` adds separate reduced-LU controls and a
 nonsymmetric MG prototype. Physical inputs retain SI units and the existing
 `(ny,nx)` grid convention with +x entrainment. Internal state/corrections use
-P=p/p_ref, D=1-theta and h0/H0, with C-order interior fields. These classes do
-not enter production Newton/globalization or continuation.
+P=p/p_ref, D=1-theta and h0/H0, with C-order interior fields. The MG classes remain diagnostic. Exact reduced LU is also available through
+the explicit optional field factorization described below.
 
 Write the scaled sparse mass Jacobian as A*dP+B*dD, full-film selector F,
 and cavitated selector C=I-F. Complementarity rows prescribe dP_C and dD_F
@@ -2648,8 +2648,10 @@ control. With the original complete offset column and force row, exact field
 inversion and a scalar Schur reconstruction reproduce the existing 2n+1
 sparse bordered surrogate. Only its factorization representation changes;
 the complete matrix-free elastic/material Jacobian stays the outer operator.
-This is a diagnostic control, never a fallback for MG failure. A singular
-reduced block or unsafe force Schur indicator is rejected explicitly.
+This remains a diagnostic control and is also an optional integrated field
+factorization, never a fallback for MG failure. Standalone diagnostics reject
+singular reduced blocks/unsafe surrogate Schur indicators; the integrated path
+retains the original explicit full-border recovery.
 
 `PropertyTangentMultigrid` uses the same K, including either material or local
 cell-self elastic pressure tangents. Fine signed row/max-column equilibration
@@ -2671,5 +2673,61 @@ preserved; explicit `--modes` enables material-mg/local-mg and the corresponding
 material-reduced/local-reduced LU controls, retaining the local sparse reference.
 Fine-block LU success does not establish robustness of a nonsymmetric coarse
 hierarchy. All candidate corrections require complete true-JVP/force checks,
-and production integration still requires strict film feasibility, both line
-searches, recovery/continuation tests and independent final physical gates.
+and integrated reduced LU preserves strict film feasibility, both line-search
+stages, recovery/continuation checks and independent final physical gates.
+Robust MG production integration remains planned.
+
+## Optional reduced field factorization in material force Newton
+
+`PropertyLoadSystem`, `solve_property_load_newton`, `continue_property_load`
+and `repair_property_load_guess` accept `field_factorization="full"` (the
+unchanged default) or `"reduced"`. This choice is independent of the existing
+frozen/material/local sparse pressure tangent and reference/cached CPU
+elasticity choices. It changes the field-preconditioner LU representation,
+not any physical residual, Jacobian, active constraint or convergence gate.
+Public pressure/film/force/speed interfaces remain SI, arrays `(ny,nx)` with
++x entrainment; internal P,D,h0/H0 scaling remains unchanged.
+
+The reduced path reuses the already assembled mass/active rows: K=A*F+B*C
+is factored with sparse LU and arbitrary mass/complementarity RHS vectors
+are reconstructed in the original 2n field space. No second matrix assembly
+or experimental MG hierarchy is invoked. For a fixed state and selected active
+model, this is algebraically the same field inverse as unreduced sparse LU.
+Small floating-point differences remain subject to the original complete
+matrix-free true-JVP correction checks.
+
+Original pressure-block and offset-response GMRES solves, the load Schur
+indicator and complete correction check are unchanged. A failed reduced field
+factor, failed block Krylov solve, unsafe true Schur complement or failed
+complete correction uses the existing full 2n+1 sparse-bordered GMRES recovery;
+it does not silently build an unreduced field LU. `used_bordered_fallback`
+remains explicit. Correction/error diagnostics and material Newton model
+histories now retain the field choice, field-setup failure reasons, individual
+true linear residuals and Krylov traces, including failures before recovery.
+A failed full-border recovery still raises the original linear/nonlinear error
+with the last audited state and diagnostics.
+
+Selected active-set views preserve the factorization choice and use their own
+selected constraint rows. Full-step and fraction-to-boundary Armijo attempts,
+strict film/pressure/content feasibility, best verified lookahead backup,
+content-bound pivots, 30-correction/eight-model budgets and load-step retries
+are unchanged. Continuation retries preserve the original accepted seed and
+factorization choice. Initial guesses still require a separate successful
+repair before becoming accepted roots. No pressure/content/film projection,
+clipping, constitutive relaxation or new node allowance is introduced.
+
+Example with the existing SI problem/fluid and audited seed:
+
+```python
+root = solve_property_load_newton(
+    problem, fluid, speed_m_s, target_load_n,
+    seed=seed, seed_offset_m=seed_offset_m,
+    preconditioner="local", elasticity_mode="cached",
+    field_factorization="reduced",
+)
+```
+
+Measured nonlinear repair parity/performance and its limits are recorded in
+validation report section 32. This optional CPU optimization does not establish
+cold-continuation performance, a fourth converged mesh, physical film accuracy,
+or material/JFO GPU execution. Experimental tangent MG remains diagnostic.

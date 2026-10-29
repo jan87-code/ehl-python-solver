@@ -1792,3 +1792,77 @@ SHA-256: `939061f061cf1679bf65a1e1c450ea1dce13cdd0d0b4e46972e39db4da48a514`.
 It retains unchanged inputs/provenance, exact measured sources, all worker
 reports/vectors, inspected plots, independent audit and validation source.
 Generated data/archive remain Git-ignored; no off-machine copy is asserted.
+
+## Optional reduced field LU in actual material Newton (2026-10-29)
+
+Continued from `5726ff8`: integrated exact active-row reduction as
+`field_factorization="reduced"` in the material force Newton, continuation and
+unaccepted-guess repair APIs. The default remains `"full"`. Frozen/material/
+local sparse tangent and reference/cached elasticity selections are independent.
+One already assembled sparse mass/constraint matrix supplies the reduced
+factorization. Experimental MG is not selected by production.
+
+Original true-JVP Krylov checks, both Schur solves, full-border recovery,
+complete bordered correction check, strict total-film feasibility, both
+line-search stages, active backups and continuation seed/retry rules remain.
+Factor failures and failed true residuals are now retained in success/error
+and nonlinear model diagnostics, including recovery through full bordered LU.
+No physical equation, load/field gate, nonlinear budget or node cap changes.
+
+Reproduce matched-force repairs on the existing three accepted inputs (fresh
+output directory required). Both modes use cached CPU elasticity and the same
+unaccepted +0.01 Href offset perturbation of each 200 N source:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+MPLCONFIGDIR=/tmp/ehl-mpl-cache PYTHONPATH=.:src .venv/bin/python \
+  -m examples.benchmark_reduced_material \
+  --input-directories \
+    results/block_mg_inputs_20261028/accepted_33x49 \
+    results/block_mg_inputs_20261028/accepted_65x97 \
+    results/block_mg_inputs_20261028/accepted_97x145 \
+  --output-directory results/reduced_field_repairs_REPRODUCE --repeats 3
+```
+
+Each isolated worker warms once and measures complete repair calls, not just
+linear inverse actions. Every returned state/history is independently checked
+against the original SI mass/force/film and direct-source deformation gates;
+all measured histories and pressure/content/film hashes are retained. The
+parent verifies output identity and matched-force parity. Timings exclude
+independent post-call audits; worker-lifetime RSS includes them and warm-up.
+Historical linear timings are not substituted for actual Newton measurements.
+
+Measured actual full/reduced median repair ratios are 0.927/1.140/0.997 on
+33x49/65x97/97x145: slower on the coarsest case, modestly faster in the middle,
+and effectively unchanged on the finest. Original Newton normally solves two
+field blocks plus a load Schur response; prior isolated full-border inverse
+speedups do not predict whole-repair performance. The default stays unreduced.
+The reduced finest run includes a 13.124 s sample; all samples/ranges are kept.
+No integrated memory improvement is claimed.
+
+Both modes pass original physical/numerical gates and take 4/4/5 Newton
+corrections; pressure differences are <=6.12e-15 relative and film differences
+<=6.78e-21 m. Finest Krylov totals differ by one (332/331). A separate audit
+reloads all six saved states and 18 measured histories, checks unchanged
+source/output hashes and original mass/force/film/direct-source diagnostics.
+Maximum mass defect is 1.85e-13 and direct displacement discrepancy 4.24e-21 m.
+See validation report section 32 and the new `_final`/`_audit` directories for
+actual timings, scopes and inspected cost/convergence plots.
+
+Next bounded work: return to nonlinear conditioning/globalization and rejected
+mesh diagnostics with original gates and existing resource controls. Preserve
+the default; use reduced LU only as an explicit comparison. Experimental MG,
+unresolved 129x193 convergence and physical film-height validation remain open.
+
+Verification: repository-wide Ruff and whitespace checks pass. Complete Linux
+CPU suite: 525 passed, 62 optional backend/GPU skips (321.72 s), with
+BLAS/OpenMP/MKL threads one. Targeted integration/benchmark/globalization checks:
+37 passed (8.80 s), including 26 new regression cases. Both raw timing and
+mass-convergence figures were visually inspected. No GPU execution is asserted.
+
+Local archive: `results/reduced_field_evidence_20261029_verified.zip`,
+3,041,195 bytes and 133 files; all manifest SHA-256 entries and ZIP CRCs verified.
+SHA-256: `acf02d4af362a397bc666a11e3d90ce6962d8228435a93bd5b4aeb42cce7e872`.
+It preserves source inputs/provenance, exact measured sources, all audits,
+histories/output hashes, raw timings, inspected plots and validation source.
+Data/archive remain Git-ignored; no off-machine copy is asserted.

@@ -3649,3 +3649,114 @@ Archive SHA-256:
 It includes inputs, measured source snapshot, raw results, plots, independent
 audit and validation source; it is Git-ignored, with no asserted off-machine
 archive synchronization. Only code, tests and documented evidence are committed.
+
+
+## 32. Optional reduced field LU in actual material Newton (2026-10-29)
+
+Starting from `5726ff8`, added explicit `field_factorization="reduced"` to the
+material force Newton, load continuation and unaccepted-guess repair APIs.
+The default remains `"full"`. The original already assembled mass/active
+matrix supplies the n-unknown factor; its solve reconstructs the original 2n
+field inverse. It supports frozen/material/local pressure tangents without
+changing their coefficients. Experimental MG remains unavailable to production.
+
+Complete elastic/material JVPs, force row/offset column, both block GMRES
+solves, true Schur and reconstructed correction checks remain unchanged.
+Reduced-field RuntimeError failures, block Krylov failures and unsafe Schur
+reconstruction retain the original full 2n+1 sparse-bordered GMRES recovery.
+There is no hidden unreduced-field fallback. `used_bordered_fallback`, field
+selection/setup failure reasons, individual true linear residuals and Krylov
+traces are retained in corrections/errors and material model histories.
+Default unreduced arithmetic is unchanged apart from additional diagnostics.
+
+New regression coverage includes all three sparse pressure tangents with both
+reference/cached elasticity, full/selected active rows, complete JVP finite
+differences and independently dense bordered corrections. Normal Schur and
+forced full-border paths pass. Tests verify one shared matrix assembly, strict
+film rejection, actual nonlinear root parity, original SI mass/force/film
+gates, full and fraction-to-boundary Armijo stages, active lookahead backup
+after injected selected-model failure, setup/Krylov failures and retry seed/
+selection preservation. Zero-budget guesses remain unaccepted. Parent benchmark
+checks reject mismatched snapshots/modes, corrupted output hashes/nonfinite
+fields, disagreeing roots and failed workers. Legacy globalization tests pass.
+
+Six isolated workers compare actual 200 N nonlinear repairs on the same three
+accepted inputs used in sections 30-31. Each starts with original pressure/
+content and an explicitly unaccepted +0.01 Href offset perturbation. Both use
+cached CPU elasticity and local sparse tangents, unchanged 30-correction/eight-
+model budgets and physical node caps. After one excluded warm-up, three complete
+repair calls are timed. Every returned state/history is independently audited
+with original SI mass/force/film gates and direct-source deformation. All
+measured histories and output hashes are retained. This is not cold load
+continuation, a new converged mesh, or physical film-height validation.
+
+| Grid (ny,nx) | Field LU | Repair median s | Observed range s | Newton corrections | Total Krylov iterations | Worker peak RSS MiB |
+| --- | --- | ---: | --- | ---: | ---: | ---: |
+| 33x49 | full | 0.773315 | 0.760800..0.780501 | 4 | 179 | 130.77 |
+| 33x49 | reduced | 0.834165 | 0.816715..0.839077 | 4 | 179 | 130.17 |
+| 65x97 | full | 2.982716 | 2.949588..3.086190 | 4 | 230 | 145.92 |
+| 65x97 | reduced | 2.616079 | 2.504617..2.627960 | 4 | 230 | 146.41 |
+| 97x145 | full | 8.898884 | 8.805906..8.930447 | 5 | 332 | 169.80 |
+| 97x145 | reduced | 8.925125 | 8.591203..13.123601 | 5 | 331 | 179.53 |
+
+The actual full/reduced median runtime ratios are 0.927/1.140/0.997.
+Reduced is slower on the coarsest case, modestly faster on the middle case,
+and effectively unchanged on the finest case. The reduced finest measurement
+includes a 13.124 s sample; no sample is removed or hidden. Worker-lifetime RSS
+includes imports, source audits, warm-up and post-solve auditing/hashing, not
+incremental field-factor memory. No integrated memory reduction is established.
+Timings are machine-dependent observed samples, not confidence intervals or
+exclusive-machine reservations. Linux/i7-960 3.20 GHz, Python 3.12.3,
+NumPy 2.5.4, SciPy 1.18.1; BLAS/OpenMP/MKL threads one.
+
+Section 31 compared isolated full bordered inverse actions. The actual normal
+Newton path instead uses two field-block solves plus a true load Schur
+reconstruction. Its measured costs must not be replaced by those earlier
+full-border timings. The modest/mixed repair results do not support changing
+the default. All measured models use the requested field factorization;
+no field setup failures or bordered recovery occur in these six normal
+workers. Injected small-grid tests separately cover those recovery paths.
+
+Matched-force full/reduced pressure differences are <=6.12e-15 relative L2,
+film differences <=6.78e-21 m, content differences <=2.11e-15, and offset
+differences <=8.48e-22 m. Both modes take 4/4/5 Newton corrections. The finest
+Krylov totals differ by one iteration (332 versus 331); bitwise equivalence
+is not claimed. Every returned root passes original field and 200 N force
+gates. Existing mesh/domain accuracy and pressure-pattern limitations persist.
+
+A separate post-run audit reloads all six saved states, verifies exact axes,
+recomputes original force/mass/film/source diagnostics and checks every stored
+history. All three measured field hashes and offsets per worker match its
+saved final state, allowing 18 measured histories to be checked against those
+independently recomputed fields. Maximum scaled mass defect is 1.85e-13;
+maximum direct-source displacement discrepancy is 4.24e-21 m. Source state
+and summary hashes remain unchanged, and parent output-identity checks pass.
+
+Evidence: `results/reduced_field_repairs_20261029_final` retains exact measured
+sources, all histories/hashes/audits and raw timings; `_audit` retains the
+independent script/report. `plots/whole_repair_costs.png` shows all observed
+ranges, including the outlier; `plots/mass_convergence.png` shows original
+stored mass diagnostics without flooring/smoothing. Both figures are visually
+inspected. The source states remain the unchanged section-30 inputs; no
+historical output is replaced.
+
+Next return to bounded nonlinear conditioning/globalization and unresolved
+mesh diagnostics using the original gates and existing resource controls.
+Keep unreduced LU as default, reduced LU as an explicit verified comparison,
+and MG as separate research work. No new physical constitutive extension,
+node-cap increase or film-height accuracy claim is justified by these repairs.
+
+Final verification: full Linux CPU suite 525 passed, 62 optional backend/GPU
+skips in 321.72 s, BLAS/OpenMP/MKL threads one. Targeted integration/benchmark/
+legacy-globalization run: 37 passed in 8.80 s, including 26 new regression cases.
+Repository-wide Ruff and whitespace checks pass; both figures were visually
+inspected. No GPU ran for this increment.
+
+Local evidence package: `results/reduced_field_evidence_20261029_verified.zip`,
+3,041,195 bytes, 133 files, all member manifest hashes and ZIP CRCs verified.
+Archive SHA-256:
+`acf02d4af362a397bc666a11e3d90ce6962d8228435a93bd5b4aeb42cce7e872`.
+It retains unchanged inputs, measured source snapshot, all histories/hashes,
+raw timings, inspected plots, independent audit and validation source.
+The package is Git-ignored, with no asserted off-machine archive synchronization;
+only code, tests and documented evidence are committed.

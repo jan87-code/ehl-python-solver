@@ -179,7 +179,8 @@ def test_multilevel_mixed_active_transport_known_vector_and_exact_constraints(ki
         full[::3] = False
     matrix = bmat([[pressure, content],
                    [diags((~full).astype(float)), diags(full.astype(float))]], format="csr")
-    system = SimpleNamespace(n=n, preconditioner="local", problem=SimpleNamespace(shape=shape),
+    system = SimpleNamespace(n=n, size=2*n, preconditioner="local",
+                             problem=SimpleNamespace(shape=shape),
                              full=lambda state: full, frozen_matrix=lambda state: matrix)
     block = inverse_type(system, None)
     known = np.random.default_rng(389).normal(size=2*n)

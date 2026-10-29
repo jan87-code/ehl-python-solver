@@ -215,6 +215,7 @@ class CavitatingCorrection:
     schur_indicator: float | None
     linear_true_residuals: tuple[float, ...]
     krylov_histories: tuple[tuple[float, ...], ...] = ()
+    field_setup_failures: tuple[dict, ...] = ()
 
 
 class CavitatingLinearError(RuntimeError):
@@ -258,6 +259,8 @@ def solve_cavitating_correction(
     )
     matrix = system.frozen_matrix(state)
     true_residuals, counts, traces = [], [], []
+    field_setup_failures = []
+    field_factorization = getattr(system, "field_factorization", "full")
 
     def linear_solve(op, rhs, lu):
         count = []
@@ -289,14 +292,18 @@ def solve_cavitating_correction(
                 "linear_true_residuals": tuple(true_residuals),
                 "linear_iterations": sum(counts),
                 "krylov_histories": tuple(traces),
+                "field_factorization": field_factorization,
+                "field_setup_failures": tuple(field_setup_failures),
             },
         )
 
     if not np.any(residual):
         return CavitatingCorrection(np.zeros_like(residual), 0.0, 0, False, None, ())
     try:
-        lu = splu(matrix[: 2 * system.n, : 2 * system.n])
-    except RuntimeError:
+        lu = (system.reduced_field_factor(state, matrix) if field_factorization == "reduced"
+              else splu(matrix[: 2 * system.n, : 2 * system.n]))
+    except RuntimeError as exc:
+        field_setup_failures.append({"factorization": field_factorization, "reason": str(exc)})
         lu = None
     if system.target_load_n is None:
         if lu is None:
@@ -312,6 +319,7 @@ def solve_cavitating_correction(
             None,
             tuple(true_residuals),
             tuple(traces),
+            tuple(field_setup_failures),
         )
     indicator = None
     if lu is not None:
@@ -346,6 +354,7 @@ def solve_cavitating_correction(
                             indicator,
                             tuple(true_residuals),
                             tuple(traces),
+                            tuple(field_setup_failures),
                         )
     try:
         full_lu = splu(matrix)
@@ -362,6 +371,7 @@ def solve_cavitating_correction(
         indicator,
         tuple(true_residuals),
         tuple(traces),
+        tuple(field_setup_failures),
     )
 
 

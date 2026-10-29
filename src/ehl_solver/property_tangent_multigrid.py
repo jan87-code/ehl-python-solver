@@ -1,4 +1,4 @@
-"""Diagnostic nonsymmetric material/JFO multigrid, independent of production.
+"""Material/JFO exact active reduction and separate diagnostic multigrid.
 
 All physical problem inputs remain SI. Internal matrices/state corrections are
 scaled dimensionless P,D,h0/H0, C-order (ny-2,nx-2); x follows entrainment.
@@ -154,10 +154,12 @@ class _PropertyTangentBlock:
     Neither coarse corrections nor ILU factors define physical coarse fields.
     """
 
-    def __init__(self, system, state):
-        if system.preconditioner not in ("material", "local"):
-            raise ValueError("material or local tangent preconditioner required")
-        matrix = system.frozen_matrix(state)
+    def __init__(self, system, state, *, matrix=None):
+        if system.preconditioner not in ("frozen", "material", "local"):
+            raise ValueError("frozen, material or local preconditioner required")
+        matrix = system.frozen_matrix(state) if matrix is None else matrix
+        if matrix.shape != (system.size, system.size):
+            raise ValueError("assembled bordered matrix must match the system")
         self.n = system.n
         self.full = np.array(system.full(state), dtype=bool, copy=True)
         self.cavitated = ~self.full
@@ -191,6 +193,8 @@ class PropertyTangentMultigrid(_PropertyTangentBlock):
     """Diagnostic material/local mixed-correction hierarchy, no production selection."""
 
     def __init__(self, system, state, *, ilu_fill_factor=2.):
+        if system.preconditioner not in ("material", "local"):
+            raise ValueError("material or local tangent preconditioner required")
         super().__init__(system, state)
         self.multigrid = NonsymmetricMultigrid(self.reduced, system.problem.shape,
                                               ilu_fill_factor=ilu_fill_factor)
@@ -200,19 +204,26 @@ class PropertyTangentMultigrid(_PropertyTangentBlock):
 
 
 class PropertyTangentLU(_PropertyTangentBlock):
-    """Exact sparse reduced-block control, not a multigrid fallback.
+    """Exact sparse reduced field LU, also available as a diagnostic control.
 
+    Production selection is explicit through field_factorization="reduced";
+    the default full field LU and full-border recovery remain available.
+    A failed experimental hierarchy never invokes this factorization.
     Factors n mixed unknowns after exact complementarity elimination, compared
     with the original 2*n field matrix. The outer load Schur reconstruction
     can therefore be checked against the full 2*n+1 sparse bordered inverse.
     Explicit selection is required; a failed hierarchy never invokes this.
     """
 
-    def __init__(self, system, state):
-        super().__init__(system, state)
+    def __init__(self, system, state, *, matrix=None):
+        super().__init__(system, state, matrix=matrix)
         self.factor = splu(self.reduced.tocsc())
         if not all(np.all(np.isfinite(a.data)) for a in (self.factor.L, self.factor.U)):
             raise FloatingPointError("nonfinite reduced LU factors")
 
     def _solve_reduced(self, rhs):
         return self.factor.solve(rhs)
+
+    def solve(self, rhs):
+        """LU-compatible inverse action on the original 2*n field RHS."""
+        return self.apply(rhs)

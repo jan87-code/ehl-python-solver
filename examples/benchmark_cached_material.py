@@ -57,9 +57,10 @@ def peak_memory():
             "method": "getrusage worker-lifetime resident high-water mark"}
 
 
-def worker(source, directory, mode, repeats):
+def worker(source, directory, mode, repeats, *, field_factorization="full"):
     directory.mkdir(parents=True, exist_ok=False)
-    report = {"status": "incomplete", "runtime": provenance(), "elasticity_mode": mode}
+    report = {"status": "incomplete", "runtime": provenance(), "elasticity_mode": mode,
+              "field_factorization": field_factorization}
     save_json(directory / "summary.json", report)
     system, state, seed, info = load_root(source)
     p, f = system.problem, system.base.fluid
@@ -70,19 +71,29 @@ def worker(source, directory, mode, repeats):
                   initialization="unchanged pressure/content; +0.01 href offset; unaccepted")
 
     def solve():
-        return repair_property_load_guess(p, f, 2., 200., guess, elasticity_mode=mode)
+        return repair_property_load_guess(p, f, 2., 200., guess, elasticity_mode=mode,
+                                          field_factorization=field_factorization)
 
     try:
         warm = solve()
         audit_fields(p, warm.solution, warm.central_film_offset_m, warm.solution.history)
         del warm
-        samples, audits = [], []
+        samples, audits, histories, hashes = [], [], [], []
         for _ in range(repeats):
             start = time.perf_counter()
             root = solve()
             samples.append(time.perf_counter()-start)
             audits.append(audit_fields(p, root.solution, root.central_film_offset_m,
                                        root.solution.history))
+            histories.append(finite_json(root.solution.history))
+            hashes.append({name: hashlib.sha256(value.tobytes()).hexdigest() for name, value in (
+                ("pressure_pa", root.solution.pressure_pa),
+                ("theta", root.solution.fractional_film_content),
+                ("film_m", root.solution.film_thickness_m),
+            )})
+            report.update(elapsed_samples_s=samples, measurement_audits=audits,
+                          measurement_histories=histories, measurement_field_sha256=hashes)
+            save_json(directory / "summary.json", finite_json(report))
     except PropertyLoadNewtonError as exc:
         report.update(status="rejected nonlinear solve", reason=str(exc),
                       diagnostics=finite_json(exc.diagnostics), history=finite_json(exc.history))
@@ -93,7 +104,9 @@ def worker(source, directory, mode, repeats):
     report.update(elapsed_s=float(np.median(samples)), elapsed_samples_s=samples,
                   measurement_audits=audits, audit=audits[-1],
                   history=finite_json(root.solution.history))
-    if hashlib.sha256(Path(info["source"]).read_bytes()).hexdigest() != info["source_sha256"]:
+    if (hashlib.sha256(Path(info["source"]).read_bytes()).hexdigest() != info["source_sha256"]
+            or hashlib.sha256((source / "summary.json").read_bytes()).hexdigest()
+            != info["summary_sha256"]):
         raise RuntimeError("source modified")
     save_state(directory / "solution.npz", p, root.solution, f)
     report.update(memory=peak_memory(), status="reference-audited nonlinear repair passed")

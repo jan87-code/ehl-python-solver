@@ -589,8 +589,20 @@ couplings and reproduces the corresponding full-LU iteration counts in the
 loaded-state diagnostic. On the accepted 97x145 case, local reduced setup and
 application take about 1/3.93 and 1/4.61 of full-border LU time, with lower
 measured worker-lifetime RSS. Tangent MG passes the coarsest case but remains
-unreliable on other states. Both remain diagnostic options; production Newton
-integration and its nonlinear recovery/physical gates are still to be tested.
+unreliable on other states. Tangent MG remains diagnostic. Exact reduced LU is now an explicit optional
+Newton field factorization with its original nonlinear recovery/physical gates.
 Use `--modes local material local-reduced material-reduced local-mg material-mg`
 for the explicit comparison. Validation report section 31 records the scope
 and evidence; the historical four-mode default remains unchanged.
+
+### Optional reduced field LU in material Newton (2026-10-29)
+
+Set `field_factorization="reduced"` in material force Newton, continuation or
+repair calls to use exact active-row elimination for the field LU; the default
+is `"full"`. Existing Schur/full-border recovery and physical/globalization
+gates remain in force, and failure diagnostics are retained. Actual three-grid
+200 N repairs reach matching roots, but performance is mixed (full/reduced
+runtime ratios 0.927/1.140/0.997), so the default is unchanged. Reproduce with
+`python -m examples.benchmark_reduced_material --help`; validation report
+section 32 records complete repair timings and limits. Earlier isolated inverse
+speedups are not a production Newton speedup or physical-film validation.

@@ -1956,3 +1956,27 @@ checkpoint passes its saved pressure-only FB/load gates. Full target viscosity,
 Python JFO parity and physical/grid validation remain unverified. See
 [MATLAB_REFERENCE.md](MATLAB_REFERENCE.md); the diagnostic evaluator is not a
 new production solver or a MATLAB runtime reproduction.
+
+### Pressure-only MATLAB Newton recovery reproduced (2026-10-29)
+
+Implemented a separate diagnostic N33 finite-difference bordered Newton and
+adaptive viscosity replay, retaining the supplied source's reduced active-set,
+Schur/direct/LM competitors, pressure projection, relative-decrease line search
+and unchanged gates/budgets. A 1.94359 nm offset perturbation is recovered in
+11 corrections; pressure changes by 3.96e-6 relative L2 and minimum film by
+3.69e-13 m from the original checkpoint. This is nontrivial solver recovery,
+not just re-evaluation of an already accepted state.
+
+The exact source continuation schedule rejects alpha 0.9 and 0.89890625 after
+20 corrections apiece, then reaches its minimum increment stop; full viscosity
+remains unachieved. An independent SI direct-convolution/face-flux verifier
+accepts the recovered reference root and rejects both failed trials. It also
+quantifies the pressure-only cavitation mass defect; none of these states is
+promoted to a JFO/physical benchmark. See [MATLAB_REFERENCE.md](MATLAB_REFERENCE.md)
+for reproduction commands, numerical results and known MATLAB-runtime limits.
+
+Final verification of this increment: 556 passed, 62 optional skips (333.77 s),
+Ruff/whitespace checks clean. Fourteen focused audit/reproduction checks pass.
+Runtime-source snapshots, checkpoint, accepted/failed physical fields, histories,
+independent SI audits and inspected plots are preserved locally under the
+Git-ignored reproduction results directory; no simulation datasets are staged.

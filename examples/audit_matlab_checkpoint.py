@@ -8,6 +8,7 @@ Arrays are (ny,nx), +x entrainment; reported physical values use SI units.
 import argparse
 import hashlib
 import json
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -17,35 +18,43 @@ from scipy.signal import convolve2d
 from ehl_solver.elasticity import ElasticityOperator
 
 
-def reference_fields(pressure, offset, scale, stage):
-    """Evaluate the reference's dimensionless N33 equations, including scaling."""
-    p = np.asarray(pressure, dtype=np.float64)
-    if p.shape != (33, 33) or not np.all(np.isfinite(p)):
-        raise ValueError("Reference requires finite (33,33) pressure")
-    if not np.isfinite(offset) or np.any(p < 0):
-        raise ValueError("Invalid reference pressure or offset")
-    if np.any(p[[0, -1], :]) or np.any(p[:, [0, -1]]):
-        raise ValueError("Reference requires zero boundary pressure")
-    n = 33
-    dx = 8 / (n - 1)
+@lru_cache(maxsize=1)
+def _elastic_grid():
+    n, dx = 33, 0.25
     lag = np.arange(-n + 1, n) * dx
     xx, yy = np.meshgrid(lag, lag)
     radius = np.hypot(xx, yy)
     radius[n - 1, n - 1] = 1
     kernel = (2 / np.pi**2) / radius
-    # Square-cell integral of 1/r; all other reference cells use point samples.
     kernel[n - 1, n - 1] = (2 / np.pi**2) * 4 * dx * np.arcsinh(1) / dx**2
+    spectrum = np.fft.fft2(np.fft.ifftshift(kernel))
+    kernel.flags.writeable = spectrum.flags.writeable = False
+    return kernel, spectrum
+
+
+def reference_fields(pressure, offset, scale, stage, *, _signed_probe=False):
+    """Evaluate the reference's dimensionless N33 equations, including scaling."""
+    p = np.asarray(pressure, dtype=np.float64)
+    if p.shape != (33, 33) or not np.all(np.isfinite(p)):
+        raise ValueError("Reference requires finite (33,33) pressure")
+    if not np.isfinite(offset) or (not _signed_probe and np.any(p < 0)):
+        raise ValueError("Invalid reference pressure or offset")
+    if np.any(p[[0, -1], :]) or np.any(p[:, [0, -1]]):
+        raise ValueError("Reference requires zero boundary pressure")
+    n = 33
+    dx = 8 / (n - 1)
+    # Square-cell integral of 1/r; all other reference cells use point samples.
+    kernel, spectrum = _elastic_grid()
     padded = np.zeros((2 * n - 1, 2 * n - 1))
     padded[:n, :n] = p * dx**2
-    deformation = np.fft.ifft2(np.fft.fft2(padded) * np.fft.fft2(np.fft.ifftshift(kernel))).real[
-        :n, :n
-    ]
+    deformation = np.fft.ifft2(np.fft.fft2(padded) * spectrum).real[:n, :n]
     coord = np.linspace(-4, 4, n)
     x, y = np.meshgrid(coord, coord)
     h = offset + (x * x + y * y) / 2 + deformation
     if np.min(h) <= 1e-10:
         raise ValueError("Reference film fails strict positive-film floor")
-    physical_p = p * scale["pH"]
+    # MATLAB permits signed FD probes: elasticity uses signed P, fluid uses max(P,0).
+    physical_p = np.maximum(p, 0) * scale["pH"]
     rho = 1 + stage["rho_scale"] * 0.6e-9 * physical_p / (1 + 1.7e-9 * physical_p)
     z = stage["alpha_scale"] * 2.21e-8 * 1.98e8 / (np.log(0.04) + 9.67)
     eta = np.exp(np.minimum((np.log(0.04) + 9.67) * ((1 + physical_p / 1.98e8) ** z - 1), 700))
@@ -72,6 +81,7 @@ def reference_fields(pressure, offset, scale, stage):
         "film": h,
         "kernel": kernel,
         "residual": residual,
+        "scaled_residual": scaled,
         "fb": fb,
         "dx": dx,
     }

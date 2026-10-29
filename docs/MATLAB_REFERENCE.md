@@ -221,3 +221,9 @@ Verified local archive: `results/matlab_newton_evidence_20261029_verified.zip`,
 393,740 bytes, 22 files; manifest SHA256 and ZIP CRC checks pass. Archive SHA256:
 `4d3436650a70b5a4a11ef4e6e45a8b506925b138f593980537d2c390c71ec7e7`.
 It is Git-ignored; no off-machine backup is asserted.
+
+The follow-up [globalization investigation](MATLAB_GLOBALIZATION.md) now
+isolates candidate selection from the decrease test. At alpha=0.9, comparing
+all available candidates converges in two corrections with unchanged gates;
+directional Armijo alone reproduces the twenty-correction baseline failure.
+This is a separate reference experiment; the compatibility default is retained.

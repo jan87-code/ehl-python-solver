@@ -1980,3 +1980,29 @@ Ruff/whitespace checks clean. Fourteen focused audit/reproduction checks pass.
 Runtime-source snapshots, checkpoint, accepted/failed physical fields, histories,
 independent SI audits and inspected plots are preserved locally under the
 Git-ignored reproduction results directory; no simulation datasets are staged.
+
+### Controlled reference globalization investigation (2026-10-29)
+
+Isolated the first pressure-only MATLAB replay stall through a four-way
+ablation: directional Armijo alone exactly reproduces the failed sequential
+baseline, while competing the original active/Schur/LM candidates solves
+alpha=0.9 in two corrections under either decrease test (baseline fails after
+20). Added an analytic one-sided projected-merit derivative with nonlocal
+elasticity, material laws, Reynolds scaling, FB kinks and force border; the
+compatibility solver default remains unchanged.
+
+Both competition policies advance the original schedule to verified
+alpha=0.9189712524414063 (six accepted, four rejected stages), then stop at the
+minimum increment. Full viscosity is still unachieved. Lower-damping probes
+at a later stalled state do not establish a cure. SI direct-convolution/flux
+checks audit every attempted state. The last reference-accepted state has
+large mass imbalance, including at positive-pressure nodes: the coarse scaled
+FB/load gates are insufficient for physical Reynolds acceptance. Do not relax
+production mass gates or promote these reference states to physical/JFO roots.
+See [MATLAB_GLOBALIZATION.md](MATLAB_GLOBALIZATION.md) for commands, ablation,
+limitations and the next conservative 50 N comparison.
+
+Verification: 563 passed, 62 optional skips (371.67 s); 21 focused reference
+checks passed; Ruff/whitespace clean. Production JFO and all result baselines
+remain unchanged. Raw states, source snapshots, histories, SI re-audits and
+inspected plots are retained in Git-ignored results.

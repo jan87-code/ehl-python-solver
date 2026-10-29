@@ -199,3 +199,109 @@ def test_independent_si_direct_flux_audit_matches_reference(tmp_path, cfg):
     assert not independently["mass_conserving_jfo_validation"]
     with pytest.raises(ValueError, match="alpha_fraction"):
         verify_state(path, alpha_fraction=float("nan"))
+
+
+@pytest.mark.parametrize("with_zero_pressure", [False, True])
+def test_exact_projected_merit_slope_matches_forward_differences(cfg, with_zero_pressure):
+    from examples.matlab_merit_direction import merit_direction
+    from examples.reproduce_matlab_newton import merit
+
+    system = ReferenceSystem(
+        {"pH": 8e8, "lambda": 0.05, "H_scale": 2e-6}, {"rho_scale": 1, "alpha_scale": 0.9}, cfg
+    )
+    rng = np.random.default_rng(23)
+    x = rng.uniform(0.01, 0.03, 961)
+    if with_zero_pressure:
+        x[::2] = 0
+    dp, dh = rng.normal(size=961) * 0.01, -0.02
+    slope, df, direction = merit_direction(system, x, 2, dp, dh)
+    assert np.all(direction[x == 0] >= 0)
+    f, g, _ = system.evaluate(x, 2)
+    old = merit(f, g, cfg)
+    errors = []
+    for epsilon in (1e-3, 1e-4, 1e-5):
+        fp, gp, _ = system.evaluate(np.maximum(x + epsilon * dp, 0), 2 + epsilon * dh)
+        difference = (merit(fp, gp, cfg) - old) / epsilon
+        errors.append(abs(difference - slope) / abs(slope))
+    assert errors[-1] < 2e-4
+    assert errors[-1] < errors[0] / 20
+    np.testing.assert_allclose((fp - f) / epsilon, df, rtol=2e-3, atol=2e-5)
+
+
+def test_merit_direction_handles_exact_fb_kink(cfg):
+    from examples.matlab_merit_direction import merit_direction
+
+    system = ReferenceSystem(
+        {"pH": 8e8, "lambda": 0.0, "H_scale": 2e-6}, {"rho_scale": 1, "alpha_scale": 0.9}, cfg
+    )
+    x = np.zeros(961)
+    direction = np.ones(961) * 0.01
+    slope, df, tangent = merit_direction(system, x, 2, direction, 0.1)
+    # Every FB value is zero here: squared FB merit has zero derivative.
+    # A nonzero load error still contributes its exact derivative.
+    f, g, _ = system.evaluate(x, 2)
+    assert np.max(abs(f)) == 0
+    assert np.all(np.isfinite(df))
+    assert slope == pytest.approx(
+        cfg["merit_load_weight"] * g * (system.weights @ tangent) / QSTAR**2
+    )
+
+
+@pytest.mark.parametrize(
+    "policy,expected",
+    [("compete_reference", "lm"), ("compete_armijo", "lm"), ("sequential_armijo", "primary")],
+)
+def test_candidate_competition_exposes_useful_lm_without_hiding_primary(
+    monkeypatch, cfg, policy, expected
+):
+    from examples import investigate_matlab_globalization as module
+
+    class System:
+        def __init__(self):
+            self.cfg = cfg
+
+        def evaluate(self, x, offset):
+            if offset <= 0:
+                raise ValueError("film floor")
+            return x, 0.0, {}
+
+    system, x = System(), np.ones(2)
+    monkeypatch.setattr(
+        module, "merit_direction", lambda s, x, h, dp, dh: (float(np.mean(x * dp)), dp, dp)
+    )
+    candidates = [
+        ("primary", lambda: (-np.ones(2) * 1e-4, 0.0, {"method": "schur"})),
+        ("lm", lambda: (-np.ones(2), 0.0, {"method": "bounded_lm"})),
+    ]
+    result, models = module.select_candidate(system, x, 1.0, candidates, 0.5, policy)
+    chosen = [m for m in models if m["accepted"]]
+    assert len(chosen) == 1 and chosen[0]["candidate"] == expected
+    if expected == "lm":
+        np.testing.assert_array_equal(result[0], 0)
+        assert len(models) == 2
+        assert models[0]["trials"][-1]["merit_ratio"] > 0.999
+    else:
+        assert len(models) == 1
+
+
+def test_true_armijo_rejects_non_descent_and_records_strict_film_trials(cfg):
+    from examples.investigate_matlab_globalization import armijo_search
+
+    class System:
+        def __init__(self):
+            self.cfg = cfg
+            self.calls = 0
+
+        def evaluate(self, x, offset):
+            self.calls += 1
+            if offset <= 0:
+                raise ValueError("film floor")
+            return x, 0.0, {}
+
+    system = System()
+    result, trials = armijo_search(system, np.ones(2), 1.0, -np.ones(2), 0.0, 0.5, 0.1)
+    assert result is None and not trials and system.calls == 0
+    result, trials = armijo_search(system, np.ones(2), 1.0, -np.ones(2), -1.5, 0.5, -1.0)
+    assert not trials[0]["valid"] and trials[1]["valid"]
+    assert result[1] > 0
+    assert trials[-1]["merit"] <= trials[-1]["armijo_rhs"]

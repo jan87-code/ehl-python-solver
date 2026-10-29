@@ -377,7 +377,9 @@ def solve(system, x, offset):
     )
 
 
-def continuation(system, x, offset, *, observer=None):
+def continuation(system, x, offset, *, observer=None, trial_solver=None):
+    # Optional diagnostic competitor; default replay remains the original solver.
+    trial_solver = solve if trial_solver is None else trial_solver
     cfg = system.cfg
     good, delta = system.stage["alpha_scale"], cfg["alpha_step_initial"]
     attempts, stop = [], "attempt_budget"
@@ -392,7 +394,7 @@ def continuation(system, x, offset, *, observer=None):
         increment = min(delta, target - good)
         alpha = float(good + increment)
         trial_system = ReferenceSystem(system.scale, {**system.stage, "alpha_scale": alpha}, cfg)
-        trial_x, trial_offset, report = solve(trial_system, x, offset)
+        trial_x, trial_offset, report = trial_solver(trial_system, x, offset)
         item = {
             "attempt": attempt,
             "from_alpha": float(good),

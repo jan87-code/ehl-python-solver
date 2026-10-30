@@ -166,3 +166,11 @@ a SHA256 manifest. SHA256:
 `166168d139024279efa1707eceb448c04d9cac908bb6e9a07028434dc5ced4b3`.
 Source/state and manifest hashes and ZIP CRCs were verified. This archive
 remains local and Git-ignored; no upload is claimed.
+
+## Follow-up: coupled frozen linear correction model
+
+The mathematical probe now lives in `limited_system.LimitedLoadProbe`, with
+the example preserving `ResidualProbe` as an alias. A matching sparse
+preconditioner and verified frozen-model Schur/bordered correction benchmarks
+are recorded in [LIMITED_LINEAR_CORRECTIONS.md](LIMITED_LINEAR_CORRECTIONS.md).
+This advances the linear component; nonlinear/physical validation remains open.

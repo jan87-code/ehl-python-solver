@@ -166,3 +166,9 @@ remaining mesh/physical validation stays open.
 one-sided derivatives from frozen linear maps and check mathematical residuals
 and loaded Armijo comparisons. Loaded near-tie verification and a coupled
 candidate solve remain unfinished; existing film predictions are unchanged.
+
+The subsequent [frozen linear-correction benchmarks](LIMITED_LINEAR_CORRECTIONS.md)
+verify a limited-flux operator, sparse preconditioning and Schur/bordered
+corrections on weak mathematical states. A nonlinear candidate adapter,
+active-front/load-range checks and accepted candidate roots remain open.
+The published prototype film predictions and defaults are unchanged.

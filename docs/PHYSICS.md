@@ -2890,3 +2890,18 @@ They are not Newton corrections or accepted candidate EHL states. Loaded
 near-tie finite-step derivative discrepancies remain explicit; preconditioning,
 bordered corrections, recovery and coupled final acceptance remain open.
 See [LIMITER_SWITCHES.md](LIMITER_SWITCHES.md) for definitions and limitations.
+
+### Limited-flux frozen correction/preconditioner (2026-10-30)
+
+`limited_system` supplies an immutable-state guide-frozen mathematical operator
+and analytically assembled sparse material/frozen-film or cell-self-elastic
+preconditioner. The true matrix-free product retains nonlocal elasticity and
+all boundary/content/material couplings; sparse borders keep the exact offset
+column and force row. The existing verified correction engine is unchanged.
+
+Six weak full-film mathematical cases pass independently reconstructed linear
+residuals, tiny-grid dense references and full-step/affine-bound directional
+Armijo trial comparisons. Forced bordered recovery and intentional Krylov/
+setup failure diagnostics are covered. These are not nonlinear candidate
+solutions, physical-load/active-front validation or accepted film predictions.
+See [LIMITED_LINEAR_CORRECTIONS.md](LIMITED_LINEAR_CORRECTIONS.md).

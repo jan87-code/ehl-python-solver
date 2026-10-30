@@ -2163,3 +2163,25 @@ Verification: 645 passed, 62 optional skips (342.75 s); 36 final focused
 checks pass (2.23 s), Ruff/whitespace clean. The complete weak residual check
 passes independently per block, and loaded trial/finite-difference histories
 remain available under ignored results. Candidate physical validation is open.
+
+### Limited frozen linear model and correction checks (2026-10-30)
+
+Moved the unchanged mathematical probe into an experimental library module
+and added a frozen-state/guide matrix-free correction adapter. Its sparse
+material/local preconditioner includes the wider capacity stencil, copied
+outlet content and exact load/offset borders. The original correction engine,
+solver defaults, state budgets and true residual gates are unchanged.
+
+Weak full-film 5x7/9x13/17x25 cases pass complete Schur corrections with
+residuals <=2.51e-9, tiny dense oracles, actual directional merit slopes and
+full-step-rejection/affine-bound trial comparisons. Forced bordered fallback
+passes; intentional Krylov exhaustion and singular setup retain diagnostics.
+This verifies a linear component, not physical load, nonlinear convergence,
+active-front recovery or load-step retries. Next: rebuild/manage these models
+inside a bounded nonlinear adapter, then independently audit candidate roots.
+See [LIMITED_LINEAR_CORRECTIONS.md](LIMITED_LINEAR_CORRECTIONS.md).
+
+Verification of this increment: 652 passed, 62 optional skips (345.07 s);
+43 final focused checks pass (2.36 s), Ruff/whitespace clean. Exact states,
+guides, corrections, trial/failure histories and reproducible sources are
+retained under ignored results. No limited-flux physical root is claimed.

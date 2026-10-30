@@ -40,6 +40,11 @@ accepted runs as spatial warm starts for refinement. Outputs include
 `report.md`, `fields.png`, exact SI fields, convergence diagnostics and source
 snapshots. The coarse result is not a mesh-converged engineering prediction.
 
+Start with the [everyday user guide](docs/USER_GUIDE.md) for input parameters,
+running a case and opening its results. The [product and GUI plan](docs/PRODUCT_ROADMAP.md)
+defines the future v1 release, conditional merge into `main` and later transient,
+TEHL and point/line-contact development.
+
 See [prototype usage](docs/PROTOTYPE.md) and
 [validation results](docs/PROTOTYPE_VALIDATION.md) for refinement commands,
 limits, physical conventions and default-stencil rationale.

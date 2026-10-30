@@ -1,5 +1,9 @@
 # Running the circular point-contact research prototype
 
+For a practical input-to-results walkthrough, see [USER_GUIDE.md](USER_GUIDE.md).
+The future GUI/release and model-extension sequence is in
+[PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
+
 The CPU prototype runs from SI JSON inputs, without MATLAB, saved solver
 results, PyTorch or GPU drivers. It computes pressure, liquid content, elastic
 deformation, film and load-controlled signed offset. Donor capacity is the

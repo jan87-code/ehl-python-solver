@@ -1,5 +1,21 @@
 # Development roadmap
 
+## Product and release direction
+
+The [product/GUI plan](PRODUCT_ROADMAP.md) records the user-requested sequence:
+finish and validate the steady point-contact core; stabilize the shared
+application/inputs/results; build the GUI and final everyday-use documentation;
+then pass the v1 release gate and merge into `main`. Post-release work adds
+line contact, transient isothermal behavior, steady TEHL and combined transient
+TEHL through separately benchmarked feature branches. The order of those
+extensions is proposed; no such model is marked implemented by this plan.
+
+Current numerical priority remains the bounded nonlinear limited-flux adapter
+and its recovery/acceptance checks. The existing CLI already has an
+[everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
+remain planned. Detailed implementation history and evidence follow below.
+
+
 - [x] Python packaging, GitHub CPU CI, Codex guidance and optional GPU backend
 - [x] Analytical Hertz reference and unit tests
 - [x] FFT linear convolution parity with direct CPU reference (generic kernel)
@@ -2185,3 +2201,20 @@ Verification of this increment: 652 passed, 62 optional skips (345.07 s);
 43 final focused checks pass (2.36 s), Ruff/whitespace clean. Exact states,
 guides, corrections, trial/failure histories and reproducible sources are
 retained under ignored results. No limited-flux physical root is claimed.
+
+### Everyday workflow and product/GUI release plan (2026-10-30)
+
+Added [USER_GUIDE.md](USER_GUIDE.md) for the current JSON-input/CLI/report/plot
+workflow, parameter units, accepted-versus-partial status, refinement and raw
+results. Added [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) for the proposed v1
+core/application/GUI/documentation gates, subsequent `develop` to `main`
+release, and separately benchmarked line-contact, transient and TEHL extensions.
+The final GUI walkthrough/screenshots are a release deliverable; the GUI and
+future physical modes remain planned. Numerical implementation status is
+unchanged by this documentation increment.
+
+Verified the documented copied-JSON input with automatic domain bounds through
+an actual cold 200 N prototype run, checking its accepted numerical status,
+report, PNG and raw array keys/shape. That smoke check is not new physical
+validation. Relative guide links and whitespace checks pass; Ruff passes;
+full suite: 652 passed, 62 optional skips (341.92 s).

@@ -161,3 +161,8 @@ an isolated conservative reconstruction, not a new coupled solver. Smooth
 accuracy improves, while loaded limiter-switch diagnostics prevent direct
 adoption into Newton. Existing prototype predictions/defaults are unchanged;
 remaining mesh/physical validation stays open.
+
+[Switching-aware derivative probes](LIMITER_SWITCHES.md) now separate true
+one-sided derivatives from frozen linear maps and check mathematical residuals
+and loaded Armijo comparisons. Loaded near-tie verification and a coupled
+candidate solve remain unfinished; existing film predictions are unchanged.

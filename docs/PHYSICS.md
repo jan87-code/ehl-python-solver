@@ -2875,3 +2875,18 @@ fails the candidate mass equation. This is not a coupled candidate solution,
 verified bordered Jacobian or acceptable substitute for a genuine Armijo
 slope. See [LIMITED_TRANSPORT.md](LIMITED_TRANSPORT.md) for limitations and the
 remaining derivative/globalization gates before any coupled trial.
+
+### Switching-aware derivative and merit components (2026-10-30)
+
+The isolated limited flux now has an analytic one-sided directional derivative
+and a separate guide-frozen linear action. The former is non-additive at
+switches and cannot be used as a Krylov operator. Exact-tie/plateau checks and
+a smooth complete mathematical residual finite-difference check pass, including
+the copied outlet-content derivative reached by the new reconstruction.
+
+Six signed 200 N residual probes verify frozen linearity/guide agreement;
+three feasible trial directions pass an analytic directional Armijo comparison.
+They are not Newton corrections or accepted candidate EHL states. Loaded
+near-tie finite-step derivative discrepancies remain explicit; preconditioning,
+bordered corrections, recovery and coupled final acceptance remain open.
+See [LIMITER_SWITCHES.md](LIMITER_SWITCHES.md) for definitions and limitations.

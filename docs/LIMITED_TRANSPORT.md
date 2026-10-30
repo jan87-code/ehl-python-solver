@@ -151,3 +151,11 @@ logs and a SHA256 manifest. SHA256:
 `58db7c0cc163f0d8bceafefc8c064897b03df2f4b7688576e7fed474793c06eb`.
 Source/state hashes, every manifest digest and ZIP CRCs were verified. The
 archive remains local and Git-ignored; no upload or coupled success is claimed.
+
+## Follow-up: exact switches and frozen directional maps
+
+The exact-switch one-sided derivative, separately frozen guide-selected map,
+complete mathematical residual and loaded merit probes are now implemented.
+See [LIMITER_SWITCHES.md](LIMITER_SWITCHES.md). Exact-switch and smooth-product
+checks pass, but near-tie loaded finite-difference verification remains open.
+This does not promote the isolated candidate to the coupled solver.

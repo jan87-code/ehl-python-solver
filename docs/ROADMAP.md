@@ -2141,3 +2141,25 @@ Verification: 620 passed, 62 optional skips (358.80 s); all 11 focused candidate
 checks pass (2.82 s), Ruff/whitespace clean. Exact benchmark/loaded diagnostics,
 including the global switching discrepancies, are retained under ignored
 results with reproducible source snapshots. Coupled adoption remains unfinished.
+
+### Switching-aware directional and merit probes (2026-10-30)
+
+Implemented exact one-sided minmod/capacity differentiation and a separately
+frozen guide-selected flux map. Tests distinguish true derivative non-additivity
+from Krylov-map linearity, cover exact ties/zero slopes and prevent near-zero
+snapping. A complete mathematical residual probe includes mass, min(P,D),
+relative force, full-source elasticity and the copied-content boundary derivative.
+Weak smooth finite differences independently check every residual block.
+
+At the 200 N donor seed, all six signed probes have exact guide agreement and
+frozen linearity errors <=2.10e-16. Three descending feasible diagnostic
+trials satisfy the directional Armijo inequality. They are not Newton steps
+or accepted candidate roots. Near-tie loaded finite-step derivative differences
+persist; next work remains loaded derivative verification and consistent
+coupled/preconditioner/bordered/globalization/recovery tests before candidate
+physical runs. See [LIMITER_SWITCHES.md](LIMITER_SWITCHES.md).
+
+Verification: 645 passed, 62 optional skips (342.75 s); 36 final focused
+checks pass (2.23 s), Ruff/whitespace clean. The complete weak residual check
+passes independently per block, and loaded trial/finite-difference histories
+remain available under ignored results. Candidate physical validation is open.

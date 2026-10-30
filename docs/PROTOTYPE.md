@@ -99,3 +99,9 @@ as the explicit prototype candidate. The 200 N study still exposes minimum-
 film resolution/model uncertainty, so the existing library arithmetic default
 is preserved rather than silently promoted. Detailed results and default
 selection rationale are in [PROTOTYPE_VALIDATION.md](PROTOTYPE_VALIDATION.md).
+
+The subsequent [joint-refinement study](JOINT_REFINEMENT.md) keeps the domain
+and spacing ratio fixed, tracks raw/fitted minimum locations and records the
+remaining exit-pressure sensitivity. Its separate example driver requires
+explicit selection of the existing 30k allowance for meshes beyond 20k;
+the standalone CLI cap is unchanged.

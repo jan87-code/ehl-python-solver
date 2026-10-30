@@ -144,3 +144,14 @@ SHA256: `fae2049807c50b830969e306e376be4a188e0ae991468fc9022abd32361b747c`.
 Run source/state hashes, archive CRCs and every manifest digest were verified.
 The archive remains local under ignored results; it is not included in Git or
 claimed to be uploaded elsewhere.
+
+## Follow-up: controlled joint refinement
+
+The fixed-spacing-ratio 200 N sequence is now executed through 141x211;
+see [JOINT_REFINEMENT.md](JOINT_REFINEMENT.md) for reproduction, sampling
+benchmarks, minimum locations and original independent acceptance. New raw
+minima are 207.699/210.640/210.750 nm on 113x169/129x193/141x211. The finest
+pair agrees within 0.0523%, but exit-pressure differences remain 3.645%.
+Thus film agreement alone does not close mesh convergence. Local sampling
+diagnostics are small on the finest meshes; the remaining HD discrepancy
+cannot yet be assigned solely to sampling, transport or constitutive laws.

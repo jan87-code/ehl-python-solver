@@ -2097,3 +2097,24 @@ tests; Ruff passes. Original numerical/globalization gates are unchanged.
 See [PROTOTYPE.md](PROTOTYPE.md) and
 [PROTOTYPE_VALIDATION.md](PROTOTYPE_VALIDATION.md) for inputs, results,
 discretization uncertainty and the reproducible evidence package.
+
+### Controlled joint refinement and minimum sampling (2026-10-30)
+
+Added reproducible bounded joint-refinement and independent analysis drivers.
+Both axes are refined at dx/dy=2/3, fixed +/-3a domain and unchanged 200 N
+fluid/equations/gates. New 113x169,129x193,141x211 roots all close in six
+corrections; the last two use the existing explicit 30k allowance after
+factor/memory preflights. Public prototype defaults remain unchanged.
+
+Raw minima 207.699/210.640/210.750 nm and raw/fitted minimum locations now
+separate sampling diagnostics from coupled discrete-solution changes. The
+finest raw minimum changes 0.0523%, but exit pressure changes 3.645%; HD is
+256.801 nm. This is not completed mesh/physical validation. Next: benchmark
+transport-diffusion/exit-resolution improvements and independently audit
+correlation/material coefficient conventions before assigning the HD gap.
+See [JOINT_REFINEMENT.md](JOINT_REFINEMENT.md) for reproducible evidence.
+
+Verification of this increment: 609 passed, 62 optional skips (361.10 s);
+five final focused checks passed (4.71 s), including rejected-Krylov history
+preservation. Ruff and whitespace checks pass. All 18 new accepted corrections
+pass independent history checks; all original mass/load/film gates are retained.

@@ -2849,3 +2849,11 @@ are smaller (<0.1% minimum film) than tested mesh changes. Numerical closure
 passes, but continuum minimum-film accuracy and full physical validation
 remain open. See [PROTOTYPE_VALIDATION.md](PROTOTYPE_VALIDATION.md) and
 [PROTOTYPE.md](PROTOTYPE.md) for evidence, limits and reproduction.
+
+A follow-up fixed-ratio joint refinement (dx/dy=2/3) gives minimum film
+207.699/210.640/210.750 nm at 113x169/129x193/141x211. All original independent
+closure checks pass, but exit-pressure mesh differences remain about 3.65%.
+Local quadratic sampling diagnostics never modify fields or acceptance;
+finest fitted/raw differences are too small to attribute the remaining HD
+gap to nodal sampling alone. No continuum error or constitutive explanation
+is established. See [JOINT_REFINEMENT.md](JOINT_REFINEMENT.md).

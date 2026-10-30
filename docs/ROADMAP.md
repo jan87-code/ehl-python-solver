@@ -2073,3 +2073,27 @@ finite-difference errors below 5.74e-9. All 23 accepted donor/domain corrections
 pass independent original globalization/true-residual history checks. Exact
 states, source snapshots, baselines, domain initialization, SI audits and
 inspected plots are retained in Git-ignored results.
+
+### Standalone prototype and second-load validation (2026-10-30)
+
+Implemented bounded SI case inputs and a standalone CPU CLI with Hertz-based
+initialization, spatial/domain transfer, independent final audits, immutable
+output directories, exact state/source snapshots and readable plots/reports.
+Reproduced the 50 N donor sequence without MATLAB. At 200 N, completed mesh,
+x/y directional, exit-pressure and fixed-spacing directional domain studies.
+Two explicit 27,985-node experiments passed bordered-factor/memory preflights;
+the standalone default remains capped at 20,000 nodes.
+
+The conditional default decision is to preserve the established library
+arithmetic reference and retain donor as the explicit prototype candidate.
+At 200 N, minimum film is strongly discretization sensitive (104.878 to
+222.014 nm across the transverse sequence); HD is 256.801 nm. Pressure and
+central film improve, but this does not close minimum-film accuracy. Next:
+controlled joint x/y refinement, side-lobe/minimum-location and exit studies,
+then benchmark any proposed reduction in transport diffusion before adoption.
+
+Verification: 604 passed, 62 optional skips (347.70 s), including 16 prototype
+tests; Ruff passes. Original numerical/globalization gates are unchanged.
+See [PROTOTYPE.md](PROTOTYPE.md) and
+[PROTOTYPE_VALIDATION.md](PROTOTYPE_VALIDATION.md) for inputs, results,
+discretization uncertainty and the reproducible evidence package.

@@ -2832,3 +2832,20 @@ without changing physical spacing, equations or acceptance. It passes the
 original gates with film changes +0.415%/+0.517% and common-rectangle pressure
 change 0.7823%. This is evidence at one spacing and two domains, not a proven
 far-field limit. The bounded experiment stays below 20,000 physical nodes.
+
+### Standalone research prototype and 200 N mesh sensitivity (2026-10-30)
+
+The SI-input circular CPU prototype now starts from a declared unaccepted
+Hertz guess without MATLAB and independently re-audits final mass, load,
+complementarity, strict film feasibility and full-source direct elasticity.
+Its donor selection remains a candidate; the library arithmetic default is
+unchanged. The 50 N sequence reproduces prior donor film results.
+
+At 200 N, minimum film changes 104.878→185.858→205.265→217.916→222.014 nm
+with refinement, versus HD 256.801 nm. Directional x/y studies show unresolved
+anisotropy; narrow side-lobe resolution and discrete solution error cannot be
+separated by an HD comparison alone. Fixed-spacing directional domain changes
+are smaller (<0.1% minimum film) than tested mesh changes. Numerical closure
+passes, but continuum minimum-film accuracy and full physical validation
+remain open. See [PROTOTYPE_VALIDATION.md](PROTOTYPE_VALIDATION.md) and
+[PROTOTYPE.md](PROTOTYPE.md) for evidence, limits and reproduction.

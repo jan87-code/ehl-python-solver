@@ -16,6 +16,7 @@ gpu = ["torch>=2.4"]
 
 [project.scripts]
 ehl-check = "ehl_solver.cli:main"
+ehl-run = "ehl_solver.prototype_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

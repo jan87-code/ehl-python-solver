@@ -1,11 +1,13 @@
 # Python EHL Solver — research starter
 
-**Status: research foundation, NOT a complete validated EHL solver.** It includes
-Hertz references, tested convolution/elasticity, prescribed-film Reynolds/JFO
-solvers, pressure-dependent density/viscosity and experimental monolithic
-material/JFO/elasticity with audited 200 N closure on three finite-reservoir
-grids. Independent physical film-height validation, resolved mesh/domain
-accuracy and broad material coverage remain unfinished.
+**Status: CPU research prototype; physical validation remains incomplete.**
+It includes conservative pressure/content, elastic film coupling and load
+control, plus tested Hertz/FFT references and pressure-dependent fluid laws.
+The standalone prototype runs SI JSON cases without MATLAB or saved states,
+emits plots and reports, and compares minimum/central film with Hamrock–Dowson.
+Donor transport is an explicit prototype candidate; the arithmetic-capacity
+library reference remains available. Mesh/domain and model accuracy are
+reported separately from strict numerical closure.
 
 The signed full-film Picard, nested load and bordered Newton solvers remain
 mathematical references. Their negative-pressure tensile contributions must
@@ -25,6 +27,22 @@ pytest -q
 ehl-check --backend numpy
 code .
 ```
+
+## Run a point-contact case
+
+```bash
+PYTHONPATH=src .venv/bin/python -m ehl_solver.prototype_cli --case cases/circular_200n.json --output results/my_200n_coarse
+```
+
+After installation, `ehl-run` provides the same interface. Each output directory
+must be new. Start from the shipped 50 N or 200 N JSON configuration, then use
+accepted runs as spatial warm starts for refinement. Outputs include
+`report.md`, `fields.png`, exact SI fields, convergence diagnostics and source
+snapshots. The coarse result is not a mesh-converged engineering prediction.
+
+See [prototype usage](docs/PROTOTYPE.md) and
+[validation results](docs/PROTOTYPE_VALIDATION.md) for refinement commands,
+limits, physical conventions and default-stencil rationale.
 
 ## GPU setup
 First verify compatibility of your specific GPU model, driver, kernel and PyTorch wheel:

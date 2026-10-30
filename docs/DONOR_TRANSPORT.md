@@ -169,3 +169,11 @@ It retains arithmetic baselines, three donor grids, fixed-spacing domain
 initialization/solve, exact source versions, raw states and histories, loaded
 JVP checks, independent audits and the inspected unfiltered figure. It is
 Git-ignored; no off-machine backup is asserted.
+
+## Follow-up: standalone prototype and 200 N (2026-10-30)
+
+The second-load, mesh, exit and fixed-spacing directional domain study is now
+recorded in [PROTOTYPE_VALIDATION.md](PROTOTYPE_VALIDATION.md). The bounded
+SI-input [prototype](PROTOTYPE.md) reproduces 50 N without MATLAB. At 200 N,
+minimum film remains discretization sensitive despite strict equation/load
+closure, so donor remains a candidate and the library default is preserved.

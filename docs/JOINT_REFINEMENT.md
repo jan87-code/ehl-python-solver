@@ -158,3 +158,11 @@ sources/states, drivers, analysis, tests, logs and a SHA256 manifest.
 SHA256: `5bc7066fb8eaa8e3013dd76ce2db8bf5f3faf83fd598626c306d1efc7d817e13`.
 Source/state/driver hashes, manifest digests and ZIP CRCs were verified.
 The archive is local under ignored results; no upload is claimed.
+
+## Follow-up transport benchmark
+
+The isolated bounded-reconstruction study is recorded in
+[LIMITED_TRANSPORT.md](LIMITED_TRANSPORT.md). It reduces smooth-source error,
+but loaded limiter switches expose a directional-linearization issue that
+must be resolved before coupling it to Newton. It supplies no replacement
+film result or completed exit-convergence claim.

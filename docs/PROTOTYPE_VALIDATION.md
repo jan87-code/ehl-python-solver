@@ -155,3 +155,9 @@ pair agrees within 0.0523%, but exit-pressure differences remain 3.645%.
 Thus film agreement alone does not close mesh convergence. Local sampling
 diagnostics are small on the finest meshes; the remaining HD discrepancy
 cannot yet be assigned solely to sampling, transport or constitutive laws.
+
+The subsequent [bounded transport benchmark](LIMITED_TRANSPORT.md) validates
+an isolated conservative reconstruction, not a new coupled solver. Smooth
+accuracy improves, while loaded limiter-switch diagnostics prevent direct
+adoption into Newton. Existing prototype predictions/defaults are unchanged;
+remaining mesh/physical validation stays open.

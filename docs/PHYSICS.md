@@ -2857,3 +2857,21 @@ Local quadratic sampling diagnostics never modify fields or acceptance;
 finest fitted/raw differences are too small to attribute the remaining HD
 gap to nodal sampling alone. No continuum error or constitutive explanation
 is established. See [JOINT_REFINEMENT.md](JOINT_REFINEMENT.md).
+
+### Isolated bounded capacity reconstruction (2026-10-30)
+
+The experimental `limited_transport` primitive reconstructs rho*h*theta using
+bounded MC slopes, with a bounded one-sided west closure and shared conservative
+faces. The arithmetic diffusion and all existing coupled solvers remain
+unchanged. Independent monotone manufactured sources, including boundary-
+adjacent cells, give about second-order residual consistency; limiter extrema
+show phase-sensitive orders, so uniform second-order accuracy is not claimed.
+
+Analytic selected-branch flux linearizations match independent differences
+on smooth branches, including loaded material/elastic/offset directions.
+On the accepted donor 200 N fields, limiter switches produce substantial
+global discrepancies from a two-sided directional derivative. That root also
+fails the candidate mass equation. This is not a coupled candidate solution,
+verified bordered Jacobian or acceptable substitute for a genuine Armijo
+slope. See [LIMITED_TRANSPORT.md](LIMITED_TRANSPORT.md) for limitations and the
+remaining derivative/globalization gates before any coupled trial.

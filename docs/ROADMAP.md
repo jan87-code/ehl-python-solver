@@ -2118,3 +2118,26 @@ Verification of this increment: 609 passed, 62 optional skips (361.10 s);
 five final focused checks passed (4.71 s), including rejected-Krylov history
 preservation. Ruff and whitespace checks pass. All 18 new accepted corrections
 pass independent history checks; all original mass/load/film gates are retained.
+
+### Isolated less diffusive transport benchmark (2026-10-30)
+
+Implemented bounded MC reconstruction of transported mass capacity, a
+consistent bounded west closure and an analytic selected-branch flux JVP.
+Independent scalar/nonuniform conservation, manufactured consistency, bounded
+sharp-front, stationary capacity, material/film/content and alternating-mode
+checks cover this isolated primitive. Smooth monotone orders approach two
+versus donor one; trigonometric extrema expose limiter phase sensitivity.
+
+The loaded 200 N flux probes pass smooth-branch differentiation but reveal
+1.22%/25.25%/11.02% global pressure/content/offset discrepancies from the
+selected linearization at limiter switches. The candidate residual on the
+donor root is 1.77e-3, not an accepted root. Retain this benchmark; do not adopt
+it in Newton or change the prototype default. Next: establish switching-aware
+directional derivatives/globalization, then complete coupled Jacobian,
+preconditioner, bordered correction and original independent acceptance
+checks before physical runs. See [LIMITED_TRANSPORT.md](LIMITED_TRANSPORT.md).
+
+Verification: 620 passed, 62 optional skips (358.80 s); all 11 focused candidate
+checks pass (2.82 s), Ruff/whitespace clean. Exact benchmark/loaded diagnostics,
+including the global switching discrepancies, are retained under ignored
+results with reproducible source snapshots. Coupled adoption remains unfinished.

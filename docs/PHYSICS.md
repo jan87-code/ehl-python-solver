@@ -2801,3 +2801,34 @@ See [HAMROCK_DOWSON_VALIDATION.md](HAMROCK_DOWSON_VALIDATION.md) for formulas,
 primary sources, fluid and modulus conventions, reproduction and limitations.
 Historical supplied 200 N film references and result files are preserved;
 corrected E' correlation estimates are recorded separately.
+
+### Experimental coupled donor transport (2026-10-30)
+
+`donor_load` connects the previously isolated donor-capacity flux/JVP to an
+experimental load-controlled Newton adapter. It retains full nonlocal elastic
+coupling and supplies donor-consistent frozen/material/local preconditioning
+and an independent SI donor audit. The default `PropertyLoadSystem` still
+uses the original arithmetic-capacity warm system; existing solver entry
+points are unchanged. The benchmark driver requires `--transport donor` to
+select the experiment and refuses mixed-stencil accepted transfer seeds.
+
+The two-cell capacity-null response of arithmetic full-film transport is
+verified explicitly before coupled runs. In the matching full-viscosity 50 N
+case, the donor stencil reduces shared-node pressure changes from arithmetic
+33.60%/41.93% to 11.71%/7.106% across N33→N65→N129. At N129, unfiltered donor
+film is 302.699/504.294 nm versus Hamrock–Dowson 284.150/497.969 nm, with
+original mass/force/complementarity/film gates passed. The dominant alternating
+pressure pattern is greatly reduced without filtering a solution field.
+
+This adds first-order transport diffusion; it does not prove domain
+independence, asymptotic pressure convergence, sharp-exit accuracy, another
+load or a production-ready full EHL result. The fresh default N33 solution is
+bitwise identical to the previous arithmetic baseline. See
+[DONOR_TRANSPORT.md](DONOR_TRANSPORT.md) for implementation, tests, reproduction
+and the remaining validation work.
+
+A separate fixed-spacing donor domain check expands N65 +/-4a to N97 +/-6a
+without changing physical spacing, equations or acceptance. It passes the
+original gates with film changes +0.415%/+0.517% and common-rectangle pressure
+change 0.7823%. This is evidence at one spacing and two domains, not a proven
+far-field limit. The bounded experiment stays below 20,000 physical nodes.

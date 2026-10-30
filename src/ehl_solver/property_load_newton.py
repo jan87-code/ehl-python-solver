@@ -21,6 +21,7 @@ from ehl_solver.property_warm import PropertyWarmSystem, WarmPropertyRoot
 
 class PropertyLoadSystem:
     merit_slope = CavitatingNewtonSystem.merit_slope
+    warm_system_type = PropertyWarmSystem
 
     def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen",
                  elasticity_mode="reference", maximum_physical_nodes=20000,
@@ -39,7 +40,7 @@ class PropertyLoadSystem:
         if np.prod(problem.shape) > maximum_physical_nodes:
             raise ValueError(f"physical node budget exceeds {maximum_physical_nodes}")
         self.problem = problem
-        self.base = PropertyWarmSystem(
+        self.base = self.warm_system_type(
             problem, fluid, speed_m_s, problem.central_film_offset_m,
             maximum_interior_nodes=maximum_physical_nodes,
             elasticity_mode=elasticity_mode,

@@ -1,9 +1,10 @@
 """Matching MATLAB-case JFO repair and explicit Hamrock–Dowson comparison.
 
-SI fields on (ny,nx)=(33,33), +x entrainment, +/-4 Hertz radii. MATLAB P,H0
+SI fields on square (ny,nx) grids, +x entrainment, +/-4 Hertz radii. MATLAB P,H0
 are an unaccepted initialization; theta=1 is a declared guess, never a root.
-Integrated elasticity, arithmetic mobility/capacity faces and conservative
-pressure/content equations differ from MATLAB's pressure-only formulation.
+Integrated elasticity, arithmetic mobility and conservative pressure/content
+equations differ from MATLAB's pressure-only formulation. Capacity transport
+defaults to arithmetic faces; donor transport is an explicit experiment.
 """
 
 import argparse
@@ -14,11 +15,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from scipy.interpolate import RegularGridInterpolator
 from scipy.io import loadmat
 from scipy.signal import convolve2d
 
 from ehl_solver.benchmark_200n import Circular200N
 from ehl_solver.constitutive import IsothermalFluid
+from ehl_solver.donor_load import DonorLoadSystem, donor_mass_audit
 from ehl_solver.elasticity import cell_integrated_kernel
 from ehl_solver.film_correlations import hamrock_dowson_point_contact
 from ehl_solver.property_coupled import PropertyCoupledSolution
@@ -26,6 +29,7 @@ from ehl_solver.property_load_newton import (
     PropertyLoadNewtonError,
     PropertyLoadSystem,
     _solve_property_load_state,
+    verify_seed,
 )
 from ehl_solver.property_reynolds import admissible, mass_audit
 from ehl_solver.property_transfer import prolongate_property_guess
@@ -70,7 +74,18 @@ def film_comparison(film, alpha_fraction):
     }
 
 
-def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_source=None):
+def run(
+    checkpoint,
+    directory,
+    *,
+    alpha_fraction,
+    selection,
+    nodes=33,
+    seed_source=None,
+    transport="arithmetic",
+):
+    if transport not in ("arithmetic", "donor"):
+        raise ValueError("transport must be arithmetic or donor")
     original_audit = audit(checkpoint)
     if not original_audit["passes_saved_matlab_gates"] or original_audit["load_n"] != 50:
         raise ValueError("Verified original 50 N checkpoint required")
@@ -79,7 +94,9 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
     # The problem's positive reference offset is distinct from the signed
     # load-controlled unknown; total-film feasibility is checked after packing.
     problem = case.problem(0.5e-6, ny=nodes, nx=nodes, extent=4.0)
-    system = PropertyLoadSystem(
+    system_type = PropertyLoadSystem if transport == "arithmetic" else DonorLoadSystem
+    audit_mass = mass_audit if transport == "arithmetic" else donor_mass_audit
+    system = system_type(
         problem, fluid, 2.0, 50.0, preconditioner="local", elasticity_mode="cached"
     )
     guess = SimpleNamespace(
@@ -96,6 +113,7 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
             previous["status"] != "accepted_numerical_root"
             or previous["alpha_fraction"] != alpha_fraction
             or previous["fluid"] != asdict(fluid)
+            or previous.get("transport_scheme", "arithmetic") != transport
         ):
             raise ValueError("Accepted same-physics 50 N source required")
         old_n = previous["shape_ny_nx"][0]
@@ -117,15 +135,43 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
             offset = float(a["offset_m"])
         if abs(seed.load_n / 50.0 - 1) > 1e-8:
             raise ValueError("Source force is not 50 N")
-        guess = prolongate_property_guess(
-            old_problem,
-            problem,
-            fluid,
-            2.0,
-            seed=seed,
-            seed_offset_m=offset,
-            elasticity_mode="cached",
-        )
+        if transport == "arithmetic":
+            guess = prolongate_property_guess(
+                old_problem,
+                problem,
+                fluid,
+                2.0,
+                seed=seed,
+                seed_offset_m=offset,
+                elasticity_mode="cached",
+            )
+        else:
+            old_system = system_type(old_problem, fluid, 2.0, 50.0, elasticity_mode="cached")
+            verify_seed(old_system, seed, offset)
+            if nodes != 2 * (old_n - 1) + 1:
+                raise ValueError("Experimental donor transfer requires nested factor two")
+            yy, xx = np.meshgrid(problem.y_m, problem.x_m, indexing="ij")
+            points = np.c_[yy.ravel(), xx.ravel()]
+
+            def interpolate(a):
+                return RegularGridInterpolator(
+                    (old_problem.y_m, old_problem.x_m), a, bounds_error=True
+                )(points).reshape(problem.shape)
+
+            gp, gt = interpolate(seed.pressure_pa), interpolate(seed.fractional_film_content)
+            if abs(problem.load_n(gp) / seed.load_n - 1) > 1e-12:
+                raise ValueError("Donor transfer did not preserve force")
+            guess = SimpleNamespace(
+                pressure_pa=gp,
+                fractional_film_content=gt,
+                diagnostics={
+                    "accepted": False,
+                    "interpolation": "bilinear, no extrapolation",
+                    "source_shape_ny_nx": list(old_problem.shape),
+                    "target_shape_ny_nx": list(problem.shape),
+                    "offset_adjustment_m": 0.0,
+                },
+            )
         seed_info = {
             "path": str(path),
             "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -137,6 +183,7 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
         "status": "running",
         "alpha_fraction": alpha_fraction,
         "selection": selection,
+        "transport_scheme": transport,
         "source_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
         "original_checkpoint_audit": original_audit,
         "runtime": provenance(),
@@ -152,7 +199,9 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
         "equation_differences": [
             "fully cell-integrated elasticity",
             "pressure/content JFO mass equality",
-            "arithmetic face mobility/capacity",
+            "arithmetic face mobility/capacity"
+            if transport == "arithmetic"
+            else "arithmetic face mobility; upstream rho*h*theta advection (first order)",
         ],
         "maximum_corrections": 30,
         "maximum_krylov_cycles": 10,
@@ -222,7 +271,7 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
         )
         xx, yy = np.meshgrid(problem.x_m, problem.y_m)
         independent_h = root.central_film_offset_m + (xx * xx + yy * yy) / (2 * 0.015) + direct
-        independent_mass = mass_audit(
+        independent_mass = audit_mass(
             problem.x_m,
             problem.y_m,
             independent_h,
@@ -255,6 +304,8 @@ def run(checkpoint, directory, *, alpha_fraction, selection, nodes=33, seed_sour
         Path(__file__),
         Path("src/ehl_solver/property_load_newton.py"),
         Path("src/ehl_solver/film_correlations.py"),
+        Path("src/ehl_solver/donor_load.py"),
+        Path("src/ehl_solver/transport_candidate.py"),
     ]:
         content = path.read_bytes()
         (source / path.name).write_bytes(content)
@@ -282,6 +333,7 @@ if __name__ == "__main__":
     parser.add_argument("--selection", choices=("best", "legacy"), default="best")
     parser.add_argument("--nodes", type=int, choices=(33, 65, 129), default=33)
     parser.add_argument("--seed", type=Path)
+    parser.add_argument("--transport", choices=("arithmetic", "donor"), default="arithmetic")
     args = parser.parse_args()
     run(
         args.checkpoint,
@@ -290,4 +342,5 @@ if __name__ == "__main__":
         selection=args.selection,
         nodes=args.nodes,
         seed_source=args.seed,
+        transport=args.transport,
     )

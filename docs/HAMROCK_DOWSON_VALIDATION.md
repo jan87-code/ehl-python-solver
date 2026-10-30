@@ -149,3 +149,9 @@ Archive SHA256:
 It includes the original MAT input, all six benchmark runs and source versions,
 raw states/histories, audits, comparisons and inspected plot. It is Git-ignored;
 no off-machine backup is asserted.
+
+The follow-up [donor transport experiment](DONOR_TRANSPORT.md) now compares a
+separate conservative stencil on the same physical case. It greatly reduces
+the alternating pressure pattern and pressure mesh differences, with N129
+film 302.70/504.29 nm and a passing fixed-spacing domain check. The arithmetic
+baseline, original plots and default solver reported here remain unchanged.

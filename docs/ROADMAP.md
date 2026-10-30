@@ -2036,3 +2036,40 @@ Verification of this increment: 578 passed, 62 optional skips (337.88 s),
 verifies all 55 accepted corrections and true linear residuals <=8.995e-10.
 All raw states, separate SI/elastic audits, source snapshots, correlation
 comparisons and the inspected figure are retained under Git-ignored results.
+
+### Coupled donor-capacity transport comparison (2026-10-30)
+
+Implemented a separate experimental donor load system using the already
+benchmarked conservative donor flux and analytic JVP. Added the complete
+elastic/material/offset coupling, donor-consistent sparse preconditioning,
+independent SI audit and original bounded Newton/force acceptance. The default
+arithmetic system is preserved through a warm-system factory hook; a fresh
+N33 baseline is bitwise unchanged. Driver selection is explicit via
+`--transport donor`, with same-stencil nested-transfer checks.
+
+Verified the full-film arithmetic transport null at exactly alternating
+capacity before physical runs. Full-viscosity 50 N donor roots pass original
+gates at N33,65,129, reducing pressure mesh changes to 11.71% and 7.106%
+(arithmetic: 33.60%,41.93%). The N129 centerline-x raw alternating projection
+falls from 21.913% to 0.2721%. Donor film is 302.699/504.294 nm, +6.53%/+1.27%
+from HD, with last-grid film changes +0.581%/-1.812%. No field filter, new
+acceptance threshold or node-cap increase is applied.
+
+This is not production adoption or completed physical validation: remaining
+pressure change, first-order donor diffusion, finite-domain sensitivity and
+another load must be assessed. Next priority is domain sensitivity at fixed
+spacing and continued resolution/exit-region checks. Detailed evidence and
+commands: [DONOR_TRANSPORT.md](DONOR_TRANSPORT.md).
+
+The first fixed-spacing domain test also passes: donor N65 +/-4a expanded to
+N97 +/-6a changes minimum/central film by +0.415%/+0.517%, pressure on the
+common rectangle by 0.7823%, with original mass/load/film/complementarity
+gates intact. Further domains/spacings, sharper-exit resolution and another
+load still precede default adoption or broad physical-validation claims.
+
+Verification: 588 passed, 62 optional skips (359.78 s); 21 focused donor checks
+passed; Ruff/whitespace clean. Five loaded N129 complete-JVP checks have best
+finite-difference errors below 5.74e-9. All 23 accepted donor/domain corrections
+pass independent original globalization/true-residual history checks. Exact
+states, source snapshots, baselines, domain initialization, SI audits and
+inspected plots are retained in Git-ignored results.

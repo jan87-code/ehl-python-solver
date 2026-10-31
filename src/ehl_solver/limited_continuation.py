@@ -115,8 +115,77 @@ def _attempt(case, state, fraction, index, observer, *, audit_only=False):
     return outcome, data
 
 
+def _endpoint_prediction(previous, last):
+    """One secant prediction, guarded by the exact MC merit and SI audit.
+
+    This is continuation initialization, not a bordered Newton correction.
+    No failed state is used. An eligible guess still needs the ordinary
+    fraction-one, direct-elasticity final audit in a separate stage.
+    """
+    old, new = previous.transport_fraction, last.transport_fraction
+    if previous.case != last.case or not 0 <= old < new < 1:
+        raise ValueError("Ordered accepted stages of the same case required")
+    for result in (previous, last):
+        stage = LimitedLoadProbe(result.case, transport_fraction=result.transport_fraction)
+        if not audit_limited_state(stage, result.state)["numerically_accepted"]:
+            raise ValueError("Prediction source fails independent stage audit")
+    factor = (1.0 - new) / (new - old)
+    data = dict(
+        method="accepted_stage_secant",
+        previous_fraction=old,
+        last_fraction=new,
+        target_fraction=1.0,
+        factor=factor,
+        previous_state_sha256=hashlib.sha256(previous.state.tobytes()).hexdigest(),
+        last_state_sha256=hashlib.sha256(last.state.tobytes()).hexdigest(),
+        eligible_for_final_audit=False,
+        newton_correction=False,
+    )
+    with np.errstate(over="ignore", invalid="ignore"):
+        direction = factor * (last.state - previous.state)
+        candidate = last.state + direction
+    if not np.all(np.isfinite(candidate)):
+        data["reason"] = "Nonfinite secant prediction"
+        return None, data
+    probe = LimitedLoadProbe(last.case)
+    if not probe.feasible(candidate):
+        data["reason"] = "Prediction violates original pressure/content/film bounds"
+        return None, data
+    residual = probe.residual(last.state)
+    trial = probe.residual(candidate)
+    merit = float(residual @ residual / (2 * probe.size))
+    value = float(trial @ trial / (2 * probe.size))
+    slope = float(residual @ probe.derivative(last.state, direction) / probe.size)
+    armijo = bool(
+        np.isfinite(slope)
+        and slope < 0
+        and np.isfinite(value)
+        and value < merit
+        and value <= merit + 1e-4 * slope
+    )
+    data.update(
+        merit_before=merit,
+        merit_after=value,
+        actual_directional_slope=slope,
+        feasible=True,
+        armijo=armijo,
+        predicted_state_sha256=hashlib.sha256(candidate.tobytes()).hexdigest(),
+    )
+    if not armijo:
+        data["reason"] = "Prediction fails exact MC directional Armijo decrease"
+        return None, data
+    audit = audit_limited_state(probe, candidate)
+    data["audit"] = audit
+    if not audit["numerically_accepted"]:
+        data["reason"] = "Prediction fails exact MC SI acceptance gates"
+        return None, data
+    data.update(eligible_for_final_audit=True, reason="Requires separate direct final audit")
+    return candidate, data
+
+
 def continue_limited_transport(
-    case, initial_state=None, *, maximum_attempts=24, stage_observer=None
+    case, initial_state=None, *, maximum_attempts=24, stage_observer=None,
+    endpoint_prediction=True,
 ):
     """Conservative donor->MC homotopy, plus bounded bisection/rollback.
 
@@ -126,6 +195,8 @@ def continue_limited_transport(
     diagnostics to prevent path-history memory scaling as attempts*all vectors.
     """
     _options(maximum_attempts, stage_observer)
+    if type(endpoint_prediction) is not bool:
+        raise ValueError("endpoint_prediction must be boolean")
     pending = [
         0.0,
         0.5,
@@ -141,6 +212,8 @@ def continue_limited_transport(
     ]
     attempts = []
     last = None
+    previous = None
+    pending_prediction = None
     failure = None
     state = None if initial_state is None else np.array(initial_state, dtype=np.float64, copy=True)
     while len(attempts) < maximum_attempts:
@@ -155,6 +228,9 @@ def continue_limited_transport(
         outcome, data = _attempt(
             case, state, target, len(attempts), stage_observer, audit_only=target == 1.0
         )
+        if pending_prediction is not None:
+            data["initialization"] = pending_prediction
+            pending_prediction = None
         attempts.append(data)
         if isinstance(outcome, LimitedNewtonError):
             failure = outcome
@@ -166,7 +242,7 @@ def continue_limited_transport(
             pending[:0] = [mid, target]
             state = last.state.copy()  # NEVER continue from the failed partial.
             continue
-        last = outcome
+        previous, last = last, outcome
         state = last.state.copy()
         if target == 1.0:
             return LimitedPath(last, tuple(attempts), "transport")
@@ -175,6 +251,13 @@ def continue_limited_transport(
         probe = LimitedLoadProbe(case)
         if audit_limited_state(probe, state)["numerically_accepted"]:
             pending = [1.0]
+        elif endpoint_prediction and previous is not None:
+            candidate, diagnostic = _endpoint_prediction(previous, last)
+            data["endpoint_prediction_probe"] = diagnostic
+            if candidate is not None:
+                pending = [1.0]
+                state = candidate
+                pending_prediction = diagnostic
     raise LimitedPathError(
         "Transport continuation incomplete; full limited root not established",
         last,

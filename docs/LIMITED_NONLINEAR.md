@@ -178,3 +178,10 @@ This local archive is not included in Git or claimed uploaded to GitHub.
 Verification: Ruff and whitespace checks pass; full CPU suite **674 passed,
 62 optional skips** (356.72 s). The final focused adapter/flux/linear suite
 passes all 65 checks (8.46 s). GPU physical validation is not added.
+
+## Subsequent guarded endpoint initialization
+
+[The secant follow-up](LIMITED_ENDPOINT.md) now establishes an exact 50 N
+33x33 MC root through guarded initialization and a separate final audit.
+The failed run documented above remains unchanged. This subsequent discrete
+closure does not establish physical mesh convergence or broad MC robustness.

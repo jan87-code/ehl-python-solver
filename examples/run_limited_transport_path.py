@@ -18,7 +18,7 @@ from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json, digest, load_run
 
 
-def main(case_path, seed, output, maximum_attempts):
+def main(case_path, seed, output, maximum_attempts, *, endpoint_prediction=True):
     if seed is not None:
         case, _, _ = load_run(seed)
         if case_path is not None and PointContactCase(**json.loads(case_path.read_text())) != case:
@@ -45,6 +45,7 @@ def main(case_path, seed, output, maximum_attempts):
         initial_state_accepted_for_target=False,
         seed=None if seed is None else dict(path=str(seed), sha256=digest(seed / "solution.npz")),
         maximum_attempts=maximum_attempts,
+        endpoint_prediction_enabled=endpoint_prediction,
         maximum_corrections_per_attempt=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
@@ -112,7 +113,8 @@ def main(case_path, seed, output, maximum_attempts):
     write()
     try:
         path = continue_limited_transport(
-            case, initial, maximum_attempts=maximum_attempts, stage_observer=stage
+            case, initial, maximum_attempts=maximum_attempts, stage_observer=stage,
+            endpoint_prediction=endpoint_prediction,
         )
         result = path.result
         report.update(
@@ -148,5 +150,13 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-attempts", type=int, choices=range(1, 25), default=24)
+    parser.add_argument(
+        "--no-endpoint-prediction", dest="endpoint_prediction", action="store_false"
+    )
     args = parser.parse_args()
-    raise SystemExit(main(args.case, args.seed, args.output, args.max_attempts))
+    raise SystemExit(
+        main(
+            args.case, args.seed, args.output, args.max_attempts,
+            endpoint_prediction=args.endpoint_prediction,
+        )
+    )

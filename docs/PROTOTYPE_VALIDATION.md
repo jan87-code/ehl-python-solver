@@ -183,3 +183,14 @@ results or their physical-validation status. In particular, an accepted
 blended transport stage is not an accepted full limited-flux root, and neither
 status establishes mesh convergence. The registered donor results above
 remain the comparison baseline.
+
+A subsequent [guarded secant endpoint](LIMITED_ENDPOINT.md) closes the exact
+50 N 33x33 MC equations from a cold guess. Physical mesh validation and
+broader-load MC robustness remain separate, unfinished checks.
+
+The same guarded path also closes 50 N on 65x65 and 129x129. The latest
+minimum/central film is 281.506/462.814 nm; pressure, minimum-location and
+film changes still prevent mesh convergence. The coarse 200 N MC path
+remains incomplete. Exact audits and refinement norms are in
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md); existing donor baselines remain
+unchanged.

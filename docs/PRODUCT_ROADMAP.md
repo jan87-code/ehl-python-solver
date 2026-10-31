@@ -35,7 +35,10 @@ ready; a good-looking plot or a low residual cannot replace that gate.
 A bounded nonlinear adapter, state/guide updates, active-front recovery and
 rollback/load-step tests are now implemented experimentally; see
 [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md). Loaded MC robustness and physical
-mesh convergence remain open. Preserve the arithmetic and donor references.
+mesh convergence remain open. A [guarded secant endpoint](LIMITED_ENDPOINT.md)
+now closes the 50 N MC equations on 33x33, 65x65 and 129x129; these are
+finite-grid numerical results with unresolved spatial accuracy.
+Preserve the arithmetic and donor references.
 The final default scheme is chosen from validated evidence; the isolated candidate is not automatically the winner.
 
 Deliverables and exit criteria:

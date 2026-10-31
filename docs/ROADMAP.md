@@ -10,8 +10,9 @@ line contact, transient isothermal behavior, steady TEHL and combined transient
 TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
-Current numerical priority is limited-flux cavitation-front robustness and
-exact endpoint acceptance, followed by physical mesh convergence. The bounded
+Current numerical priority is broader-load limited-flux cavitation-front
+robustness and physical mesh convergence. Exact 50 N endpoints on 33x33,
+65x65 and 129x129 are now established; see [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md). The bounded
 nonlinear adapter and its recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.
@@ -2244,3 +2245,31 @@ release or expanded physical validation envelope is claimed.
 Verification: Ruff and whitespace checks pass; full CPU suite **674 passed,
 62 optional skips** (356.72 s). The final focused adapter/flux/linear suite
 passes all 65 checks (8.46 s). GPU physical validation is not added.
+
+### Guarded secant initialization of the exact limited endpoint (2026-10-31)
+
+Added one guarded secant prediction per accepted transport stage, using only
+two independently audited roots of the same case. Exact MC directional Armijo,
+original feasibility and independent SI gates precede a separate zero-Newton
+final audit with direct elasticity. Failed final verification rolls back to
+the last accepted blended root; the path retains all prediction diagnostics.
+No equations, acceptance tolerances or correction budgets are relaxed.
+
+The registered cold 50 N 33x33 case now reaches an exact tau=1 root in 11
+stage attempts, with local mass balance 1.872e-12 and exact 50 N force.
+Film remains 159.402/296.593 nm, with unresolved physical/coarse-grid error.
+This closes a finite-grid endpoint, not R1 or a release gate. See
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for reproduction, failure-injection
+regressions and subsequent mesh/load evidence.
+
+The controlled 50 N sequence now includes exact MC roots on 65x65 and
+129x129: minimum/central films 257.963/428.588 and 281.506/462.814 nm.
+At 129x129 the minimum is 0.93% below HD, but the last film changes remain
+9.126%/7.986%, shared-node pressure L2 changes 4.770% and maximum differences
+20.828%. Minimum locations also shift, so physical mesh convergence remains
+open. The coarse 200 N path exhausts 24 stages at accepted blended fraction
+0.96890625 and remains rejected for the full MC equation.
+
+Verification: 681 passed, 62 optional skips (400.96 s); Ruff/whitespace clean.
+A fresh full run completed after an earlier concurrent run ended with SIGTERM.
+All seven new predictor regressions are included; no GPU physical claim is added.

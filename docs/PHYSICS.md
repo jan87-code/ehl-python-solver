@@ -2913,3 +2913,8 @@ documented in [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md). Their independent
 SI audits distinguish each continuation equation and the exact MC endpoint.
 They do not change the released prototype defaults or establish physical
 mesh convergence. Failed partial states remain unaccepted.
+
+A guarded secant initialization now closes exact MC endpoints at 50 N on
+33x33, 65x65 and 129x129 with unchanged independent acceptance; see
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md). Spatial/physical accuracy and
+broader-load robustness remain distinct open requirements.

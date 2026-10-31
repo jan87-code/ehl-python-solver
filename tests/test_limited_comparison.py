@@ -12,6 +12,7 @@ import ehl_solver
 from ehl_solver.limited_comparison import compare_fields, file_sha256, load_limited_path
 from ehl_solver.limited_system import LimitedLoadProbe
 from examples.compare_limited_paths import main
+from examples.run_limited_transport_path import _interpolate_limited_seed, resource_preflight
 
 
 def save_fields(folder, case, state):
@@ -183,6 +184,8 @@ def test_nested_and_nonnested_sampling_of_exact_bilinear_si_fields(fine_shape, s
     assert result["sampling"] == sampling
     assert result["pressure_relative_l2_on_coarse_nodes"] < 1e-14
     assert result["pressure_relative_max_on_coarse_nodes"] < 1e-14
+    assert result["exit_pressure_relative_l2_on_coarse_nodes"] < 1e-14
+    assert result["exit_pressure_relative_max_on_coarse_nodes"] < 1e-14
     assert abs(result["minimum_film_relative_change"]) < 1e-14
     assert not result["numerical_acceptance_checked"] and not result["mesh_convergence_assessed"]
 
@@ -203,6 +206,40 @@ def test_changed_case_domain_and_coarsening_are_rejected():
         compare_fields(case, case, p, p, -h, h)
     with pytest.raises(ValueError, match="Nonzero"):
         compare_fields(case, case, p, np.zeros_like(p), h, h)
+
+
+def test_large_grid_budget_is_explicit_and_does_not_change_physics():
+    from ehl_solver.prototype import PointContactCase
+
+    with pytest.raises(ValueError, match="20000-node budget"):
+        PointContactCase(ny=173, nx=173)
+    PointContactCase(ny=173, nx=173, maximum_physical_nodes=30000)
+    normal = PointContactCase(ny=141, nx=141)
+    larger_budget = replace(normal, maximum_physical_nodes=30000)
+    assert larger_budget.physical_signature() == normal.physical_signature()
+    for budget in (True, 30000.0, 40000):
+        with pytest.raises(ValueError, match="maximum_physical_nodes"):
+            PointContactCase(maximum_physical_nodes=budget)
+
+
+def test_limited_seed_transfer_is_interpolated_unaccepted_and_resource_preflighted(saved):
+    source = load_limited_path(saved)
+    target = replace(
+        source.case,
+        ny=35,
+        nx=37,
+        maximum_physical_nodes=30000,
+    )
+    state, info = _interpolate_limited_seed(saved, target)
+    probe = LimitedLoadProbe(target, transport_fraction=0.0)
+    assert state.shape == (probe.size,)
+    assert info["source_shape"] == [source.case.ny, source.case.nx]
+    assert info["target_shape"] == [target.ny, target.nx]
+    assert not info["accepted_for_target"] and probe.feasible(state)
+    preflight = resource_preflight(target, state)
+    assert preflight["physical_nodes"] == target.ny * target.nx
+    assert preflight["passed"]
+    assert preflight["known_vector_relative_residual"] < 1e-8
 
 
 def test_comparison_cli_marks_audits_separately_from_convergence(saved, tmp_path):

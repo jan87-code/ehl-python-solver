@@ -41,6 +41,7 @@ class PointContactCase:
     domain_half_width_x_m: float | None = None
     domain_half_width_y_m: float | None = None
     transport: str = "donor"
+    maximum_physical_nodes: int = 20000
 
     def __post_init__(self):
         for name in (
@@ -58,11 +59,18 @@ class PointContactCase:
             if isinstance(value, bool) or not isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive finite SI")
             object.__setattr__(self, name, float(value))
+        if any(type(n) is not int or n < 5 or n % 2 == 0 for n in (self.ny, self.nx)):
+            raise ValueError("Odd grids >=5 required")
         if (
-            any(type(n) is not int or n < 5 or n % 2 == 0 for n in (self.ny, self.nx))
-            or self.ny * self.nx > 20000
+            type(self.maximum_physical_nodes) is not int
+            or self.maximum_physical_nodes not in (20000, 30000)
         ):
-            raise ValueError("Odd grids >=5 and at most 20,000 physical nodes required")
+            raise ValueError("maximum_physical_nodes must explicitly be 20000 or 30000")
+        if self.ny * self.nx > self.maximum_physical_nodes:
+            raise ValueError(
+                f"Grid has {self.ny * self.nx} physical nodes, exceeding "
+                f"the explicit {self.maximum_physical_nodes}-node budget"
+            )
         if self.transport not in ("donor", "arithmetic"):
             raise ValueError("transport must be donor or arithmetic")
         for name in ("domain_half_width_x_m", "domain_half_width_y_m"):
@@ -119,6 +127,7 @@ class PointContactCase:
             self.load_n,
             preconditioner="local",
             elasticity_mode="cached",
+            maximum_physical_nodes=self.maximum_physical_nodes,
         )
 
     def correlation(self):
@@ -135,7 +144,14 @@ class PointContactCase:
         return {
             k: v
             for k, v in asdict(self).items()
-            if k not in ("ny", "nx", "domain_half_width_x_m", "domain_half_width_y_m")
+            if k
+            not in (
+                "ny",
+                "nx",
+                "domain_half_width_x_m",
+                "domain_half_width_y_m",
+                "maximum_physical_nodes",
+            )
         }
 
 

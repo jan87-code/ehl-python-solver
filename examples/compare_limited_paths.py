@@ -49,6 +49,11 @@ This report measures change; it does not certify mesh convergence or physical ac
 - Sampling: {report["sampling"]}.
 - Relative pressure L2 on coarse nodes: {report["pressure_relative_l2_on_coarse_nodes"]:.6g}.
 - Relative pressure maximum on coarse nodes: {report["pressure_relative_max_on_coarse_nodes"]:.6g}.
+- Exit-region pressure L2/maximum differences:
+  {report["exit_pressure_relative_l2_on_coarse_nodes"]:.6g} /
+  {report["exit_pressure_relative_max_on_coarse_nodes"]:.6g}.
+- Coarse/fine raw exit-region peak pressure [Pa]:
+  {report["exit_pressure_coarse_peak_pa"]:.9g} / {report["exit_pressure_fine_peak_pa"]:.9g}.
 - Raw minimum film, coarse/fine [m]:
   {report["minimum_film_coarse_m"]:.9g} / {report["minimum_film_fine_m"]:.9g}.
 - Raw central film, coarse/fine [m]:
@@ -65,6 +70,9 @@ This report measures change; it does not certify mesh convergence or physical ac
 
 L2 pressure is normalized by finer pressure sampled at coarse nodes. Maximum
 pressure difference is normalized by the maximum of the full finer pressure.
+Exit-region metrics use 0.5<=x/a<=1.5 and |y/a|<=1.2 on the same physical
+domain; the regional maximum metric is normalized by the sampled finer regional
+peak.
 Film changes in comparison.json are relative to the coarse value. Hamrock–Dowson
 values are approximate fully flooded correlation references, not acceptance
 thresholds. Non-nested sampling includes interpolation error and must not be

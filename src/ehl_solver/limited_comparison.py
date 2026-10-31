@@ -183,6 +183,21 @@ def compare_fields(
     maximum = abs(fp).max()
     if not np.isfinite(denominator) or denominator == 0 or maximum == 0:
         raise ValueError("Nonzero finer pressure required for relative pressure norms")
+    coarse_exit = (
+        (xx / coarse_case.hertz.radius_m >= 0.5)
+        & (xx / coarse_case.hertz.radius_m <= 1.5)
+        & (np.abs(yy / coarse_case.hertz.radius_m) <= 1.2)
+    )
+    fine_xx, fine_yy = np.meshgrid(fx, fy)
+    fine_exit = (
+        (fine_xx / fine_case.hertz.radius_m >= 0.5)
+        & (fine_xx / fine_case.hertz.radius_m <= 1.5)
+        & (np.abs(fine_yy / fine_case.hertz.radius_m) <= 1.2)
+    )
+    exit_denominator = np.linalg.norm(sampled[coarse_exit])
+    exit_maximum = abs(sampled[coarse_exit]).max()
+    if exit_denominator == 0 or exit_maximum == 0 or not np.isfinite(exit_denominator):
+        raise ValueError("Nonzero finer exit-region pressure required")
     cmin, fmin = np.unravel_index(ch.argmin(), ch.shape), np.unravel_index(fh.argmin(), fh.shape)
     radius = coarse_case.hertz.radius_m
     correlation = coarse_case.correlation()
@@ -206,6 +221,15 @@ def compare_fields(
         shared_node_coordinate_tolerance_m=float(coordinate_tolerance),
         pressure_relative_l2_on_coarse_nodes=float(np.linalg.norm(sampled - cp) / denominator),
         pressure_relative_max_on_coarse_nodes=float(abs(sampled - cp).max() / maximum),
+        exit_region_definition="0.5 <= x/a <= 1.5 and |y/a| <= 1.2",
+        exit_pressure_relative_l2_on_coarse_nodes=float(
+            np.linalg.norm(sampled[coarse_exit] - cp[coarse_exit]) / exit_denominator
+        ),
+        exit_pressure_relative_max_on_coarse_nodes=float(
+            abs(sampled[coarse_exit] - cp[coarse_exit]).max() / exit_maximum
+        ),
+        exit_pressure_coarse_peak_pa=float(cp[coarse_exit].max()),
+        exit_pressure_fine_peak_pa=float(fp[fine_exit].max()),
         minimum_film_coarse_m=float(ch.min()),
         minimum_film_fine_m=float(fh.min()),
         minimum_film_relative_change=float(fh.min() / ch.min() - 1),

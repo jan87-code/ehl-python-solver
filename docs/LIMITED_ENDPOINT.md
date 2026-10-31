@@ -220,3 +220,55 @@ the case-matched SI Hamrock–Dowson film estimates and per-grid relative film
 differences, and keeps `mesh_convergence_assessed=false`. It does not infer a
 pass/fail threshold from the correlation. Focused tests cover these outputs,
 unit/checksum tampering, partial-root rejection and non-nested interpolation.
+
+## Fifth mesh: opt-in 50 N 173x173 refinement
+
+The regular case budget remains 20,000 physical nodes. `PointContactCase`
+accepts an explicit `maximum_physical_nodes=30000` only for research runs; the
+budget is provenance/resource metadata and does not change the physical case.
+`cases/circular_50n_173.json` selects that allowance for 29,929 nodes. The
+experimental path runner requires an independently audited exact MC seed for
+this larger budget, transfers it bilinearly without promoting it, and
+preflights the frozen sparse factors and measured Krylov/memory estimate before
+starting continuation. The preflight requires a known-vector factor residual
+below 1e-8, estimated peak below both 1 GiB and 75% of currently available RAM.
+An unsuccessful preflight is recorded as `rejected_preflight`; it does not
+silently fall back or raise the normal default.
+
+Reproduce the refinement and independent comparisons from a fresh output
+directory:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/run_limited_transport_path.py \
+  --case cases/circular_50n_173.json \
+  --limited-seed results/limited_mesh_50n_141_20261031 \
+  --output results/limited_mesh_50n_173_20261031
+
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/compare_limited_paths.py \
+  results/limited_secant_50n_129_20261031 \
+  results/limited_mesh_50n_173_20261031 \
+  --output results/limited_comparison_50n_129_to_173_20261031
+
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/compare_limited_paths.py \
+  results/limited_mesh_50n_141_20261031 \
+  results/limited_mesh_50n_173_20261031 \
+  --output results/limited_comparison_50n_141_to_173_20261031
+```
+
+The initial transfer is only an unaccepted guess; every continuation stage
+and the final fraction-one root retain the existing unmodified gates and
+direct-elasticity audit. The comparisons are non-nested and report interpolation
+error explicitly. Passing these finite-grid checks would measure sensitivity,
+not certify asymptotic convergence or physical accuracy.
+
+The first 173x173 attempt on 2026-10-31 transferred the accepted 141x141 MC
+state and passed the independent full bordered-factor check (relative residual
+3.10e-16). Its conservative peak estimate was 545,394,608 bytes, but only
+502,837,248 bytes were available at preflight time; the required 75% headroom
+ceiling was 377,127,936 bytes. It was correctly recorded as
+`rejected_preflight` before any nonlinear stage. No 173x173 root or mesh
+comparison exists yet. Retry only when the recorded memory preflight passes;
+do not lower the margin or force the run on a memory-pressured host.

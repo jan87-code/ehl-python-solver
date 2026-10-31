@@ -2297,3 +2297,21 @@ are recorded in [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md).
 Verification for the comparison increment: 20 focused comparison/continuation
 tests passed; full CPU suite **694 passed, 62 skipped** (424.49 s); `ruff check .`
 and `git diff --check` passed. No GPU physical validation was run or claimed.
+
+### Opt-in 30,000-node limited-path refinement
+
+The limited solver case now carries an explicit resource budget (20,000 default,
+30,000 opt-in), and the experimental continuation runner can seed from a
+re-audited exact MC path on a coarser mesh. Larger runs require that seed and a
+measured sparse-factor/Krylov preflight below 1 GiB and 75% of current available
+RAM, with an independently checked factor residual. The 173x173 50 N case is
+prepared at 29,929 physical nodes; its equations, transport, domain, and root
+acceptance tolerances are unchanged. This is a bounded investigation of
+remaining mesh sensitivity, not a default cap increase or a convergence claim.
+The first run's 545 MB peak estimate passed the sparse-factor residual check
+(3.10e-16), but available RAM was only 503 MB and the 75%-headroom ceiling was
+377 MB. The runner correctly wrote `rejected_preflight` without starting
+nonlinear stages. No 173-grid root or comparison is claimed. Retry after
+available memory recovers; retain the preflight margin. Focused validation
+passes 53 tests and Ruff; the full suite was not rerun under current memory
+pressure.

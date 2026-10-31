@@ -187,3 +187,36 @@ for the 33/65/129 meshes; the incomplete 200 N path retains all 24 stages
 and 317 accepted Newton steps. Selected full correction residuals, actual
 directional slopes, Armijo trials, prediction hashes and direct final audits
 are independently recomputed. Replaying a rejected stage does not promote it.
+
+## Fourth mesh: 50 N 141x141
+
+The fixed +/-3a donor case was continued to an exact MC root on 141x141
+(19,881 physical nodes, within the existing 20,000-node limit) using the
+independently audited 141x141 donor prototype state as a seed. The path has
+10 attempts: nine accepted stages and one rejected stage; the exact fraction-one
+root passes the independent force, mass, complementarity, film and direct
+elasticity checks. Its minimum/central films are 283.271/464.741 nm.
+
+The comparison against the exact 129x129 root is archived in
+`results/limited_comparison_50n_129_to_141_20261031/`. These grids are not
+nested, so pressure is compared by bilinear sampling of the 141 grid at the
+129 grid's coordinates. The relative pressure L2/max differences are 1.805% /
+8.911%; minimum/central film change by +0.627% / +0.416%. The minimum location
+moves from `(x/a, abs(y/a))=(0.25, 0.8125)` to approximately
+`(0.2857, 0.8)`.
+
+The Hamrock–Dowson references remain 284.150/497.969 nm minimum/central.
+The 141-grid minimum is 0.309% below the minimum correlation, while central
+film remains 6.673% below its correlation. These estimates are not acceptance
+thresholds: close minimum-film agreement does not establish pressure accuracy,
+minimum-location resolution, mesh convergence or physical validation. The
+central-film offset and pressure differences leave further resolution and
+domain checks open. This mesh is already near the current node budget; do not
+raise it implicitly. A larger uniform mesh needs a separate cost/resource
+assessment.
+
+The portable two-path comparison now independently audits both roots, reports
+the case-matched SI Hamrock–Dowson film estimates and per-grid relative film
+differences, and keeps `mesh_convergence_assessed=false`. It does not infer a
+pass/fail threshold from the correlation. Focused tests cover these outputs,
+unit/checksum tampering, partial-root rejection and non-nested interpolation.

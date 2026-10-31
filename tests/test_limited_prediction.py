@@ -1,9 +1,7 @@
 """Exact MC endpoint audits of secant continuation initialization."""
 
 import hashlib
-import json
 from dataclasses import replace
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -20,15 +18,8 @@ def sha(state):
 
 
 @pytest.fixture(scope="module")
-def cold_path():
-    case = PointContactCase(
-        **json.loads((Path(__file__).parents[1] / "cases/circular_50n.json").read_text())
-    )
-    stages = []
-    path = module.continue_limited_transport(
-        case, stage_observer=lambda i, c, t, r: stages.append(r)
-    )
-    return path, stages
+def cold_path(accepted_mc_path):
+    return accepted_mc_path
 
 
 def test_cold_endpoint_passes_independent_exact_equations_and_direct_elasticity(cold_path):
@@ -155,20 +146,20 @@ def test_prediction_can_be_disabled_without_changing_retry_seeds(cold_path, monk
     first, second = stages[:2]
 
     def solve(case, state, **kwargs):
-        fraction = kwargs['transport_fraction']
+        fraction = kwargs["transport_fraction"]
         if fraction == 0:
             return first
         if fraction == 0.5:
             return second
         np.testing.assert_array_equal(state, second.state)
-        raise LimitedNewtonError('injected non-predicted stage failure', state, [], {})
+        raise LimitedNewtonError("injected non-predicted stage failure", state, [], {})
 
     def forbidden(*args):
-        raise AssertionError('Prediction was disabled')
+        raise AssertionError("Prediction was disabled")
 
-    monkeypatch.setattr(module, 'solve_limited_load', solve)
-    monkeypatch.setattr(module, '_endpoint_prediction', forbidden)
+    monkeypatch.setattr(module, "solve_limited_load", solve)
+    monkeypatch.setattr(module, "_endpoint_prediction", forbidden)
     with pytest.raises(module.LimitedPathError) as exc:
         module.continue_limited_transport(first.case, maximum_attempts=3, endpoint_prediction=False)
-    assert [a['transport_fraction'] for a in exc.value.attempts] == [0, 0.5, 0.9]
-    assert all('endpoint_prediction_probe' not in a for a in exc.value.attempts)
+    assert [a["transport_fraction"] for a in exc.value.attempts] == [0, 0.5, 0.9]
+    assert all("endpoint_prediction_probe" not in a for a in exc.value.attempts)

@@ -2273,3 +2273,27 @@ open. The coarse 200 N path exhausts 24 stages at accepted blended fraction
 Verification: 681 passed, 62 optional skips (400.96 s); Ruff/whitespace clean.
 A fresh full run completed after an earlier concurrent run ended with SIGTERM.
 All seven new predictor regressions are included; no GPU physical claim is added.
+
+### Experimental MC spatial comparison and 141x141 follow-up (2026-10-31)
+
+Added a portable comparison reader that rechecks exact MC root metadata,
+checksums, SI fields and direct elasticity before comparing two grids. Its
+report now includes matched Hamrock–Dowson minimum/central estimates and
+per-grid relative film differences without turning the correlations into
+numerical acceptance gates. Nested and non-nested sampling remain explicit;
+`mesh_convergence_assessed` stays false.
+
+An exact 50 N 141x141 MC root (19,881 nodes) passes the unchanged independent
+closure checks. Against 129x129, minimum/central films change +0.627%/+0.416%,
+while non-nested pressure differences are 1.805% L2 and 8.911% maximum.
+The 141-grid minimum is 0.309% below Hamrock–Dowson, but central film remains
+6.673% below. The sampled minimum also moves. Thus the close minimum correlation
+is not a convergence certificate; pressure, central film and location still
+need resolution/domain evidence. The 141 grid is near the existing 20,000-node
+budget. Any larger uniform mesh requires a separate cost assessment; no node
+limit or solver acceptance gate was raised. Reproduction evidence and limits
+are recorded in [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md).
+
+Verification for the comparison increment: 20 focused comparison/continuation
+tests passed; full CPU suite **694 passed, 62 skipped** (424.49 s); `ruff check .`
+and `git diff --check` passed. No GPU physical validation was run or claimed.

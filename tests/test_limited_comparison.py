@@ -215,9 +215,12 @@ def test_large_grid_budget_is_explicit_and_does_not_change_physics():
         PointContactCase(ny=173, nx=173)
     PointContactCase(ny=173, nx=173, maximum_physical_nodes=30000)
     normal = PointContactCase(ny=141, nx=141)
-    larger_budget = replace(normal, maximum_physical_nodes=30000)
-    assert larger_budget.physical_signature() == normal.physical_signature()
-    for budget in (True, 30000.0, 40000):
+    for budget in (30000, 40000, 50000):
+        larger_budget = replace(normal, maximum_physical_nodes=budget)
+        assert larger_budget.physical_signature() == normal.physical_signature()
+    PointContactCase(ny=199, nx=199, maximum_physical_nodes=40000)
+    PointContactCase(ny=223, nx=223, maximum_physical_nodes=50000)
+    for budget in (True, 30000.0, 60000):
         with pytest.raises(ValueError, match="maximum_physical_nodes"):
             PointContactCase(maximum_physical_nodes=budget)
 
@@ -228,7 +231,7 @@ def test_limited_seed_transfer_is_interpolated_unaccepted_and_resource_preflight
         source.case,
         ny=35,
         nx=37,
-        maximum_physical_nodes=30000,
+        maximum_physical_nodes=50000,
     )
     state, info = _interpolate_limited_seed(saved, target)
     probe = LimitedLoadProbe(target, transport_fraction=0.0)

@@ -2298,14 +2298,15 @@ Verification for the comparison increment: 20 focused comparison/continuation
 tests passed; full CPU suite **694 passed, 62 skipped** (424.49 s); `ruff check .`
 and `git diff --check` passed. No GPU physical validation was run or claimed.
 
-### Opt-in 30,000-node limited-path refinement
+### Opt-in high-resolution limited-path refinement
 
-The limited solver case now carries an explicit resource budget (20,000 default,
-30,000 opt-in), and the experimental continuation runner can seed from a
-re-audited exact MC path on a coarser mesh. Larger runs require that seed and a
-measured sparse-factor/Krylov preflight below 1 GiB and 75% of current available
-RAM, with an independently checked factor residual. The 173x173 50 N case is
-prepared at 29,929 physical nodes; its equations, transport, domain, and root
+The limited solver case now carries explicit resource budgets (20,000 default,
+30,000/40,000/50,000 opt-ins), and the experimental continuation runner can
+seed from a re-audited exact MC path on a coarser mesh. Larger runs require that
+seed and a measured sparse-factor/Krylov preflight below 1 GiB and 75% of
+current available RAM, with an independently checked factor residual. Square
+50 N cases are prepared at 173x173, 199x199 and 223x223, respectively 29,929,
+39,601 and 49,729 physical nodes; their equations, transport, domain and root
 acceptance tolerances are unchanged. This is a bounded investigation of
 remaining mesh sensitivity, not a default cap increase or a convergence claim.
 The first run's 545 MB peak estimate passed the sparse-factor residual check
@@ -2333,3 +2334,23 @@ Verification for the 173-grid capability/run: 53 focused tests passed and
 `ruff check .` passed; subsequent full CPU suite: **696 passed, 62 skipped**
 (425.67 s). The run's factor residual was 3.101e-16. No GPU validation is
 claimed.
+
+The 40k 199x199 case passed preflight (3.172e-16 factor residual, 804 MB
+estimated peak, 2,193 MB available) and reached an independently accepted exact
+MC root in 12 stage attempts. Film is 286.690/469.711 nm; versus 173x173, film
+changes +0.029%/+0.346%, but pressure L2/max changes remain 2.017%/10.444% and
+the exit-region changes 4.587%/11.567%. The sampled minimum location shifts.
+During the solve, sampled RSS reached 935,512 KiB, above the preflight estimate;
+this is not a measured maximum, so preflight is not a peak-RSS guarantee.
+
+The 50k 223x223 factor residual passed at 3.446e-16, but estimated peak
+1,083,328,872 bytes exceeded the existing 1 GiB cap by 9.6 MB, despite 1.83 GB
+available RAM. The runner correctly rejected before nonlinear stages. The
+40k sampled-RSS discrepancy makes relaxing the fixed memory cap unjustified
+without explicit resource approval and further headroom assessment. No 50k
+root is claimed. Both cases retain their explicit budgets, but the 50k
+nonlinear run remains blocked by preflight.
+
+Verification for the 40k/50k budget increment: full CPU suite **696 passed,
+62 skipped**; `ruff check .` and `git diff --check` passed. No GPU validation
+was run or claimed.

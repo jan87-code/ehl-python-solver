@@ -175,9 +175,9 @@ def main(
             else PointContactCase()
         )
         initial = None
-    if limited_seed is None and case.maximum_physical_nodes == 30000:
+    if limited_seed is None and case.maximum_physical_nodes > 20000:
         raise ValueError(
-            "The explicit 30,000-node budget requires an independently audited MC seed"
+            "An explicit budget above 20,000 nodes requires an independently audited MC seed"
         )
     output.mkdir(parents=True, exist_ok=False)
     report = dict(
@@ -261,7 +261,7 @@ def main(
         write()
 
     write()
-    if case.maximum_physical_nodes == 30000:
+    if case.maximum_physical_nodes > 20000:
         try:
             preflight = resource_preflight(case, initial)
         except (MemoryError, OSError, RuntimeError, ValueError) as exc:

@@ -23,7 +23,10 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         super().__init__(problem)
         if elasticity_mode not in ("reference", "cached"):
             raise ValueError("elasticity_mode must be reference or cached (CPU only)")
-        if maximum_interior_nodes not in (400, 20000, 30000) or self.n > maximum_interior_nodes:
+        if (
+            maximum_interior_nodes not in (400, 20000, 30000, 40000, 50000)
+            or self.n > maximum_interior_nodes
+        ):
             raise ValueError(f"warm system limited to {maximum_interior_nodes} interior nodes")
         if not np.isfinite(offset_m) or not np.isfinite(speed_m_s) or speed_m_s <= 0:
             raise ValueError("finite signed offset and positive SI speed required")

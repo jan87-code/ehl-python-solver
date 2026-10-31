@@ -221,19 +221,20 @@ differences, and keeps `mesh_convergence_assessed=false`. It does not infer a
 pass/fail threshold from the correlation. Focused tests cover these outputs,
 unit/checksum tampering, partial-root rejection and non-nested interpolation.
 
-## Fifth mesh: opt-in 50 N 173x173 refinement
+## Opt-in 50 N high-resolution mesh refinements
 
 The regular case budget remains 20,000 physical nodes. `PointContactCase`
-accepts an explicit `maximum_physical_nodes=30000` only for research runs; the
-budget is provenance/resource metadata and does not change the physical case.
-`cases/circular_50n_173.json` selects that allowance for 29,929 nodes. The
-experimental path runner requires an independently audited exact MC seed for
-this larger budget, transfers it bilinearly without promoting it, and
-preflights the frozen sparse factors and measured Krylov/memory estimate before
-starting continuation. The preflight requires a known-vector factor residual
-below 1e-8, estimated peak below both 1 GiB and 75% of currently available RAM.
-An unsuccessful preflight is recorded as `rejected_preflight`; it does not
-silently fall back or raise the normal default.
+accepts explicit 30,000, 40,000 or 50,000 node budgets only for research runs;
+the budget is provenance/resource metadata and does not change the physical
+case. Prepared square meshes are 173x173 (29,929 nodes), 199x199 (39,601
+nodes) and 223x223 (49,729 nodes). The experimental path runner requires an
+independently audited exact MC seed for any larger budget, transfers it
+bilinearly without promoting it, and preflights the frozen sparse factors and
+measured Krylov/memory estimate before starting continuation. The preflight
+requires a known-vector factor residual below 1e-8, estimated peak below both
+1 GiB and 75% of currently available RAM. An unsuccessful preflight is
+recorded as `rejected_preflight`; it does not silently fall back or raise the
+normal default.
 
 Reproduce the refinement and independent comparisons from a fresh output
 directory:
@@ -256,6 +257,21 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
   results/limited_mesh_50n_141_20261031 \
   results/limited_mesh_50n_173_20261031 \
   --output results/limited_comparison_50n_141_to_173_20261031
+
+# After 173x173 is accepted and measured, try 199x199 (39,601 nodes).
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/run_limited_transport_path.py \
+  --case cases/circular_50n_199.json \
+  --limited-seed results/limited_mesh_50n_173_retry_20261031 \
+  --output results/limited_mesh_50n_199_20261031
+
+# Attempt 223x223 (49,729 nodes) only after inspecting the 40k result and a
+# fresh preflight; the runner refuses estimated peaks above its 1 GiB guard.
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/run_limited_transport_path.py \
+  --case cases/circular_50n_223.json \
+  --limited-seed results/limited_mesh_50n_199_20261031 \
+  --output results/limited_mesh_50n_223_20261031
 ```
 
 The initial transfer is only an unaccepted guess; every continuation stage
@@ -263,6 +279,54 @@ and the final fraction-one root retain the existing unmodified gates and
 direct-elasticity audit. The comparisons are non-nested and report interpolation
 error explicitly. Passing these finite-grid checks would measure sensitivity,
 not certify asymptotic convergence or physical accuracy.
+
+## 40,000-node 50 N mesh: 199x199
+
+The 39,601-node 199x199 case passed its sparse-factor/resource preflight:
+known-vector relative residual 3.172e-16, estimated peak 803,666,448 bytes
+(below 1 GiB), and 2,193,317,888 bytes available at preflight. The exact MC
+path reached `accepted_numerical_root` in 12 stage attempts, with two rejected
+near-endpoint attempts. Independent direct elasticity, exact force, local and
+global mass, complementarity, and strict film checks passed:
+
+| Check | Measured value |
+| --- | ---: |
+| Force | 50.000000000000014 N |
+| Relative local mass balance | 2.902e-11 |
+| Relative global mass balance | 1.240e-14 |
+| Maximum complementarity | 2.608e-30 |
+| Direct/FFT film reconstruction difference | 1.228e-20 m |
+| Minimum film | 286.690 nm |
+| Central film | 469.711 nm |
+
+Compared with the exact 173x173 root, minimum/central film change +0.029% /
++0.346%; pressure L2/max differences are 2.017% / 10.444%, and exit-region
+pressure L2/max differences are 4.587% / 11.567%. The sampled minimum shifts
+from `(0.2326,0.8372)` to `(0.2828,0.8081)` in
+`(x/a,abs(y/a))`. Minimum film is +0.894% relative to Hamrock–Dowson; central
+film remains 5.675% below. The pressure and minimum-location changes do not
+support a mesh-convergence claim despite small film changes.
+
+The 40k run's sampled process RSS reached about 935,512 KiB during continuation,
+larger than the preflight's 803,666,448-byte estimate; this is a sampled value,
+not a recorded maximum-RSS measurement. This underprediction matters when
+assessing the 50k case; retain extra headroom and do not interpret the
+preflight estimate as a peak-memory guarantee. Full run and comparison records
+are preserved in `results/limited_mesh_50n_199_20261031/` and
+`results/limited_comparison_50n_173_to_199_20261031/`.
+
+## 50,000-node 50 N preflight: 223x223
+
+The 49,729-node 223x223 sparse-factor preflight passed independently, with
+known-vector relative residual 3.446e-16. Its estimated peak was
+1,083,328,872 bytes, exceeding the unchanged 1 GiB preflight cap by
+9,587,048 bytes. Available memory was 1,831,874,560 bytes, so 75% of available
+memory was above 1 GiB; however, the independent hard 1 GiB cap still rejected
+the run. No 223x223 nonlinear stage was started and no 50k root is claimed.
+The estimated peak is also uncertain: the 40k process's observed RSS samples
+were higher than its preflight estimate. Do not raise the cap based only on
+available RAM; assess the 40k peak uncertainty and obtain explicit resource
+approval before changing the 1 GiB guard.
 
 The first 173x173 attempt on 2026-10-31 transferred the accepted 141x141 MC
 state and passed the independent full bordered-factor check (relative residual
@@ -307,9 +371,10 @@ moves from `(0.25,0.8125)` on 129x129 and `(0.2857,0.8)` on 141x141 to
 changes are getting smaller, but pressure changes remain material and the
 minimum position still moves. The 173-grid result therefore does not establish
 mesh convergence, a continuum film prediction, or full physical validation.
-It is the largest square grid currently allowed by the explicit 30,000-node
-budget. The machine-specific preflight estimated 545,394,608 bytes against a
-1 GiB cap; this is an estimate, not a measured peak-RSS guarantee.
+At this point it was the largest square grid tested within the explicit
+30,000-node budget; larger 40k/50k opt-ins are documented above. The
+machine-specific preflight estimated 545,394,608 bytes against a 1 GiB cap;
+this is an estimate, not a measured peak-RSS guarantee.
 
 Comparison files and source hashes are retained outside Git under
 `results/limited_comparison_50n_129_to_173_20261031/` and

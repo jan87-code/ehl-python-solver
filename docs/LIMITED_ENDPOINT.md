@@ -269,6 +269,50 @@ state and passed the independent full bordered-factor check (relative residual
 3.10e-16). Its conservative peak estimate was 545,394,608 bytes, but only
 502,837,248 bytes were available at preflight time; the required 75% headroom
 ceiling was 377,127,936 bytes. It was correctly recorded as
-`rejected_preflight` before any nonlinear stage. No 173x173 root or mesh
-comparison exists yet. Retry only when the recorded memory preflight passes;
-do not lower the margin or force the run on a memory-pressured host.
+`rejected_preflight` before any nonlinear stage. At that point no 173x173 root
+or mesh comparison existed. The retry below was run only after the recorded
+memory preflight passed; do not lower the margin or force the run on a
+memory-pressured host.
+
+The retry passed preflight when 2,170,900,480 bytes were available and completed
+as `accepted_numerical_root` at the exact MC endpoint. It used the unchanged
+24-attempt/30-correction/10-Krylov-cycle budgets; 12 stages include two rejected
+near-endpoint trials, and the final fraction-one direct audit passed. The
+independently recomputed results are:
+
+| Check | Measured value |
+| --- | ---: |
+| Force | 50.0 N |
+| Relative local mass balance | 1.978e-11 |
+| Relative global mass balance | 1.006e-14 |
+| Maximum complementarity | 7.526e-32 |
+| Direct/FFT film reconstruction difference | 1.186e-20 m |
+| Minimum film | 286.605 nm |
+| Central film | 468.093 nm |
+| Hamrock–Dowson minimum/central | 284.150/497.969 nm |
+
+The minimum is 0.864% above the Hamrock–Dowson correlation; the central film
+remains 6.000% below. This correlation agreement is not an acceptance gate.
+The portable comparison reports:
+
+| Coarse -> fine | Pressure L2 | Pressure max | Exit pressure L2/max | Minimum film change | Central film change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 129 -> 173 | 2.173% | 13.395% | 5.046% / 15.104% | +1.811% | +1.141% |
+| 141 -> 173 | 2.307% | 11.619% | 5.180% / 12.950% | +1.177% | +0.721% |
+
+All three grids have the same physical domain and case; these grid pairs are
+non-nested and pressure is bilinearly sampled at the coarse nodes. The minimum
+moves from `(0.25,0.8125)` on 129x129 and `(0.2857,0.8)` on 141x141 to
+`(0.2326,0.8372)` on 173x173 in `(x/a,abs(y/a))`. Minimum and central film
+changes are getting smaller, but pressure changes remain material and the
+minimum position still moves. The 173-grid result therefore does not establish
+mesh convergence, a continuum film prediction, or full physical validation.
+It is the largest square grid currently allowed by the explicit 30,000-node
+budget. The machine-specific preflight estimated 545,394,608 bytes against a
+1 GiB cap; this is an estimate, not a measured peak-RSS guarantee.
+
+Comparison files and source hashes are retained outside Git under
+`results/limited_comparison_50n_129_to_173_20261031/` and
+`results/limited_comparison_50n_141_to_173_20261031/`. The retry's stages,
+full history and independent final audit are under
+`results/limited_mesh_50n_173_retry_20261031/`.

@@ -2311,7 +2311,25 @@ remaining mesh sensitivity, not a default cap increase or a convergence claim.
 The first run's 545 MB peak estimate passed the sparse-factor residual check
 (3.10e-16), but available RAM was only 503 MB and the 75%-headroom ceiling was
 377 MB. The runner correctly wrote `rejected_preflight` without starting
-nonlinear stages. No 173-grid root or comparison is claimed. Retry after
-available memory recovers; retain the preflight margin. Focused validation
-passes 53 tests and Ruff; the full suite was not rerun under current memory
-pressure.
+nonlinear stages. On retry with 2,171 MB available, preflight passed and the
+50 N 173x173 case reached an independently audited exact MC root in 12 stage
+attempts, including two rejected near-endpoint trials. Force is 50 N,
+relative local/global mass balance is 1.978e-11/1.006e-14, complementarity is
+7.526e-32 and direct/FFT film reconstruction differs by 1.186e-20 m. Minimum/
+central film is 286.605/468.093 nm versus Hamrock–Dowson 284.150/497.969 nm.
+
+Against 141x141, the minimum/central films change +1.177%/+0.721%, while
+pressure L2/max differences are 2.307%/11.619%; exit-region pressure
+L2/max differences are 5.180%/12.950%. Against 129x129 the corresponding
+changes are +1.811%/+1.141%, 2.173%/13.395% and 5.046%/15.104%. All comparisons
+use bilinear fine-at-coarse sampling on the fixed domain. The minimum location
+still moves. Film changes decrease, but exit-pressure and global pressure
+differences remain material; this is not mesh convergence or physical
+validation. No additional node-cap increase is justified by one refinement.
+See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for reproduction, preflight,
+audits and full comparisons.
+
+Verification for the 173-grid capability/run: 53 focused tests passed and
+`ruff check .` passed; subsequent full CPU suite: **696 passed, 62 skipped**
+(425.67 s). The run's factor residual was 3.101e-16. No GPU validation is
+claimed.

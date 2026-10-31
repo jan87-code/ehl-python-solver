@@ -18,12 +18,20 @@ from ehl_solver.limited_transport import (
     limited_flux_directional_derivative,
     limited_fluxes,
 )
+from ehl_solver.transport_candidate import donor_flux_direction, donor_fluxes
 
 
 class LimitedLoadProbe:
     """Read-only mathematical residual and derivative adapter; not a solver."""
 
-    def __init__(self, case):
+    def __init__(self, case, *, transport_fraction=1.0):
+        if (
+            isinstance(transport_fraction, bool)
+            or not np.isfinite(transport_fraction)
+            or not 0 <= transport_fraction <= 1
+        ):
+            raise ValueError("transport_fraction must be finite in [0,1]")
+        self.transport_fraction = float(transport_fraction)
         self.system = case.system()
         self.case = case
         self.n = self.system.n
@@ -58,6 +66,11 @@ class LimitedLoadProbe:
         flux = limited_fluxes(
             problem.x_m, problem.y_m, h, p, t, self.case.fluid(), self.case.entrainment_m_s
         )
+        if self.transport_fraction < 1:
+            donor = donor_fluxes(
+                problem.x_m, problem.y_m, h, p, t, self.case.fluid(), self.case.entrainment_m_s
+            )
+            flux = (donor[0] + self.transport_fraction * (flux[0] - donor[0]), donor[1])
         return np.r_[
             self.mass(flux),
             np.minimum(state[: self.n], state[self.n : 2 * self.n]),
@@ -81,6 +94,20 @@ class LimitedLoadProbe:
             self.case.fluid(),
             self.case.entrainment_m_s,
         )
+        if self.transport_fraction < 1:
+            donor = donor_flux_direction(
+                problem.x_m,
+                problem.y_m,
+                h,
+                p,
+                t,
+                dh,
+                dp,
+                dt,
+                self.case.fluid(),
+                self.case.entrainment_m_s,
+            )
+            flux = (donor[0] + self.transport_fraction * (flux[0] - donor[0]), donor[1])
         pressure, deficit = state[: self.n], state[self.n : 2 * self.n]
         vp, vd = direction[: self.n], direction[self.n : 2 * self.n]
         complement = np.where(
@@ -113,8 +140,23 @@ class LimitedLoadProbe:
         def action(direction):
             dh, dp, dt = self.directions(state, direction)
             complement = np.where(pressure_row, direction[: self.n], direction[self.n : 2 * self.n])
+            flux = flux_action(dh, dp, dt)
+            if self.transport_fraction < 1:
+                donor = donor_flux_direction(
+                    problem.x_m,
+                    problem.y_m,
+                    h,
+                    p,
+                    t,
+                    dh,
+                    dp,
+                    dt,
+                    self.case.fluid(),
+                    self.case.entrainment_m_s,
+                )
+                flux = (donor[0] + self.transport_fraction * (flux[0] - donor[0]), donor[1])
             return np.r_[
-                self.mass(flux_action(dh, dp, dt)),
+                self.mass(flux),
                 complement,
                 problem.load_n(dp) / self.case.load_n,
             ]
@@ -245,21 +287,45 @@ class LimitedLoadLinearization:
     cell-self elastic compliance. Offset and load borders remain exact.
     """
 
-    def __init__(self, case, state, guide, *, preconditioner="material"):
+    def __init__(
+        self,
+        case,
+        state,
+        guide,
+        *,
+        preconditioner="material",
+        active_full=None,
+        transport_fraction=1.0,
+        reference_state=None,
+    ):
         if preconditioner not in ("material", "local"):
             raise ValueError("preconditioner must be material or local")
-        self.probe = LimitedLoadProbe(case)
+        self.probe = LimitedLoadProbe(case, transport_fraction=transport_fraction)
         self.problem = self.probe.system.problem
         self.n, self.size = self.probe.n, self.probe.size
         self.target_load_n = case.load_n
         self.field_factorization = "full"
         self.state = np.asarray(state, dtype=np.float64).copy()
+        self.reference_state = (
+            self.state.copy()
+            if reference_state is None
+            else np.array(reference_state, dtype=np.float64, copy=True)
+        )
         self.guide = np.asarray(guide, dtype=np.float64).copy()
         if self.guide.shape != (self.size,) or not np.all(np.isfinite(self.guide)):
             raise ValueError("finite full bordered guide required")
         self.state.setflags(write=False)
         self.guide.setflags(write=False)
-        self.action = self.probe.freeze(self.state, self.guide)
+        self.reference_state.setflags(write=False)
+        self.probe.fields(self.state)
+        self.action = self.probe.freeze(self.reference_state, self.guide)
+        self.active_full = None
+        if active_full is not None:
+            active_full = np.asarray(active_full)
+            if active_full.shape != (self.n,) or active_full.dtype != bool:
+                raise ValueError("active_full must be a boolean interior mask")
+            self.active_full = active_full.copy()
+            self.active_full.setflags(write=False)
         self.preconditioner = preconditioner
         self._matrix = None
 
@@ -269,25 +335,69 @@ class LimitedLoadLinearization:
 
     def residual(self, state):
         self._check_state(state)
-        return self.probe.residual(self.state)
+        result = self.probe.residual(self.state)
+        if self.active_full is not None:
+            result[self.n : 2 * self.n] = np.where(
+                self.active_full, self.state[self.n : 2 * self.n], self.state[: self.n]
+            )
+        return result
 
     def jacobian_vector(self, state, direction):
         self._check_state(state)
         direction = np.asarray(direction, dtype=np.float64)
         if direction.shape != (self.size,) or not np.all(np.isfinite(direction)):
             raise ValueError("finite full bordered direction required")
-        return self.action(direction)
+        result = self.action(direction)
+        if self.active_full is not None:
+            result[self.n : 2 * self.n] = np.where(
+                self.active_full, direction[self.n : 2 * self.n], direction[: self.n]
+            )
+        return result
 
     def merit_slope(self, state, residual, direction):
         self._check_state(state)
         return float(residual @ self.probe.derivative(self.state, direction) / self.size)
+
+    def signature(self):
+        """Identify the actual frozen model, avoiding duplicate recovery work."""
+        p, theta, h = self.probe.fields(self.reference_state)
+        rho, _, dr, _ = self.probe.case.fluid().properties(p)
+        dh, dp, dt = self.probe.directions(self.reference_state, self.guide)
+        guide = (dr * dp * h + rho * dh) * theta + rho * h * dt
+        branches = tuple(
+            _minmod_branch(a, b).tobytes()
+            for a, b in zip(
+                _slope_candidates(self.problem.x_m, rho * h * theta),
+                _slope_candidates(self.problem.x_m, guide),
+                strict=True,
+            )
+        )
+        if self.active_full is None:
+            pressure, deficit = (
+                self.reference_state[: self.n],
+                self.reference_state[self.n : 2 * self.n],
+            )
+            full = (pressure > deficit) | (
+                (pressure == deficit) & (self.guide[: self.n] > self.guide[self.n : 2 * self.n])
+            )
+        else:
+            full = self.active_full
+        if self.probe.transport_fraction == 0:
+            branches = ()
+        return (
+            self.preconditioner,
+            self.probe.transport_fraction,
+            self.reference_state.tobytes(),
+            np.packbits(full).tobytes(),
+            branches,
+        )
 
     def frozen_matrix(self, state):
         self._check_state(state)
         if self._matrix is not None:
             return self._matrix.copy()
         problem, case = self.problem, self.probe.case
-        p, theta, h = self.probe.fields(self.state)
+        p, theta, h = self.probe.fields(self.reference_state)
         rho, eta, dr, de = case.fluid().properties(p)
         mobility = rho * h**3 / (12 * eta)
         compliance = 0.0
@@ -296,11 +406,20 @@ class LimitedLoadLinearization:
             compliance = problem.elastic_kernel[ny - 1, nx - 1]
         dm = mobility * (dr / rho - de / eta + 3 * compliance / h)
         dc = (dr * h + rho * compliance) * theta
-        dhg, dpg, dtg = self.probe.directions(self.state, self.guide)
+        dhg, dpg, dtg = self.probe.directions(self.reference_state, self.guide)
         guide_capacity = (dr * dpg * h + rho * dhg) * theta + rho * h * dtg
         reconstruction = _capacity_reconstruction_matrix(
             problem.x_m, rho * h * theta, guide_capacity
         )
+        fraction = self.probe.transport_fraction
+        if fraction < 1:
+            ny, nx = problem.shape
+            indices = np.arange(ny * nx).reshape(ny, nx)[:, :-1].ravel()
+            donor = coo_matrix(
+                (np.ones(len(indices)), (np.arange(len(indices)), indices)),
+                shape=reconstruction.shape,
+            ).tocsr()
+            reconstruction = donor + fraction * (reconstruction - donor)
         ep, et = _expansions(problem)
         gx, ax = _difference_and_average(problem.shape, problem.x_m, 1)
         gy, ay = _difference_and_average(problem.shape, problem.y_m, 0)
@@ -319,10 +438,15 @@ class LimitedLoadLinearization:
             / self.probe.system.base.flux_scale
             / self.probe.system.base.mass_scale
         )
-        pressure, deficit = self.state[: self.n], self.state[self.n : 2 * self.n]
+        pressure, deficit = (
+            self.reference_state[: self.n],
+            self.reference_state[self.n : 2 * self.n],
+        )
         pressure_row = (pressure < deficit) | (
             (pressure == deficit) & (self.guide[: self.n] <= self.guide[self.n : 2 * self.n])
         )
+        if self.active_full is not None:
+            pressure_row = ~self.active_full
         block = vstack(
             [
                 hstack([mass_p, mass_d]) * factor,

@@ -144,3 +144,7 @@ a SHA256 manifest. SHA256:
 `35f8839563ba3e260207d42a68a15c52d179f938409ceea4d11359fc89f75b4d`.
 Every manifest digest and ZIP CRC was verified. The archive is local and
 Git-ignored; no upload or accepted candidate root is claimed.
+
+The subsequent experimental nonlinear adapter and bounded continuation are
+documented in [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md); the linear checks
+above alone do not establish nonlinear or physical convergence.

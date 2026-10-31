@@ -169,6 +169,17 @@ candidate solve remain unfinished; existing film predictions are unchanged.
 
 The subsequent [frozen linear-correction benchmarks](LIMITED_LINEAR_CORRECTIONS.md)
 verify a limited-flux operator, sparse preconditioning and Schur/bordered
-corrections on weak mathematical states. A nonlinear candidate adapter,
-active-front/load-range checks and accepted candidate roots remain open.
+corrections on weak mathematical states. At that stage, a nonlinear candidate
+adapter, active-front/load-range checks and accepted candidate roots remained
+open.
 The published prototype film predictions and defaults are unchanged.
+
+## Experimental limited nonlinear follow-up
+
+The bounded limited-capacity nonlinear adapter, independent SI audits and
+rollback paths are described in [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md).
+This separate research path does not change the accepted donor prototype
+results or their physical-validation status. In particular, an accepted
+blended transport stage is not an accepted full limited-flux root, and neither
+status establishes mesh convergence. The registered donor results above
+remain the comparison baseline.

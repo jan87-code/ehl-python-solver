@@ -2905,3 +2905,11 @@ Armijo trial comparisons. Forced bordered recovery and intentional Krylov/
 setup failure diagnostics are covered. These are not nonlinear candidate
 solutions, physical-load/active-front validation or accepted film predictions.
 See [LIMITED_LINEAR_CORRECTIONS.md](LIMITED_LINEAR_CORRECTIONS.md).
+
+## Experimental limited nonlinear adapter
+
+The bounded adapter and explicit donor-to-MC transport continuation are
+documented in [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md). Their independent
+SI audits distinguish each continuation equation and the exact MC endpoint.
+They do not change the released prototype defaults or establish physical
+mesh convergence. Failed partial states remain unaccepted.

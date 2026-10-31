@@ -32,10 +32,11 @@ ready; a good-looking plot or a low residual cannot replace that gate.
 
 ## R1 — Complete the numerical core
 
-Current next work is a bounded nonlinear adapter for the limited candidate,
-state/guide updates, active-front recovery and load-step retries. Preserve the
-arithmetic and donor references. The final default scheme is chosen from
-validated evidence; the isolated candidate is not automatically the winner.
+A bounded nonlinear adapter, state/guide updates, active-front recovery and
+rollback/load-step tests are now implemented experimentally; see
+[LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md). Loaded MC robustness and physical
+mesh convergence remain open. Preserve the arithmetic and donor references.
+The final default scheme is chosen from validated evidence; the isolated candidate is not automatically the winner.
 
 Deliverables and exit criteria:
 

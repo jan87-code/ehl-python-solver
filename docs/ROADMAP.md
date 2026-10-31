@@ -10,8 +10,9 @@ line contact, transient isothermal behavior, steady TEHL and combined transient
 TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
-Current numerical priority remains the bounded nonlinear limited-flux adapter
-and its recovery/acceptance checks. The existing CLI already has an
+Current numerical priority is limited-flux cavitation-front robustness and
+exact endpoint acceptance, followed by physical mesh convergence. The bounded
+nonlinear adapter and its recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.
 
@@ -2218,3 +2219,28 @@ an actual cold 200 N prototype run, checking its accepted numerical status,
 report, PNG and raw array keys/shape. That smoke check is not new physical
 validation. Relative guide links and whitespace checks pass; Ruff passes;
 full suite: 652 passed, 62 optional skips (341.92 s).
+
+### Bounded limited nonlinear adapter and rollback paths (2026-10-31)
+
+Implemented separate experimental Newton, SI audit and transport/load path
+modules with explicit operator identity at every continuation stage. The
+adapter independently measures full corrections and actual directional
+Armijo slopes, preserves bounds/strict film feasibility, and retains failed
+Krylov/model diagnostics. Structural free-content recovery and optional nearby
+linearizations remain model choices; the original nonlinear acceptance gates
+and prototype default are unchanged. Force retries preserve physical fields
+and restart from the last audited state. Observer snapshots are isolated.
+
+Complete derivative/preconditioner and donor-endpoint equivalence checks,
+actual nonlinear replay, failure injection, both line-search stages and
+independent direct-elasticity closure are covered by self-contained tests.
+Cold 200 N donor closure matches the existing 104.878/436.669 nm film result
+in eight corrections. Direct loaded limited solves remain fragile; bounded
+transport continuation is investigated without promoting blended/partial
+states. See [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md) for equations, budgets,
+commands, exact final endpoint evidence and remaining R1 work. No GUI/main
+release or expanded physical validation envelope is claimed.
+
+Verification: Ruff and whitespace checks pass; full CPU suite **674 passed,
+62 optional skips** (356.72 s). The final focused adapter/flux/linear suite
+passes all 65 checks (8.46 s). GPU physical validation is not added.

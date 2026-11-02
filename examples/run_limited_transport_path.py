@@ -379,8 +379,15 @@ def main(
 
     write()
     if case.maximum_physical_nodes > 20000:
+        # For preflight on large grids without a seed, create a default initial state
+        if initial is None:
+            preflight_probe = LimitedLoadProbe(case, transport_fraction=0.0)
+            initial_for_preflight = np.ones(2 * preflight_probe.n + 1) * 0.5
+            initial_for_preflight[-1] = 0.1  # offset
+        else:
+            initial_for_preflight = initial
         try:
-            preflight = resource_preflight(case, initial, use_measured_peak=use_measured_peak)
+            preflight = resource_preflight(case, initial_for_preflight, use_measured_peak=use_measured_peak)
         except (MemoryError, OSError, RuntimeError, ValueError) as exc:
             report.update(
                 status="rejected_preflight",

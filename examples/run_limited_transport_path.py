@@ -6,6 +6,7 @@ import json
 import platform
 import shutil
 import sys
+import tracemalloc
 from dataclasses import asdict
 from pathlib import Path
 
@@ -114,8 +115,27 @@ def _available_memory_bytes():
             )
 
 
-def resource_preflight(case, state):
-    """Measure sparse-factor cost and refuse a large run without bounded headroom."""
+def _measure_peak_memory(func):
+    """Run a function and return the peak memory increase in bytes."""
+    if not tracemalloc.is_tracing():
+        tracemalloc.start()
+    snapshot_before = tracemalloc.take_snapshot()
+    result = func()
+    snapshot_after = tracemalloc.take_snapshot()
+    top_stats = snapshot_after.compare_to(snapshot_before, 'lineno')
+    if top_stats:
+        peak_increase = sum(stat.size_diff for stat in top_stats)
+    else:
+        peak_increase = 0
+    return result, peak_increase
+
+
+def resource_preflight(case, state, *, use_measured_peak=True):
+    """Measure sparse-factor cost and refuse a large run without bounded headroom.
+    
+    If use_measured_peak is True, tracks actual memory usage during preflight
+    and applies a safety margin. Otherwise, uses the legacy estimation method.
+    """
     probe = LimitedLoadProbe(case, transport_fraction=0.0)
     guide = np.zeros(probe.size, dtype=np.float64)
     model = LimitedLoadLinearization(
@@ -127,8 +147,14 @@ def resource_preflight(case, state):
     )
     matrix = model.frozen_matrix(state)
     field_matrix = matrix[: 2 * probe.n, : 2 * probe.n].tocsc()
-    field_lu = splu(field_matrix)
-    bordered_lu = splu(matrix)
+    
+    def factorize():
+        field_lu = splu(field_matrix)
+        bordered_lu = splu(matrix)
+        return field_lu, bordered_lu
+    
+    field_lu, bordered_lu = factorize()
+    
     factor_bytes = sum(
         _payload_bytes(lu.L) + _payload_bytes(lu.U) for lu in (field_lu, bordered_lu)
     )
@@ -143,14 +169,52 @@ def resource_preflight(case, state):
         + 2 * fft_workspace_bytes
         + 160 * case.ny * case.nx
     )
+    
     known = np.random.default_rng(17329929).normal(size=probe.size)
     rhs = matrix @ known
     relative_residual = float(
         np.linalg.norm(matrix @ bordered_lu.solve(rhs) - rhs)
         / max(np.linalg.norm(rhs), np.finfo(np.float64).tiny)
     )
+    
+    measured_peak_bytes = None
+    safety_margin_ratio = None
+    
+    if use_measured_peak:
+        gc.collect()
+        tracemalloc.stop()
+        tracemalloc.start()
+        
+        def measure_factorize():
+            return factorize()
+        
+        _, peak_during_factorize = _measure_peak_memory(measure_factorize)
+        
+        def measure_solve():
+            test_rhs = matrix @ known
+            _ = bordered_lu.solve(test_rhs)
+            return None
+        
+        _, peak_during_solve = _measure_peak_memory(measure_solve)
+        
+        measured_peak_bytes = peak_during_factorize + peak_during_solve
+        
+        tracemalloc.stop()
+        gc.collect()
+        
+        if measured_peak_bytes > 0 and estimated_peak > 0:
+            safety_margin_ratio = float(measured_peak_bytes) / float(estimated_peak)
+        else:
+            safety_margin_ratio = 1.0
+    
     available = _available_memory_bytes()
     memory_ceiling = min(2**30, 3 * available // 4)
+    
+    if use_measured_peak and measured_peak_bytes is not None:
+        adjusted_peak = int(estimated_peak * max(safety_margin_ratio or 1.0, 1.15))
+    else:
+        adjusted_peak = int(estimated_peak)
+    
     result = dict(
         physical_nodes=case.ny * case.nx,
         interior_nodes=probe.n,
@@ -159,11 +223,15 @@ def resource_preflight(case, state):
         krylov_basis_bytes=int(basis_bytes),
         elastic_fft_workspace_bytes=int(fft_workspace_bytes),
         estimated_peak_with_margin_bytes=int(estimated_peak),
+        measured_peak_bytes=int(measured_peak_bytes) if measured_peak_bytes else None,
+        safety_margin_ratio=float(safety_margin_ratio) if safety_margin_ratio else None,
+        adjusted_peak_bytes=int(adjusted_peak),
         available_memory_before_run_bytes=int(available),
         memory_ceiling_bytes=int(memory_ceiling),
         known_vector_relative_residual=relative_residual,
-        memory_preflight_passed=bool(estimated_peak < memory_ceiling),
+        memory_preflight_passed=bool(adjusted_peak < memory_ceiling),
         factor_preflight_passed=bool(np.isfinite(relative_residual) and relative_residual < 1e-8),
+        use_measured_peak=use_measured_peak,
     )
     result["passed"] = result["memory_preflight_passed"] and result["factor_preflight_passed"]
     del known, rhs, field_lu, bordered_lu, field_matrix, matrix, model, probe
@@ -179,6 +247,7 @@ def main(
     *,
     endpoint_prediction=True,
     limited_seed=None,
+    use_measured_peak=True,
 ):
     if seed is not None and limited_seed is not None:
         raise ValueError("Choose either a prototype seed or a limited MC seed, not both")
@@ -293,7 +362,7 @@ def main(
     write()
     if case.maximum_physical_nodes > 20000:
         try:
-            preflight = resource_preflight(case, initial)
+            preflight = resource_preflight(case, initial, use_measured_peak=use_measured_peak)
         except (MemoryError, OSError, RuntimeError, ValueError) as exc:
             report.update(
                 status="rejected_preflight",
@@ -355,11 +424,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-endpoint-prediction", dest="endpoint_prediction", action="store_false"
     )
+    parser.add_argument(
+        "--no-measured-peak", dest="use_measured_peak", action="store_false",
+        help="Disable measured peak memory tracking during preflight (uses estimate only)"
+    )
     args = parser.parse_args()
     raise SystemExit(
         main(
             args.case, args.seed, args.output, args.max_attempts,
             endpoint_prediction=args.endpoint_prediction,
             limited_seed=args.limited_seed,
+            use_measured_peak=args.use_measured_peak,
         )
     )

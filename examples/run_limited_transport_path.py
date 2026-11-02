@@ -75,13 +75,43 @@ def _payload_bytes(matrix):
 
 
 def _available_memory_bytes():
-    fields = {}
-    for line in Path("/proc/meminfo").read_text().splitlines():
-        name, value = line.split(":", maxsplit=1)
-        fields[name] = int(value.strip().split()[0]) * 1024
-    if "MemAvailable" not in fields:
-        raise RuntimeError("Linux /proc/meminfo does not report MemAvailable")
-    return fields["MemAvailable"]
+    """Return available physical memory in bytes, cross-platform."""
+    if platform.system() == "Windows":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if not kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise RuntimeError("GlobalMemoryStatusEx failed")
+        return int(status.ullAvailPhys)
+    else:
+        # Linux / macOS: try /proc/meminfo first
+        try:
+            fields = {}
+            for line in Path("/proc/meminfo").read_text().splitlines():
+                name, value = line.split(":", maxsplit=1)
+                fields[name] = int(value.strip().split()[0]) * 1024
+            if "MemAvailable" not in fields:
+                raise RuntimeError("Linux /proc/meminfo does not report MemAvailable")
+            return fields["MemAvailable"]
+        except (FileNotFoundError, OSError):
+            # Fallback for systems without /proc/meminfo
+            raise RuntimeError(
+                "Available memory detection requires Linux /proc/meminfo "
+                "or Windows GlobalMemoryStatusEx"
+            )
 
 
 def resource_preflight(case, state):

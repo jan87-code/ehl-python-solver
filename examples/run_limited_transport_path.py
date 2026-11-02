@@ -215,9 +215,9 @@ def resource_preflight(case, state, *, use_measured_peak=True):
             safety_margin_ratio = 1.0
     
     available = _available_memory_bytes()
-    # For large grids, raise the cap from 1 GiB to 1.25 GiB to account for
-    # historical overhead (~16%) observed in 199x199 runs
-    memory_ceiling = min(1310720000, 3 * available // 4)  # 1.25 GiB = 1310720000 bytes
+    # For large grids, raise the cap from 1 GiB to 2 GiB to account for
+    # historical overhead (~16%) and allow 50k mesh study
+    memory_ceiling = min(2147483648, 3 * available // 4)  # 2 GiB = 2147483648 bytes
     
     # Apply safety margins
     if use_measured_peak and measured_peak_bytes is not None:

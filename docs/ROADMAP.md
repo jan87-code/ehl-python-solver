@@ -17,6 +17,21 @@ nonlinear adapter and its recovery/acceptance checks are experimental. The exist
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.
 
+## Windows executable readiness
+
+The Python CLI is usable from source, but a distributable Windows executable
+has not been verified. No `dist/windows/ehl-run.exe` is present in the current
+worktree. The packaging path must explicitly check native build-tool exit codes;
+PowerShell's `$ErrorActionPreference = 'Stop'` alone does not stop execution
+after a failing native command.
+
+Before calling the executable ready, make the builder fail on a nonzero
+PyInstaller exit, build in a clean supported Python environment, and verify
+`--help` plus the example-case run from the generated executable. Confirm the
+expected report, plot, summary and state files, then repeat on a clean Windows
+machine. This runtime/package gate is separate from the scientific v1 gate;
+an executable does not validate the physical model.
+
 
 - [x] Python packaging, GitHub CPU CI, Codex guidance and optional GPU backend
 - [x] Analytical Hertz reference and unit tests

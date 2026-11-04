@@ -183,6 +183,27 @@ package sources: `source/ehl_solver/`.
     (directory / "report.md").write_text(text)
 
 
+def write_failure_markdown(directory, report):
+    diagnostics = json.dumps(clean_json(report.get("failure_diagnostics", {})), indent=2)
+    text = f"""# Circular point-contact prototype result
+
+Status: **{report["status"]}**. No valid numerical root was produced, so
+solution fields and a field plot are unavailable.
+
+Failure: {report.get("failure_reason", "No valid numerical root was produced.")}
+
+Failure diagnostics:
+
+```json
+{diagnostics}
+```
+
+Inspect `summary.json` for the complete run history, inputs, and runtime
+metadata. This report does not imply physical validation.
+"""
+    (directory / "report.md").write_text(text)
+
+
 def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plots=True):
     if type(maximum_iterations) is not int or not 0 <= maximum_iterations <= 30:
         raise ValueError("Correction budget must be in 0..30")
@@ -282,6 +303,7 @@ def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plo
         )
     if root is None:
         write()
+        write_failure_markdown(directory, report)
         return report
     report["history"] = history
     report["independent_audit"] = audit_root(case, root)

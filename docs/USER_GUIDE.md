@@ -124,6 +124,10 @@ Read the status before interpreting a picture:
 - `running` left after an interrupted process: the run has not established
   acceptance. Preserve it as partial diagnostic output.
 
+If nonlinear failure occurs before a valid root exists, `summary.json` and
+`report.md` record the failure, but `solution.npz` and `fields.png` are not
+produced because there are no solution fields to inspect.
+
 Exit codes are 0 for numerical acceptance, 1 for nonconvergence, and 2 for
 invalid input. Early input errors or unexpected interruptions may leave only
 terminal output or partial files. `physical_validation_complete=false` is

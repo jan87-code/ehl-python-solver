@@ -26,3 +26,4 @@ def test_failure_without_valid_root_writes_report(tmp_path, monkeypatch):
     assert "Newton failed before a valid root" in report
     assert not (output / "solution.npz").exists()
     assert not (output / "fields.png").exists()
+    assert not (output / "interactive_3d.html").exists()

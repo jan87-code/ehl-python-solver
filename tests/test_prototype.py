@@ -18,7 +18,7 @@ from ehl_solver.prototype_cli import load_run, main, run_case
 def solved(tmp_path_factory):
     folder = tmp_path_factory.mktemp("prototype") / "coarse"
     case = PointContactCase()
-    report = run_case(case, folder, plots=False)
+    report = run_case(case, folder)
     assert report["status"] == "accepted_numerical_root"
     return folder, case, report
 
@@ -67,6 +67,8 @@ def test_real_standalone_run_and_reaudited_portable_seed(solved):
     assert report["history_audit"]["directional_armijo_verified"]
     assert not report["physical_validation_complete"]
     assert (folder / "report.md").exists()
+    assert (folder / "fields.png").exists()
+    assert (folder / "interactive_3d.html").exists()
     assert (folder / "source/ehl_solver/prototype.py").exists()
     new_case, root, _ = load_run(folder)
     assert case == new_case
@@ -132,6 +134,8 @@ def test_cli_rejection_has_nonzero_status_and_complete_diagnostics(tmp_path):
     assert report["status"] == "rejected"
     assert not report["independent_audit"]["numerically_accepted"]
     assert (output / "solution.npz").exists() and (output / "report.md").exists()
+    assert not (output / "fields.png").exists()
+    assert not (output / "interactive_3d.html").exists()
     with pytest.raises(ValueError, match="accepted numerical root"):
         load_run(output)
     with pytest.raises(SystemExit) as exc:

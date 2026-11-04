@@ -94,6 +94,7 @@ my_case_run_001/
   case.json
   report.md
   fields.png
+  interactive_3d.html
   summary.json
   solution.npz
   state_000.npz ...
@@ -106,9 +107,18 @@ For a normal completed run:
 | --- | --- |
 | `report.md` in Markdown preview | Run status, film values, HD differences, force/mass checks and limits |
 | `fields.png` in an image viewer | Pressure/film maps, centreline pressure and convergence history |
+| `interactive_3d.html` in a browser | Offline, rotatable pressure and film surfaces with hover values |
 | `summary.json` | Full inputs, audits, trial/failure diagnostics, units, source hashes and runtime |
 | `case.json` | The exact resolved SI inputs used for this run |
 | `solution.npz` | Raw numerical arrays for further analysis |
+
+The interactive HTML contains its plotting library and works without a network
+connection. It shows the full grid in two independent 3D scenes: unfiltered
+pressure in GPa and film thickness in nm, over x/y coordinates in mm (x follows
+the positive entrainment direction). Drag to rotate, scroll to zoom, and hover
+for values. The title reports the numerical run status and explicitly notes
+that physical validation is incomplete. `--no-plots` suppresses both plot
+files; if no root was produced, no field plots are available.
 
 The plot currently displays pressure in GPa, coordinates in mm and film in nm.
 Its labeled film colour cap only affects the picture; the saved data are

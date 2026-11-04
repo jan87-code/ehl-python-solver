@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import scipy
 
+from ehl_solver.interactive_plot import write_interactive_plot
 from ehl_solver.property_coupled import PropertyCoupledSolution
 from ehl_solver.property_load_newton import PropertyLoadNewtonError, _solve_property_load_state
 from ehl_solver.property_warm import WarmPropertyRoot
@@ -177,6 +178,7 @@ perform grid/domain studies before engineering use. Donor capacity has
 first-order numerical diffusion; arithmetic capacity remains a reference.
 
 Inputs: `case.json`; exact states and SI fields: `solution.npz`;
+interactive 3D surfaces: `interactive_3d.html`;
 full histories/audits/source hashes: `summary.json`;
 package sources: `source/ehl_solver/`.
 """
@@ -318,6 +320,9 @@ def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plo
     write_markdown(directory, report)
     if plots:
         plot_result(case, root, report["iterations"], directory)
+        write_interactive_plot(
+            case, root, report["status"], directory / "interactive_3d.html"
+        )
     return report
 
 
@@ -358,6 +363,9 @@ def main(argv=None):
             f"mass: {audit['mass']['mass_maximum']:.3e}"
         )
     print(f"Report: {args.output / 'report.md'}")
+    interactive_plot = args.output / "interactive_3d.html"
+    if interactive_plot.exists():
+        print(f"Interactive 3D plots: {interactive_plot}")
     return 0 if report["status"] == "accepted_numerical_root" else 1
 
 

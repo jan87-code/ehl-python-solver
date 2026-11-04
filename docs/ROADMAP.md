@@ -19,18 +19,18 @@ remain planned. Detailed implementation history and evidence follow below.
 
 ## Windows executable readiness
 
-The Python CLI is usable from source, but a distributable Windows executable
-has not been verified. No `dist/windows/ehl-run.exe` is present in the current
-worktree. The packaging path must explicitly check native build-tool exit codes;
-PowerShell's `$ErrorActionPreference = 'Stop'` alone does not stop execution
-after a failing native command.
+The Python CLI is usable from source. A local Windows executable was built on
+Windows 11 with Python 3.12.9 and PyInstaller 6.22.3; its size is 72,677,183
+bytes. The builder checks native exit codes, verifies `--help`, and runs the
+bundled 50 N example case. It reported `accepted_numerical_root` and produced
+`report.md`, `fields.png`, `summary.json` and `solution.npz`. The archive
+inspection found no Torch modules; this is a CPU-only executable.
 
-Before calling the executable ready, make the builder fail on a nonzero
-PyInstaller exit, build in a clean supported Python environment, and verify
-`--help` plus the example-case run from the generated executable. Confirm the
-expected report, plot, summary and state files, then repeat on a clean Windows
-machine. This runtime/package gate is separate from the scientific v1 gate;
-an executable does not validate the physical model.
+This only verifies the local build environment, not a clean Windows machine.
+Before distribution, repeat the build in a clean supported Python environment
+and test the executable on a clean Windows installation. This runtime/package
+gate is separate from the scientific v1 gate; an executable does not validate
+the physical model.
 
 
 - [x] Python packaging, GitHub CPU CI, Codex guidance and optional GPU backend

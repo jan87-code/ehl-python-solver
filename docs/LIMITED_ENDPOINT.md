@@ -512,3 +512,35 @@ independent common-domain comparison is under
 `results/prototype_domain_xy_50n_217x217_20261105/`. L1 was not added to the
 comparison report. This sensitivity study does not establish physical
 accuracy, mesh convergence, or validated EHL predictions.
+
+### Incremental larger-domain check at 223x223
+
+The simultaneous extension was increased from 217x217 to 223x223 while
+preserving the same spacing and exact 50 N case. The 49,729-node target has
+half-width 5.1628a on each axis (three added grid cells per side relative to
+217x217). Its accepted MC endpoint passed the independent direct-elasticity
+audit in 12 stage attempts: force 50.000 N, relative local/global mass balance
+2.097e-11/4.435e-15, minimum/central film 287.720/469.966 nm. Preflight passed
+with known-vector residual 3.337e-16 and adjusted estimate 1,201,899,684 bytes
+against the 2 GiB ceiling; this is not a peak-RSS guarantee.
+
+| Comparison | Minimum / central film change | Full pressure L2 / max | Exit pressure L2 / max | Minimum movement (fine cells, x/|y|) | Provisional gate |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 217x217 -> 223x223 | +0.023% / +0.028% | 0.070% / 0.391% | 0.132% / 0.422% | 0 / 0 | Pass |
+| 173x173 -> 223x223 (cumulative) | +0.389% / +0.400% | 0.789% / 4.497% | 1.494% / 4.843% | +2 / -1 | Fail |
+
+The 217-to-223 increment passes the provisional gate, but it extends each
+half-width by only 0.1395a. The cumulative comparison from the original 4a
+domain still fails on exit-pressure L2 and the x minimum location. Thus, the
+small incremental change does not establish domain independence and does not
+erase the larger observed domain sensitivity.
+
+The accepted root, case, and donor are retained locally under
+`results/limited_domain_xy_50n_223x223_20261105/`,
+`results/case_domain_xy_extension_50n_223x223.json`, and
+`results/prototype_domain_xy_50n_223x223_20261105/`; the independently
+recomputed comparisons are under
+`results/domain_gate_50n_217_to_223_fixed_spacing_20261105/`. A materially
+larger simultaneous extension at this spacing would exceed the documented
+50,000-node benchmark budget and requires a separate resource review. The
+mesh-sensitivity gate also remains unmet.

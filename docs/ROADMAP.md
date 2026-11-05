@@ -18,10 +18,12 @@ fixed-spacing, one-axis 50 N domain extensions from a 173x173 root satisfy the
 provisional 1%/one-cell gate individually, but the simultaneous fixed-spacing
 x/y extension fails it: exit pressure L2 changes by 1.362% and the minimum
 shifts two fine cells in x. The 48-attempt-cap retry reached an exact audited
-root; the default remains 24. No 223x223 run has been repeated under the
-tracked 2 GiB preflight policy. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md)
-for criteria, caveats, and measured results. These are numerical sensitivity
-results, not physical accuracy claims. The bounded nonlinear adapter and its
+root; extending the domain slightly further to 223x223 passes incrementally,
+but the cumulative 173-to-223 comparison still fails the exit-pressure and
+minimum-location limits. The default stage-attempt budget remains 24 (48
+maximum). See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for criteria,
+caveats, and measured results. These are numerical sensitivity results, not
+physical accuracy claims. The bounded nonlinear adapter and its
 recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.

@@ -237,6 +237,10 @@ in tracked commit `1f3f1a1` for the 50k mesh study. An unsuccessful preflight is
 recorded as `rejected_preflight`; it does not silently fall back or raise the
 normal default.
 
+The continuation attempt cap is 48; the default remains 24. A larger cap only
+allows additional bounded continuation stages and retries. It does not change
+Newton corrections per stage, equation tolerances, or root acceptance gates.
+
 Reproduce the refinement and independent comparisons from a fresh output
 directory:
 
@@ -469,7 +473,42 @@ inputs and accepted prototype donors are retained locally as
 `results/case_domain_x_extension_50n_173x217.json`,
 `results/case_domain_y_extension_50n_217x173.json`,
 `results/prototype_domain_x_50n_173x217_20261105/`, and
-`results/prototype_domain_y_50n_217x173_20261105/`. These are one-axis
-boundary checks only: a simultaneous x/y extension and larger domain extents
-have not been tested. Passing this sensitivity check does not establish
-physical accuracy, mesh convergence, or validated EHL predictions.
+`results/prototype_domain_y_50n_217x173_20261105/`.
+
+### Simultaneous fixed-spacing x/y extension
+
+The 173x173 base case was also extended in both axes to 217x217 (47,089 nodes),
+again preserving spacing at 0.04651163a and increasing each half-width from
+4a to 5.0233a. The 50 N donor root was accepted. An initial limited-capacity
+continuation with the default 24-attempt budget stopped at fraction
+0.9999478125. The stage-attempt cap was therefore raised from 24 to 48
+(default remains 24; equations, per-stage correction limits, and acceptance
+tolerances were unchanged). The retry reached fraction 1.0 and passed an
+independent direct-elasticity/final limited-equation audit after 40 attempts:
+force 50.000 N, relative local/global mass balance 9.552e-11/2.093e-14,
+minimum/central film 287.655/469.833 nm. Preflight estimated 1,088,983,557
+bytes against the 2 GiB ceiling, with a known-vector residual of 3.098e-16.
+This estimate is not a peak-RSS guarantee.
+
+| Extension | Minimum / central film change | Full pressure L2 / max | Exit pressure L2 / max | Minimum movement (fine cells, x/|y|) |
+| --- | ---: | ---: | ---: | ---: |
+| Both axes: +/-4a -> +/-5.0233a | +0.366% / +0.372% | 0.720% / 4.105% | 1.362% / 4.425% | +2 / -1 |
+
+Fields are compared on the common original-domain nodes; the symmetric
+minimum-location convention is `(x/a, abs(y/a))`. Minimum and central film
+changes and full-field pressure L2 meet the provisional 1% criterion, but
+exit-pressure L2 exceeds it and the x minimum shifts by two fine cells. The
+simultaneous extension therefore **fails** the provisional domain-sensitivity
+gate. The one-axis results do not establish insensitivity when both boundaries
+are extended together. The maximum pressure changes are diagnostics, not
+stand-alone gates.
+
+The first 24-attempt history is under
+`results/limited_domain_xy_50n_217x217_20261105/`; the successful 48-cap retry
+is under `results/limited_domain_xy_50n_217x217_retry48_20261105/`. Its
+independent common-domain comparison is under
+`results/domain_gate_50n_173_xy_fixed_spacing_20261105/`, with case input
+`results/case_domain_xy_extension_50n_217x217.json` and accepted donor under
+`results/prototype_domain_xy_50n_217x217_20261105/`. L1 was not added to the
+comparison report. This sensitivity study does not establish physical
+accuracy, mesh convergence, or validated EHL predictions.

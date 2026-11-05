@@ -324,8 +324,13 @@ def test_transport_retry_retains_last_stage_and_never_uses_rejected_partial(
 
 
 def test_continuation_option_and_seed_audit_failures(donor_root):
+    from ehl_solver.limited_continuation import MAXIMUM_STAGE_ATTEMPTS, _options
+
+    _options(MAXIMUM_STAGE_ATTEMPTS, None)
     with pytest.raises(ValueError):
-        continue_limited_transport(donor_root.case, maximum_attempts=25)
+        continue_limited_transport(
+            donor_root.case, maximum_attempts=MAXIMUM_STAGE_ATTEMPTS + 1
+        )
     with pytest.raises(ValueError):
         continue_limited_load(donor_root, float("nan"))
     damaged = replace(donor_root, state=donor_root.state * 1.01)

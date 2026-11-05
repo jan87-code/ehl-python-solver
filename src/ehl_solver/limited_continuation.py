@@ -15,6 +15,8 @@ from ehl_solver.limited_audit import audit_limited_state
 from ehl_solver.limited_newton import LimitedNewtonError, LimitedObserverError, solve_limited_load
 from ehl_solver.limited_system import LimitedLoadProbe
 
+MAXIMUM_STAGE_ATTEMPTS = 48
+
 
 @dataclass(frozen=True)
 class LimitedPath:
@@ -78,10 +80,12 @@ def _notify(observer, index, case, fraction, outcome):
 def _options(maximum_attempts, observer):
     if (
         type(maximum_attempts) is not int
-        or not 1 <= maximum_attempts <= 24
+        or not 1 <= maximum_attempts <= MAXIMUM_STAGE_ATTEMPTS
         or (observer is not None and not callable(observer))
     ):
-        raise ValueError("At most 24 stage attempts; stage observer must be callable")
+        raise ValueError(
+            f"At most {MAXIMUM_STAGE_ATTEMPTS} stage attempts; stage observer must be callable"
+        )
 
 
 def _attempt(case, state, fraction, index, observer, *, audit_only=False):

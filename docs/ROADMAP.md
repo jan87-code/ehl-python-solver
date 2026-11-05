@@ -15,11 +15,12 @@ robustness and measured mesh/domain sensitivity. Exact 50 N endpoints are
 established on multiple grids through 199x199, but the 141->173 and 173->199
 pressure comparisons fail the provisional 1% mesh-sensitivity gate. Two
 fixed-spacing, one-axis 50 N domain extensions from a 173x173 root satisfy the
-provisional 1%/one-cell gate on the common domain; the simultaneous x/y
-extension has not been tested. The domain runs used the tracked 2 GiB
-preflight ceiling; no 223x223 run has been repeated under that policy. See
-[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for
-criteria, caveats, and measured results. These are numerical sensitivity
+provisional 1%/one-cell gate individually, but the simultaneous fixed-spacing
+x/y extension fails it: exit pressure L2 changes by 1.362% and the minimum
+shifts two fine cells in x. The 48-attempt-cap retry reached an exact audited
+root; the default remains 24. No 223x223 run has been repeated under the
+tracked 2 GiB preflight policy. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md)
+for criteria, caveats, and measured results. These are numerical sensitivity
 results, not physical accuracy claims. The bounded nonlinear adapter and its
 recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate

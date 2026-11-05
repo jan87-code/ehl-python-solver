@@ -16,7 +16,11 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.sparse.linalg import splu
 
 from ehl_solver.limited_comparison import file_sha256, load_limited_path
-from ehl_solver.limited_continuation import LimitedPathError, continue_limited_transport
+from ehl_solver.limited_continuation import (
+    MAXIMUM_STAGE_ATTEMPTS,
+    LimitedPathError,
+    continue_limited_transport,
+)
 from ehl_solver.limited_newton import LimitedNewtonError
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
@@ -445,7 +449,12 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=Path)
     parser.add_argument("--limited-seed", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--max-attempts", type=int, choices=range(1, 25), default=24)
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        choices=range(1, MAXIMUM_STAGE_ATTEMPTS + 1),
+        default=24,
+    )
     parser.add_argument(
         "--no-endpoint-prediction", dest="endpoint_prediction", action="store_false"
     )

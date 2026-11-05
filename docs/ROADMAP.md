@@ -13,12 +13,15 @@ extensions is proposed; no such model is marked implemented by this plan.
 Current numerical priority is broader-load limited-flux cavitation-front
 robustness and measured mesh/domain sensitivity. Exact 50 N endpoints are
 established on multiple grids through 199x199, but the 141->173 and 173->199
-pressure comparisons fail the provisional 1% mesh-sensitivity gate; no
-fixed-spacing 50 N domain-extension comparison has been completed. See
-[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the gate and measured results.
-These are numerical sensitivity results, not physical accuracy claims. The
-bounded nonlinear adapter and its recovery/acceptance checks are experimental.
-The existing CLI already has an
+pressure comparisons fail the provisional 1% mesh-sensitivity gate. Two
+fixed-spacing, one-axis 50 N domain extensions from a 173x173 root satisfy the
+provisional 1%/one-cell gate on the common domain; the simultaneous x/y
+extension has not been tested. The domain runs used the tracked 2 GiB
+preflight ceiling; no 223x223 run has been repeated under that policy. See
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for
+criteria, caveats, and measured results. These are numerical sensitivity
+results, not physical accuracy claims. The bounded nonlinear adapter and its
+recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.
 
@@ -2323,12 +2326,14 @@ and `git diff --check` passed. No GPU physical validation was run or claimed.
 The limited solver case now carries explicit resource budgets (20,000 default,
 30,000/40,000/50,000 opt-ins), and the experimental continuation runner can
 seed from a re-audited exact MC path on a coarser mesh. Larger runs require that
-seed and a measured sparse-factor/Krylov preflight below 1 GiB and 75% of
+seed and a measured sparse-factor/Krylov preflight below 2 GiB and 75% of
 current available RAM, with an independently checked factor residual. Square
 50 N cases are prepared at 173x173, 199x199 and 223x223, respectively 29,929,
 39,601 and 49,729 physical nodes; their equations, transport, domain and root
-acceptance tolerances are unchanged. This is a bounded investigation of
-remaining mesh sensitivity, not a default cap increase or a convergence claim.
+acceptance tolerances are unchanged. The 2 GiB preflight ceiling was raised
+separately in tracked commit `1f3f1a1`; the regular 20,000-node case budget
+remains the default. This is a bounded investigation of remaining mesh
+sensitivity, not a convergence claim.
 The first run's 545 MB peak estimate passed the sparse-factor residual check
 (3.10e-16), but available RAM was only 503 MB and the 75%-headroom ceiling was
 377 MB. The runner correctly wrote `rejected_preflight` without starting
@@ -2363,13 +2368,13 @@ the exit-region changes 4.587%/11.567%. The sampled minimum location shifts.
 During the solve, sampled RSS reached 935,512 KiB, above the preflight estimate;
 this is not a measured maximum, so preflight is not a peak-RSS guarantee.
 
-The 50k 223x223 factor residual passed at 3.446e-16, but estimated peak
-1,083,328,872 bytes exceeded the existing 1 GiB cap by 9.6 MB, despite 1.83 GB
-available RAM. The runner correctly rejected before nonlinear stages. The
-40k sampled-RSS discrepancy makes relaxing the fixed memory cap unjustified
-without explicit resource approval and further headroom assessment. No 50k
-root is claimed. Both cases retain their explicit budgets, but the 50k
-nonlinear run remains blocked by preflight.
+The historical 50k 223x223 preflight had factor residual 3.446e-16, but its
+estimated peak 1,083,328,872 bytes exceeded the then-current 1 GiB cap by
+9.6 MB, despite 1.83 GB available RAM. The tracked cap was subsequently raised
+to 2 GiB in commit `1f3f1a1`; the 223x223 preflight has not been repeated under
+that policy, and no 50k root is claimed. The 40k sampled-RSS discrepancy still
+requires caution: the current estimate and headroom gate are not peak-RSS
+guarantees. Both cases retain their explicit budgets.
 
 Verification for the 40k/50k budget increment: full CPU suite **696 passed,
 62 skipped**; `ruff check .` and `git diff --check` passed. No GPU validation

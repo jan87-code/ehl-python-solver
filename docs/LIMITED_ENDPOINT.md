@@ -232,7 +232,8 @@ independently audited exact MC seed for any larger budget, transfers it
 bilinearly without promoting it, and preflights the frozen sparse factors and
 measured Krylov/memory estimate before starting continuation. The preflight
 requires a known-vector factor residual below 1e-8, estimated peak below both
-1 GiB and 75% of currently available RAM. An unsuccessful preflight is
+2 GiB and 75% of currently available RAM. The 2 GiB ceiling was introduced
+in tracked commit `1f3f1a1` for the 50k mesh study. An unsuccessful preflight is
 recorded as `rejected_preflight`; it does not silently fall back or raise the
 normal default.
 
@@ -266,7 +267,7 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
   --output results/limited_mesh_50n_199_20261031
 
 # Attempt 223x223 (49,729 nodes) only after inspecting the 40k result and a
-# fresh preflight; the runner refuses estimated peaks above its 1 GiB guard.
+# fresh preflight; the runner refuses estimates above its 2 GiB / RAM ceiling.
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
   .venv/bin/python examples/run_limited_transport_path.py \
   --case cases/circular_50n_223.json \
@@ -317,16 +318,17 @@ are preserved in `results/limited_mesh_50n_199_20261031/` and
 
 ## 50,000-node 50 N preflight: 223x223
 
-The 49,729-node 223x223 sparse-factor preflight passed independently, with
-known-vector relative residual 3.446e-16. Its estimated peak was
-1,083,328,872 bytes, exceeding the unchanged 1 GiB preflight cap by
-9,587,048 bytes. Available memory was 1,831,874,560 bytes, so 75% of available
-memory was above 1 GiB; however, the independent hard 1 GiB cap still rejected
-the run. No 223x223 nonlinear stage was started and no 50k root is claimed.
-The estimated peak is also uncertain: the 40k process's observed RSS samples
-were higher than its preflight estimate. Do not raise the cap based only on
-available RAM; assess the 40k peak uncertainty and obtain explicit resource
-approval before changing the 1 GiB guard.
+The historical 49,729-node 223x223 sparse-factor preflight passed its
+known-vector check (relative residual 3.446e-16), but its estimated peak of
+1,083,328,872 bytes exceeded the then-current 1 GiB cap by 9,587,048 bytes.
+Available memory was 1,831,874,560 bytes; no nonlinear stage was started and
+no 50k root was produced. The tracked ceiling was later raised to 2 GiB in
+commit `1f3f1a1` (2026-11-02). The old rejection is historical evidence under
+the 1 GiB policy, not evidence that the current 2 GiB preflight rejects the
+case. No 223x223 preflight or nonlinear run has been repeated under the
+current policy. The estimate remains uncertain because sampled RSS in the
+40k process exceeded its preflight estimate; do not infer a 50k peak guarantee
+from the larger ceiling.
 
 The first 173x173 attempt on 2026-10-31 transferred the accepted 141x141 MC
 state and passed the independent full bordered-factor check (relative residual
@@ -431,8 +433,43 @@ are non-nested; fine pressure is bilinearly sampled at coarse nodes. All three
 roots remain numerically accepted, but these results establish neither
 physical accuracy nor a converged continuum solution.
 
-No fixed-spacing domain-extension comparison has yet been run against the
-exact 50 N limited-capacity root. It is the next sensitivity benchmark; do
-not describe the present mesh sequence as domain-independent or converged.
-The 223x223 run remains blocked by the documented 1 GiB preflight and this
-study does not relax that resource guard.
+### Fixed-spacing domain-extension comparison
+
+The accepted 173x173 exact MC root was compared with two one-axis domain
+extensions. Each axis was extended symmetrically from a half-width of 4a to
+5.0233a while preserving the original spacing of 0.04651163a; the other axis
+and its spacing were unchanged. The resulting grids contain 37,541 nodes
+(173x217 for x extension and 217x173 for y extension). The donor roots were
+transferred by the existing fixed-spacing embedding, but each limited-capacity
+endpoint was solved and independently audited.
+
+| Extended axis | Exact endpoint force | Relative local/global mass balance | Minimum / central film change | Full pressure L2 / max | Exit pressure L2 / max | Minimum movement (fine cells, x/|y|) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| x: +/-4a -> +/-5.0233a | 50.000 N | 6.379e-11 / 2.193e-14 | +0.273% / +0.333% | 0.532% / 3.063% | 0.991% / 3.310% | 0.00 / 0.00 |
+| y: +/-4a -> +/-5.0233a | 50.000 N | 3.391e-11 / 1.074e-14 | +0.075% / +0.023% | 0.134% / 0.712% | 0.259% / 0.774% | 0.00 / 0.00 |
+
+Pressure and film changes are measured on the common original-domain nodes;
+the exit region retains its definition above. The symmetric minima use
+`(x/a, abs(y/a))` for location comparison. Both one-axis extensions satisfy
+the provisional 1%/one-cell sensitivity gate. The x-extended exit-pressure L2
+change is close to the limit (0.9908% before rounding), so it should not be
+treated as a robust margin. The pressure maximum changes are reported as
+diagnostics and do not independently fail the gate.
+
+The preflight estimates were 853,240,669 bytes (x) and 853,043,605 bytes (y),
+against the tracked 2 GiB ceiling; both are also below 1 GiB. These estimates
+are not measured peak-RSS guarantees.
+
+Exact run histories are retained locally under
+`results/limited_domain_x_50n_173x217_20261105/` and
+`results/limited_domain_y_50n_217x173_20261105/`; the independently
+recomputed common-domain comparison is under
+`results/domain_gate_50n_173_fixed_spacing_20261105/`. The matching case
+inputs and accepted prototype donors are retained locally as
+`results/case_domain_x_extension_50n_173x217.json`,
+`results/case_domain_y_extension_50n_217x173.json`,
+`results/prototype_domain_x_50n_173x217_20261105/`, and
+`results/prototype_domain_y_50n_217x173_20261105/`. These are one-axis
+boundary checks only: a simultaneous x/y extension and larger domain extents
+have not been tested. Passing this sensitivity check does not establish
+physical accuracy, mesh convergence, or validated EHL predictions.

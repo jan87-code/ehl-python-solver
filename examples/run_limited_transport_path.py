@@ -111,12 +111,12 @@ def _available_memory_bytes():
             if "MemAvailable" not in fields:
                 raise RuntimeError("Linux /proc/meminfo does not report MemAvailable")
             return fields["MemAvailable"]
-        except (FileNotFoundError, OSError):
+        except (FileNotFoundError, OSError) as err:
             # Fallback for systems without /proc/meminfo
             raise RuntimeError(
                 "Available memory detection requires Linux /proc/meminfo "
                 "or Windows GlobalMemoryStatusEx"
-            )
+            ) from err
 
 
 def _measure_peak_memory(func):
@@ -160,8 +160,8 @@ def resource_preflight(case, state, *, use_measured_peak=True):
     field_matrix = matrix[: 2 * probe.n, : 2 * probe.n].tocsc()
     
     def factorize():
-        field_lu = splu(field_matrix)
-        bordered_lu = splu(matrix)
+        field_lu = splu(field_matrix)  # noqa: F821
+        bordered_lu = splu(matrix)  # noqa: F821
         return field_lu, bordered_lu
     
     field_lu, bordered_lu = factorize()
@@ -202,8 +202,8 @@ def resource_preflight(case, state, *, use_measured_peak=True):
         _, peak_during_factorize = _measure_peak_memory(measure_factorize)
         
         def measure_solve():
-            test_rhs = matrix @ known
-            _ = bordered_lu.solve(test_rhs)
+            test_rhs = matrix @ known  # noqa: F821
+            _ = bordered_lu.solve(test_rhs)  # noqa: F821
             return None
         
         _, peak_during_solve = _measure_peak_memory(measure_solve)
@@ -391,7 +391,9 @@ def main(
         else:
             initial_for_preflight = initial
         try:
-            preflight = resource_preflight(case, initial_for_preflight, use_measured_peak=use_measured_peak)
+            preflight = resource_preflight(
+                case, initial_for_preflight, use_measured_peak=use_measured_peak
+            )
         except (MemoryError, OSError, RuntimeError, ValueError) as exc:
             report.update(
                 status="rejected_preflight",

@@ -24,7 +24,7 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         if elasticity_mode not in ("reference", "cached"):
             raise ValueError("elasticity_mode must be reference or cached (CPU only)")
         if (
-            maximum_interior_nodes not in (400, 20000, 30000, 40000, 50000)
+            maximum_interior_nodes not in (400, 20000, 30000, 40000, 50000, 70000, 100000)
             or self.n > maximum_interior_nodes
         ):
             raise ValueError(f"warm system limited to {maximum_interior_nodes} interior nodes")

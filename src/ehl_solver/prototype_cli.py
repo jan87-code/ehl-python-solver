@@ -207,8 +207,8 @@ metadata. This report does not imply physical validation.
 
 
 def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plots=True):
-    if type(maximum_iterations) is not int or not 0 <= maximum_iterations <= 30:
-        raise ValueError("Correction budget must be in 0..30")
+    if type(maximum_iterations) is not int or not 0 <= maximum_iterations <= 100:
+        raise ValueError("Correction budget must be in 0..100")
     directory = Path(directory)
     system = case.system()
     if seed_directory is None:

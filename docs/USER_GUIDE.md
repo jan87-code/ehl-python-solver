@@ -80,10 +80,11 @@ Every run needs a **new output directory**. For another trial use
 prints numerical status, minimum/central film in nm, force and mass diagnostics,
 and the report path. It creates the output directory itself.
 
-The prototype permits at most 20,000 physical grid nodes, 30 Newton corrections
-and 10 Krylov cycles. Arbitrary parameter changes are not guaranteed to converge
-or lie in an independently validated range. Do not lower acceptance criteria
-to turn a rejected case into an accepted result.
+The default case is limited to 20,000 physical grid nodes; larger runs require
+an explicit supported node budget, up to 100,000. The prototype permits at most
+100 Newton corrections and 10 Krylov cycles. Arbitrary parameter changes are
+not guaranteed to converge or lie in an independently validated range. Do not
+lower acceptance criteria to turn a rejected case into an accepted result.
 
 ## 3. See the results
 
@@ -131,12 +132,11 @@ Read the status before interpreting a picture:
   passed. Check mesh/domain studies separately before using its accuracy.
 - `rejected`: inspect the reason and diagnostics. A last saved state can still
   produce a plausible plot; it is not an accepted solution.
+- If nonlinear failure occurs before a valid root exists, `summary.json` and
+  `report.md` record the failure, but `solution.npz` and `fields.png` are not
+  produced because there are no solution fields to inspect.
 - `running` left after an interrupted process: the run has not established
   acceptance. Preserve it as partial diagnostic output.
-
-If nonlinear failure occurs before a valid root exists, `summary.json` and
-`report.md` record the failure, but `solution.npz` and `fields.png` are not
-produced because there are no solution fields to inspect.
 
 Exit codes are 0 for numerical acceptance, 1 for nonconvergence, and 2 for
 invalid input. Early input errors or unexpected interruptions may leave only

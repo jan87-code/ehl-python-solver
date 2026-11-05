@@ -35,9 +35,10 @@ class PropertyLoadSystem:
         if not np.isfinite(target_load_n) or target_load_n <= 0:
             raise ValueError("positive finite SI target load required")
         if (type(maximum_physical_nodes) is not int
-                or maximum_physical_nodes not in (20000, 30000, 40000, 50000)):
+                or maximum_physical_nodes not in (20000, 30000, 40000, 50000, 70000, 100000)):
             raise ValueError(
-                "physical node budget must be explicitly 20000, 30000, 40000 or 50000"
+                "physical node budget must be one of the explicitly supported budgets: "
+                "20000, 30000, 40000, 50000, 70000, or 100000"
             )
         if np.prod(problem.shape) > maximum_physical_nodes:
             raise ValueError(f"physical node budget exceeds {maximum_physical_nodes}")

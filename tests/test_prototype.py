@@ -60,6 +60,15 @@ def test_configuration_converts_physical_scalars_to_float64():
     assert case.problem().x_m.dtype == np.float64
 
 
+def test_point_contact_accepts_seventy_k_and_hundred_k_budgets():
+    case_70 = PointContactCase(ny=257, nx=257, maximum_physical_nodes=70000)
+    assert case_70.ny * case_70.nx <= case_70.maximum_physical_nodes
+    assert case_70.system().base.n <= 70000
+    case_100 = PointContactCase(ny=313, nx=313, maximum_physical_nodes=100000)
+    assert case_100.ny * case_100.nx <= case_100.maximum_physical_nodes
+    assert case_100.system().base.n <= 100000
+
+
 def test_real_standalone_run_and_reaudited_portable_seed(solved):
     folder, case, report = solved
     assert report["independent_audit"]["numerically_accepted"]
@@ -139,7 +148,7 @@ def test_cli_rejection_has_nonzero_status_and_complete_diagnostics(tmp_path):
     with pytest.raises(ValueError, match="accepted numerical root"):
         load_run(output)
     with pytest.raises(SystemExit) as exc:
-        main(["--output", str(tmp_path / "too_many"), "--max-iterations", "31"])
+        main(["--output", str(tmp_path / "too_many"), "--max-iterations", "101"])
     assert exc.value.code == 2
 
 

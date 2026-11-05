@@ -381,3 +381,58 @@ Comparison files and source hashes are retained outside Git under
 `results/limited_comparison_50n_141_to_173_20261031/`. The retry's stages,
 full history and independent final audit are under
 `results/limited_mesh_50n_173_retry_20261031/`.
+
+## Provisional 50 N mesh sensitivity gate and 173/199 follow-up
+
+Numerical root acceptance and mesh sensitivity are separate questions. For
+this study, use the following **provisional engineering sensitivity gate**;
+it is not a physical-accuracy tolerance:
+
+* Each compared limited-capacity endpoint must independently pass its existing
+  exact-load acceptance and final audit.
+* On two consecutive refinements of the same physical case and domain, the
+  relative changes in minimum film, central film, full-field pressure
+  relative-L2 norm, and exit-region pressure relative-L2 norm must each be at
+  most 1%.
+* The minimum-film location must move by no more than one fine-grid spacing
+  in either coordinate. Report pressure maximum-norm changes as diagnostics,
+  but do not use a pointwise maximum as a stand-alone gate.
+* For domain sensitivity, keep grid spacing fixed and extend the inlet/outlet
+  and transverse boundaries independently. Compare the common physical region
+  using the same film, pressure, and minimum-location measures and 1%/one-cell
+  limits. Each domain variant must independently pass the exact-load audit.
+
+The 1% tolerance is a provisional numerical-change target, not a claim about
+continuum error, experimental accuracy, or agreement with Hamrock-Dowson.
+Correlation comparisons remain informative only and are not an acceptance
+criterion. A mesh result cannot substitute for the separate domain test.
+
+A fresh 173x173 donor root was accepted and used only to initialize the exact
+MC continuation; the latter passed its preflight and was independently
+accepted at transport fraction 1.0. Its final audit reports 50.0 N, relative
+local/global mass balances of 6.088e-11/3.051e-14, and minimum/central films
+of 286.605/468.093 nm. The donor and exact MC histories are retained locally
+under `results/prototype_50n_173_validation_20261105/` and
+`results/limited_mesh_50n_173_validation_20261105/`; the comparison reports
+are under `results/mesh_gate_50n_141_to_173_20261105/` and
+`results/mesh_gate_50n_173_to_199_20261105/`.
+
+| Refinement | Minimum film change | Central film change | Full pressure L2 / max | Exit pressure L2 / max | Minimum movement (fine cells, x/y) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 141x141 -> 173x173 | +1.177% | +0.721% | 2.307% / 11.619% | 5.180% / 12.950% | 1.52 / 1.07 |
+| 173x173 -> 199x199 | +0.029% | +0.346% | 2.017% / 10.444% | 4.587% / 11.567% | 1.66 / 0.96 |
+
+Both adjacent comparisons fail the provisional gate: the full- and exit-field
+pressure L2 changes exceed 1%, and the minimum shifts more than one fine cell
+in x. The coarser pair also exceeds the minimum-film limit. The finer pair
+shows small changes in the two scalar film heights, but that alone does not
+establish mesh convergence. The comparison grids share the same domain and
+are non-nested; fine pressure is bilinearly sampled at coarse nodes. All three
+roots remain numerically accepted, but these results establish neither
+physical accuracy nor a converged continuum solution.
+
+No fixed-spacing domain-extension comparison has yet been run against the
+exact 50 N limited-capacity root. It is the next sensitivity benchmark; do
+not describe the present mesh sequence as domain-independent or converged.
+The 223x223 run remains blocked by the documented 1 GiB preflight and this
+study does not relax that resource guard.

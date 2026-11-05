@@ -11,9 +11,14 @@ TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
 Current numerical priority is broader-load limited-flux cavitation-front
-robustness and physical mesh convergence. Exact 50 N endpoints on 33x33,
-65x65 and 129x129 are now established; see [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md). The bounded
-nonlinear adapter and its recovery/acceptance checks are experimental. The existing CLI already has an
+robustness and measured mesh/domain sensitivity. Exact 50 N endpoints are
+established on multiple grids through 199x199, but the 141->173 and 173->199
+pressure comparisons fail the provisional 1% mesh-sensitivity gate; no
+fixed-spacing 50 N domain-extension comparison has been completed. See
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the gate and measured results.
+These are numerical sensitivity results, not physical accuracy claims. The
+bounded nonlinear adapter and its recovery/acceptance checks are experimental.
+The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.
 

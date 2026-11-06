@@ -544,3 +544,56 @@ recomputed comparisons are under
 larger simultaneous extension at this spacing would exceed the documented
 50,000-node benchmark budget and requires a separate resource review. The
 mesh-sensitivity gate also remains unmet.
+
+## Fifth mesh: exact 50 N 223x223 endpoint
+
+The 49,729-node 223x223 case was rerun on 2026-11-06 from the independently
+audited 199x199 exact MC endpoint, using the same physical case, fixed +/-4a
+domain, equations and acceptance thresholds. Its coarse resource preflight
+passed: adjusted estimate 1,259,911,478 bytes, against the 2 GiB ceiling and
+3,249,704,960 bytes available when checked. The known-vector factor residual
+was 3.446e-16. The run deliberately used `--no-measured-peak`; the recorded
+adjusted estimate is not a measured peak-RSS value or a guarantee. Improved
+factor-fill and peak-memory estimation is deferred to a later optimization
+round.
+
+The exact fraction-one endpoint was independently accepted after eight
+continuation attempts, with no rejected stages. Force is 49.99999999999999 N;
+relative local/global mass balance is 6.093e-11/1.802e-14, maximum
+complementarity is 1.481e-28, and direct-elasticity film reconstruction
+difference is 1.736e-20 m. Minimum/central film is 287.867/470.732 nm.
+
+The independent same-domain comparison with 199x199 uses bilinear fine-at-
+coarse sampling (the grids are non-nested):
+
+| Comparison | Minimum / central film change | Full pressure L2 / max | Exit pressure L2 / max | Minimum movement (fine cells, x/|y|) | Provisional gate |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 199x199 -> 223x223 | +0.411% / +0.217% | 1.772% / 10.397% | 4.530% / 11.790% | 0.85 / 0.58 | Fail |
+
+Both roots pass their independently recomputed force, mass, complementarity,
+film-feasibility and direct-elasticity audits. The pressure L2 changes exceed
+the provisional 1% sensitivity limit, despite small film changes and a
+sub-cell minimum movement. The result therefore does not pass the provisional
+mesh gate and does not establish a continuum limit or physical film accuracy.
+The approximate Hamrock-Dowson minimum/central films are 284.150/497.969 nm;
+they are comparison references, not acceptance thresholds.
+
+Reproduce in fresh result directories:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/run_limited_transport_path.py \
+  --case cases/circular_50n_223.json \
+  --limited-seed results/limited_mesh_50n_199_20261031 \
+  --output results/limited_mesh_50n_223_20261106 \
+  --no-measured-peak
+
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=src \
+  .venv/bin/python examples/compare_limited_paths.py \
+  results/limited_mesh_50n_199_20261031 \
+  results/limited_mesh_50n_223_20261106 \
+  --output results/limited_comparison_50n_199_to_223_20261106
+```
+
+The run and comparison bundles are local under `results/`; the comparison
+records source-summary checksums and both independently recomputed audits.

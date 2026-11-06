@@ -3887,3 +3887,53 @@ Original inputs, exact measured/replay sources, every state/history, all
 alternative checks, independent flux audit/directions and plots are retained.
 Generated data/archive remain Git-ignored, with no asserted off-machine
 synchronization. Only code, tests and documented evidence are committed.
+
+## 34. Controlled 50 N 223x223 limited-MC mesh refinement (2026-11-06)
+
+The registered 50 N circular case (`cases/circular_50n_223.json`) was run on
+49,729 physical nodes, preserving its SI inputs, +/-4a domain, equations and
+acceptance tolerances. The input specifies Q=50 N, R=15 mm, contact modulus
+113 GPa, eta0=0.04 Pa s, rho0=850 kg/m^3 and positive-x entrainment 2 m/s.
+The exact MC continuation used the independently audited 199x199 root as a
+bilinearly interpolated, unaccepted initial guess. Eight stages reached
+transport fraction 1.0; none were rejected.
+
+The final root passes the solver's direct-elasticity and physical audit:
+
+| Diagnostic | 223x223 result |
+| --- | ---: |
+| Integrated force | 49.99999999999999 N |
+| Relative local / global mass balance | 6.093e-11 / 1.802e-14 |
+| Maximum complementarity | 1.481e-28 |
+| Direct-elasticity film reconstruction difference | 1.736e-20 m |
+| Minimum / central film | 287.867 / 470.732 nm |
+
+`compare_limited_paths.py` independently reloads both complete paths,
+recomputes their SI and direct-elasticity audits, and compares fine fields at
+coarse nodes. For 199x199 -> 223x223, minimum/central film changes are
++0.411%/+0.217%; pressure relative L2/maximum changes are 1.772%/10.397%;
+exit-region L2/maximum changes are 4.530%/11.790%. The minimum moves 0.85/0.58
+fine cells in x/|y|. Thus both roots are accepted, but pressure differences
+fail the provisional 1% sensitivity gate. The small film changes and
+sub-cell minimum movement do not imply pressure convergence, continuum
+convergence or physical EHL accuracy. The HD reference values remain
+correlations, not acceptance thresholds.
+
+The resource preflight used the requested coarse approach, not measured-peak
+profiling. Its adjusted estimate was 1,259,911,478 bytes, with
+3,249,704,960 bytes available at preflight and a 3.446e-16 sparse-factor
+known-vector residual. The nonlinear run completed, but no peak RSS was
+measured and the estimate is not a peak-memory guarantee. Improved peak and
+factor-fill estimation is explicitly deferred to an optimization round; no
+larger mesh budget is authorized by this result.
+
+Reproduction and retained local archives are documented in
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md). The root is
+`results/limited_mesh_50n_223_20261106/`; its independently audited
+comparison is `results/limited_comparison_50n_199_to_223_20261106/`. Both
+preserve source-summary hashes and detailed SI audits. This is numerical
+verification of a finite-grid root and mesh change, not physical validation.
+
+Verification: repository-wide `ruff check .` passed; the complete CPU suite
+passed **701 tests with 62 optional skips** in 442.57 s. This run included the
+preserved local driver edit. No GPU validation was run or claimed.

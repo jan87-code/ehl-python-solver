@@ -12,10 +12,13 @@ extensions is proposed; no such model is marked implemented by this plan.
 
 Current numerical priority is broader-load limited-flux cavitation-front
 robustness and measured mesh/domain sensitivity. Exact 50 N endpoints are
-established on multiple grids through 199x199, but the 141->173 and 173->199
-pressure comparisons fail the provisional 1% mesh-sensitivity gate. Two
-fixed-spacing, one-axis 50 N domain extensions from a 173x173 root satisfy the
-provisional 1%/one-cell gate individually, but the simultaneous fixed-spacing
+established on multiple grids through 223x223 (49,729 nodes). The new
+199->223 same-domain comparison independently passes root audits, but its
+pressure L2 changes (1.772% overall, 4.530% in the exit region) fail the
+provisional 1% mesh-sensitivity gate; the 141->173 and 173->199 comparisons
+also fail it. Two fixed-spacing, one-axis 50 N domain extensions from a
+173x173 root satisfy the provisional 1%/one-cell gate individually, but the
+simultaneous fixed-spacing
 x/y extension fails it: exit pressure L2 changes by 1.362% and the minimum
 shifts two fine cells in x. The 48-attempt-cap retry reached an exact audited
 root; extending the domain slightly further to 223x223 passes incrementally,
@@ -2374,11 +2377,29 @@ this is not a measured maximum, so preflight is not a peak-RSS guarantee.
 The historical 50k 223x223 preflight had factor residual 3.446e-16, but its
 estimated peak 1,083,328,872 bytes exceeded the then-current 1 GiB cap by
 9.6 MB, despite 1.83 GB available RAM. The tracked cap was subsequently raised
-to 2 GiB in commit `1f3f1a1`; the 223x223 preflight has not been repeated under
-that policy, and no 50k root is claimed. The 40k sampled-RSS discrepancy still
-requires caution: the current estimate and headroom gate are not peak-RSS
-guarantees. Both cases retain their explicit budgets.
+to 2 GiB in commit `1f3f1a1`. Under that policy the 223x223 run passed its
+coarse preflight (adjusted estimate 1,259,911,478 bytes; 3,249,704,960 bytes
+available), then reached and independently passed the exact MC root in eight
+accepted attempts. Precise peak-memory modeling was not performed: the run
+used `--no-measured-peak`, did not record peak RSS, and completed within the
+available headroom. The 40k sampled-RSS discrepancy remains relevant; the
+current estimate and headroom gate are not peak-RSS guarantees. Defer improved
+factor-fill / peak-RSS estimation to a later optimization round. Both cases
+retain their explicit budgets.
+
+The 199->223 comparison changes minimum/central film by +0.411%/+0.217% and
+minimum position by less than one fine cell per axis, but pressure L2 changes
+are 1.772% overall and 4.530% in the exit region. The provisional mesh gate
+therefore remains unmet; this benchmark neither establishes continuum
+convergence nor validates physical EHL film predictions. Reproduction, audits
+and limitations are in [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) and
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
 Verification for the 40k/50k budget increment: full CPU suite **696 passed,
 62 skipped**; `ruff check .` and `git diff --check` passed. No GPU validation
 was run or claimed.
+
+Verification for the 2026-11-06 223-grid endpoint and comparison: full CPU
+suite **701 passed, 62 skipped** (442.57 s); `ruff check .` and
+`git diff --check` passed. The full suite includes the preserved local driver
+edit. No GPU validation was run or claimed.

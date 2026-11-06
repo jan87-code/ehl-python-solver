@@ -642,3 +642,38 @@ paths and four independent comparison bundles are preserved locally under
 `results/limited_mesh_50n_223x199_20261106/`, and
 `results/limited_comparison_*_20261106/`. Improved resource/peak-memory
 estimation remains deferred to a separate optimization round.
+
+## Nested fixed-domain grid sequence
+
+The next same-physics sequence uses 27x27, 53x53, 105x105 and 209x209 grids
+on the same +/-4a domain. Each refinement doubles the interval count, so
+coarse nodes are nested in the next grid; the final grid has 43,681 nodes and
+remains within the existing 50,000-node experimental budget. Exact fraction-one
+roots were independently accepted on 27x27 (18 accepted stages in 27 attempts),
+53x53 (16 in 23) and 105x105 (12 in 16). The 27->53 and 53->105 interpolated
+root transfers each failed at their initial correction; cold runs then reached
+the exact roots. Thus these are independently solved grid roots, not a
+demonstration that warm-start refinement is robust.
+
+The first 209x209 run, initialized from the accepted 105x105 root, reached
+fraction 0.9999 after six accepted stages but was interrupted before the
+fraction-one endpoint. Its local summary still says `running`; it is partial
+diagnostic data, not a completed or accepted root, and is preserved unchanged.
+A fresh retry is required before any 105->209 comparison. Even if all roots are
+obtained, the sequence is evidence for observed grid sensitivity, not physical
+validation or asymptotic convergence by itself.
+
+The bounded runner now supports timestamped progress heartbeats. By default it
+reports every 300 seconds, including elapsed time, current continuation
+attempt/fraction, Newton iteration and available mass/force audit values.
+Override the interval with `--progress-interval SECONDS`; the normal final
+accepted/rejected status is still emitted when the run exits. For example:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python examples/run_limited_transport_path.py \
+  --case cases/circular_50n_209.json \
+  --limited-seed results/limited_mesh_50n_105_nested_cold48_20261106 \
+  --output results/limited_mesh_50n_209_nested_retry_20261106 \
+  --no-measured-peak --progress-interval 300
+```

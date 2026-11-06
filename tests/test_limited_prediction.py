@@ -141,6 +141,38 @@ def test_prediction_option_is_explicit_boolean():
         module.continue_limited_transport(PointContactCase(), endpoint_prediction=1)
 
 
+def test_progress_observer_receives_stage_and_newton_status(cold_path, monkeypatch):
+    _, stages = cold_path
+    result = stages[0]
+    events = []
+
+    def solve(case, state, **kwargs):
+        assert kwargs["state_observer"] is not None
+        kwargs["state_observer"](
+            2,
+            state,
+            {"mass": {"relative_local_balance": 3e-9}, "force_n": 50.0},
+        )
+        return result
+
+    monkeypatch.setattr(module, "solve_limited_load", solve)
+    outcome, _ = module._attempt(
+        result.case,
+        result.state,
+        result.transport_fraction,
+        0,
+        None,
+        progress_observer=lambda *event: events.append(event),
+    )
+
+    assert outcome is result
+    assert events[0] == (0, result.transport_fraction, None, None, "starting stage")
+    assert events[1][0:3] == (0, result.transport_fraction, 2)
+    assert events[1][3]["mass"]["relative_local_balance"] == 3e-9
+    assert events[1][4] == "Newton correction"
+    assert events[2][4] == "accepted_stage"
+
+
 def test_prediction_can_be_disabled_without_changing_retry_seeds(cold_path, monkeypatch):
     _, stages = cold_path
     first, second = stages[:2]

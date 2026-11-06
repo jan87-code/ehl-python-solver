@@ -88,7 +88,14 @@ def _options(maximum_attempts, observer):
         )
 
 
-def _attempt(case, state, fraction, index, observer, *, audit_only=False):
+def _attempt(case, state, fraction, index, observer, *, audit_only=False, progress_observer=None):
+    if progress_observer is not None:
+        progress_observer(index, fraction, None, None, "starting stage")
+
+    def report_state(iteration, _state, audit):
+        if progress_observer is not None:
+            progress_observer(index, fraction, iteration, audit, "Newton correction")
+
     try:
         # Intermediate transport stages need headroom: otherwise a stage
         # barely inside its own gate can remain outside the exact MC gate.
@@ -99,12 +106,15 @@ def _attempt(case, state, fraction, index, observer, *, audit_only=False):
             transport_fraction=fraction,
             local_balance_tolerance=tolerance,
             maximum_iterations=0 if audit_only else 30,
+            state_observer=report_state if progress_observer is not None else None,
         )
         status = "accepted_stage"
     except LimitedNewtonError as exc:
         outcome = exc
         status = "rejected_stage"
     _notify(observer, index, case, fraction, outcome)
+    if progress_observer is not None:
+        progress_observer(index, fraction, None, outcome.audit, status)
     data = dict(
         status=status,
         case=asdict(case),
@@ -189,7 +199,7 @@ def _endpoint_prediction(previous, last):
 
 def continue_limited_transport(
     case, initial_state=None, *, maximum_attempts=24, stage_observer=None,
-    endpoint_prediction=True,
+    endpoint_prediction=True, progress_observer=None,
 ):
     """Conservative donor->MC homotopy, plus bounded bisection/rollback.
 
@@ -199,6 +209,8 @@ def continue_limited_transport(
     diagnostics to prevent path-history memory scaling as attempts*all vectors.
     """
     _options(maximum_attempts, stage_observer)
+    if progress_observer is not None and not callable(progress_observer):
+        raise ValueError("progress_observer must be callable")
     if type(endpoint_prediction) is not bool:
         raise ValueError("endpoint_prediction must be boolean")
     pending = [
@@ -230,7 +242,13 @@ def continue_limited_transport(
             pending = [next_fraction]
         target = pending.pop(0)
         outcome, data = _attempt(
-            case, state, target, len(attempts), stage_observer, audit_only=target == 1.0
+            case,
+            state,
+            target,
+            len(attempts),
+            stage_observer,
+            audit_only=target == 1.0,
+            progress_observer=progress_observer,
         )
         if pending_prediction is not None:
             data["initialization"] = pending_prediction

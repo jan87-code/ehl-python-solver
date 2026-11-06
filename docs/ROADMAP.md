@@ -2423,3 +2423,25 @@ Verification for the 2026-11-06 anisotropic cases/report: full CPU suite
 passed. The new input regression confirms axis order, equal physical domains,
 unchanged physical signatures and node budgets. No GPU validation was run or
 claimed.
+
+The next fixed-domain same-physics sequence is 27x27, 53x53, 105x105 and
+209x209, with exactly doubled intervals and the existing +/-4a domain. Exact
+fraction-one roots have been accepted on the first three grids. Interpolated
+root transfers failed at the initial correction for 27->53 and 53->105, while
+cold runs succeeded; this limits claims about refinement warm starts. The
+first 209x209 run reached fraction 0.9999 in six accepted stages but was
+interrupted before fraction one. Its stale `running` summary and partial
+diagnostics are preserved, not treated as an endpoint. A fresh seeded retry
+and adjacent-grid audits are required before assessing the nested sequence;
+even those results will not establish physical validation or asymptotic
+convergence.
+
+The bounded limited-path runner now has optional progress callbacks and a
+timestamped heartbeat (300 seconds by default; configurable with
+`--progress-interval`). It reports the active attempt/fraction and Newton
+iteration, plus available local-mass and force diagnostics. Its focused
+regressions verify both callback propagation and timed reporting. The required
+full CPU suite passed: **705 passed, 62 skipped**; `ruff check .` and
+`git diff --check` passed. No GPU validation was run or claimed. The 209x209
+retry remains in progress; its outcome and any adjacent-grid comparisons must
+be recorded separately before drawing a resolution conclusion.

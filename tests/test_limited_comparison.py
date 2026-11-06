@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import time
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -13,7 +14,11 @@ from ehl_solver.limited_comparison import compare_fields, file_sha256, load_limi
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from examples.compare_limited_paths import main
-from examples.run_limited_transport_path import _interpolate_limited_seed, resource_preflight
+from examples.run_limited_transport_path import (
+    _interpolate_limited_seed,
+    _ProgressReporter,
+    resource_preflight,
+)
 
 
 def save_fields(folder, case, state):
@@ -251,6 +256,50 @@ def test_registered_anisotropic_50n_cases_refine_one_axis_at_fixed_domain():
     assert 2 * x_case.domain_half_width_y_m / (x_case.ny - 1) == dy_base
     assert 2 * y_case.domain_half_width_y_m / (y_case.ny - 1) < dy_base
     assert 2 * y_case.domain_half_width_x_m / (y_case.nx - 1) == dx_base
+
+
+def test_registered_nested_50n_convergence_cases_preserve_physics_and_double_intervals():
+    root = Path(__file__).parents[1]
+    base = PointContactCase(**json.loads((root / "cases/circular_50n_199.json").read_text()))
+    grids = (27, 53, 105, 209)
+    cases = [
+        PointContactCase(**json.loads((root / f"cases/circular_50n_{n}.json").read_text()))
+        for n in grids
+    ]
+
+    for n, case in zip(grids, cases, strict=True):
+        assert (case.ny, case.nx) == (n, n)
+        assert case.physical_signature() == base.physical_signature()
+        assert case.domain_half_width_x_m == base.domain_half_width_x_m
+        assert case.domain_half_width_y_m == base.domain_half_width_y_m
+        assert n * n <= case.maximum_physical_nodes
+    assert [case.maximum_physical_nodes for case in cases] == [20000, 20000, 20000, 50000]
+
+    for coarse, fine in zip(cases[:-1], cases[1:], strict=True):
+        assert (fine.nx - 1) == 2 * (coarse.nx - 1)
+        assert (fine.ny - 1) == 2 * (coarse.ny - 1)
+        assert 2 * fine.domain_half_width_x_m / (fine.nx - 1) * 2 == (
+            2 * coarse.domain_half_width_x_m / (coarse.nx - 1)
+        )
+        assert 2 * fine.domain_half_width_y_m / (fine.ny - 1) * 2 == (
+            2 * coarse.domain_half_width_y_m / (coarse.ny - 1)
+        )
+
+
+def test_progress_reporter_emits_periodic_solver_status(capsys):
+    audit = {"mass": {"relative_local_balance": 2e-8}, "force_n": 50.0}
+    with _ProgressReporter(0.01) as reporter:
+        reporter.update(3, 0.999, 4, audit, "Newton correction")
+        time.sleep(0.04)
+
+    output = capsys.readouterr().out
+    assert "[progress " in output
+    assert "status=Newton correction" in output
+    assert "attempt=4" in output
+    assert "target_fraction=0.999" in output
+    assert "Newton_iteration=4/30" in output
+    assert "local_mass=2.000e-08" in output
+    assert "force=50N" in output
 
 
 def test_limited_seed_transfer_is_interpolated_unaccepted_and_resource_preflighted(saved):

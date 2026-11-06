@@ -6,8 +6,11 @@ import json
 import platform
 import shutil
 import sys
+import threading
+import time
 import tracemalloc
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +28,67 @@ from ehl_solver.limited_newton import LimitedNewtonError
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json, digest, load_run
+
+
+class _ProgressReporter:
+    def __init__(self, interval_seconds):
+        if (
+            isinstance(interval_seconds, bool)
+            or not np.isfinite(interval_seconds)
+            or interval_seconds <= 0
+        ):
+            raise ValueError("Progress interval must be a finite positive number of seconds")
+        self.interval_seconds = float(interval_seconds)
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._started_at = time.monotonic()
+        self._status = "starting"
+        self._attempt = None
+        self._fraction = None
+        self._iteration = None
+        self._audit = None
+        self._thread = threading.Thread(target=self._run, name="limited-path-progress", daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self._stop.set()
+        self._thread.join()
+
+    def update(self, attempt, fraction, iteration, audit, status):
+        with self._lock:
+            self._attempt = attempt
+            self._fraction = fraction
+            self._iteration = iteration
+            self._audit = audit
+            self._status = status
+
+    def _run(self):
+        while not self._stop.wait(self.interval_seconds):
+            with self._lock:
+                status = self._status
+                attempt = self._attempt
+                fraction = self._fraction
+                iteration = self._iteration
+                audit = self._audit
+            elapsed = time.monotonic() - self._started_at
+            details = [f"status={status}", f"elapsed={elapsed:.0f}s"]
+            if attempt is not None:
+                details.extend(
+                    [f"attempt={attempt + 1}", f"target_fraction={fraction:.9g}"]
+                )
+            if iteration is not None:
+                details.append(f"Newton_iteration={iteration}/30")
+            if audit is not None:
+                mass = audit.get("mass", {})
+                if "relative_local_balance" in mass:
+                    details.append(f"local_mass={mass['relative_local_balance']:.3e}")
+                if "force_n" in audit:
+                    details.append(f"force={audit['force_n']:.9g}N")
+            timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+            print(f"[progress {timestamp}] " + " ".join(details), flush=True)
 
 
 def _interpolate_limited_seed(directory, case):
@@ -270,7 +334,14 @@ def main(
     endpoint_prediction=True,
     limited_seed=None,
     use_measured_peak=True,
+    progress_interval=300.0,
 ):
+    if (
+        isinstance(progress_interval, bool)
+        or not np.isfinite(progress_interval)
+        or progress_interval <= 0
+    ):
+        raise ValueError("Progress interval must be a finite positive number of seconds")
     if seed is not None and limited_seed is not None:
         raise ValueError("Choose either a prototype seed or a limited MC seed, not both")
     seed_metadata = None
@@ -413,10 +484,16 @@ def main(
             return 1
         write()
     try:
-        path = continue_limited_transport(
-            case, initial, maximum_attempts=maximum_attempts, stage_observer=stage,
-            endpoint_prediction=endpoint_prediction,
-        )
+        with _ProgressReporter(progress_interval) as progress:
+            progress.update(None, None, None, None, "continuation starting")
+            path = continue_limited_transport(
+                case,
+                initial,
+                maximum_attempts=maximum_attempts,
+                stage_observer=stage,
+                endpoint_prediction=endpoint_prediction,
+                progress_observer=progress.update,
+            )
         result = path.result
         report.update(
             status="accepted_numerical_root",
@@ -464,6 +541,12 @@ if __name__ == "__main__":
         "--no-measured-peak", dest="use_measured_peak", action="store_false",
         help="Disable measured peak memory tracking during preflight (uses estimate only)"
     )
+    parser.add_argument(
+        "--progress-interval",
+        type=float,
+        default=300.0,
+        help="Emit a progress heartbeat every N seconds (default: 300)",
+    )
     args = parser.parse_args()
     raise SystemExit(
         main(
@@ -471,5 +554,6 @@ if __name__ == "__main__":
             endpoint_prediction=args.endpoint_prediction,
             limited_seed=args.limited_seed,
             use_measured_peak=args.use_measured_peak,
+            progress_interval=args.progress_interval,
         )
     )

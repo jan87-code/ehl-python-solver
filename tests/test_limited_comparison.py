@@ -11,6 +11,7 @@ import pytest
 import ehl_solver
 from ehl_solver.limited_comparison import compare_fields, file_sha256, load_limited_path
 from ehl_solver.limited_system import LimitedLoadProbe
+from ehl_solver.prototype import PointContactCase
 from examples.compare_limited_paths import main
 from examples.run_limited_transport_path import _interpolate_limited_seed, resource_preflight
 
@@ -209,8 +210,6 @@ def test_changed_case_domain_and_coarsening_are_rejected():
 
 
 def test_large_grid_budget_is_explicit_and_does_not_change_physics():
-    from ehl_solver.prototype import PointContactCase
-
     with pytest.raises(ValueError, match="20000-node budget"):
         PointContactCase(ny=173, nx=173)
     PointContactCase(ny=173, nx=173, maximum_physical_nodes=30000)
@@ -223,6 +222,35 @@ def test_large_grid_budget_is_explicit_and_does_not_change_physics():
     for budget in (True, 30000.0, 60000):
         with pytest.raises(ValueError, match="maximum_physical_nodes"):
             PointContactCase(maximum_physical_nodes=budget)
+
+
+def test_registered_anisotropic_50n_cases_refine_one_axis_at_fixed_domain():
+    root = Path(__file__).parents[1]
+    base = PointContactCase(**json.loads((root / "cases/circular_50n_199.json").read_text()))
+    x_case = PointContactCase(
+        **json.loads((root / "cases/circular_50n_199x223.json").read_text())
+    )
+    y_case = PointContactCase(
+        **json.loads((root / "cases/circular_50n_223x199.json").read_text())
+    )
+
+    assert x_case.physical_signature() == base.physical_signature()
+    assert y_case.physical_signature() == base.physical_signature()
+    assert x_case.domain_half_width_x_m == base.domain_half_width_x_m
+    assert x_case.domain_half_width_y_m == base.domain_half_width_y_m
+    assert y_case.domain_half_width_x_m == base.domain_half_width_x_m
+    assert y_case.domain_half_width_y_m == base.domain_half_width_y_m
+    assert (x_case.ny, x_case.nx) == (base.ny, 223)
+    assert (y_case.ny, y_case.nx) == (223, base.nx)
+    assert x_case.nx * x_case.ny == y_case.nx * y_case.ny == 44377
+    assert x_case.nx * x_case.ny <= x_case.maximum_physical_nodes
+    assert y_case.nx * y_case.ny <= y_case.maximum_physical_nodes
+    dx_base = 2 * base.domain_half_width_x_m / (base.nx - 1)
+    dy_base = 2 * base.domain_half_width_y_m / (base.ny - 1)
+    assert 2 * x_case.domain_half_width_x_m / (x_case.nx - 1) < dx_base
+    assert 2 * x_case.domain_half_width_y_m / (x_case.ny - 1) == dy_base
+    assert 2 * y_case.domain_half_width_y_m / (y_case.ny - 1) < dy_base
+    assert 2 * y_case.domain_half_width_x_m / (y_case.nx - 1) == dx_base
 
 
 def test_limited_seed_transfer_is_interpolated_unaccepted_and_resource_preflighted(saved):

@@ -597,3 +597,48 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=src \
 
 The run and comparison bundles are local under `results/`; the comparison
 records source-summary checksums and both independently recomputed audits.
+
+## Directional fixed-domain refinements: 199x223 and 223x199
+
+To separate x and y resolution effects without changing physical boundaries,
+two cases retain the exact 50 N material/fluid inputs and the same +/-4a
+domain. Arrays are `(ny,nx)`: `199x223` refines x, while `223x199` refines y.
+Each has 44,377 nodes and is below the existing 50,000-node cap. Both use the
+accepted 199x199 root as an unaccepted interpolated seed and unchanged exact
+MC equations and acceptance thresholds. Coarse preflights passed with
+adjusted estimates 1,042,314,243 and 1,097,789,678 bytes respectively; no
+measured peak RSS was requested or recorded.
+
+Both exact endpoints pass independently recomputed force, mass,
+complementarity, film and direct-elasticity audits:
+
+| Grid `(ny,nx)` | Accepted/rejected attempts | Force [N] | Local/global mass balance | Minimum / central film [nm] | Direct film discrepancy [m] |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 199x223 (x refined) | 9 / 1 | 50.00000000000000 | 1.561e-11 / 1.063e-15 | 287.077 / 470.678 | 1.482e-20 |
+| 223x199 (y refined) | 9 / 1 | 49.99999999999999 | 4.492e-11 / 1.259e-14 | 287.478 / 469.764 | 1.525e-20 |
+
+Independent bilinear fine-at-coarse audits give:
+
+| Comparison | Pressure L2 / max | Exit pressure L2 / max | Minimum / central film change | Minimum movement (fine cells, x/y) |
+| --- | ---: | ---: | ---: | ---: |
+| 199x199 -> 199x223 (x refinement) | 1.357% / 9.929% | 3.588% / 10.884% | +0.135% / +0.206% | 0.15 / 0.00 |
+| 199x199 -> 223x199 (y refinement) | 1.096% / 9.572% | 2.427% / 10.575% | +0.275% / +0.011% | 1.00 / 0.58 |
+| 199x223 -> 223x223 (then refine y) | 1.140% / 11.208% | 2.563% / 12.210% | +0.275% / +0.011% | 1.00 / 0.58 |
+| 223x199 -> 223x223 (then refine x) | 1.350% / 10.019% | 3.577% / 10.642% | +0.135% / +0.206% | 0.27 / 0.00 |
+
+The x-refinement changes pressure more than y-refinement in these comparisons,
+while both retain pressure L2 changes above the provisional 1% gate. Repeating
+each directional increment against the square 223x223 root shows the same
+ordering. The scalar minimum/central film changes are small, but they do not
+establish field convergence. These non-nested comparisons include bilinear
+sampling effects; they isolate practical directional sensitivity, not a formal
+truncation-error decomposition or continuum limit. There is no physical
+validation claim.
+
+Inputs are [circular_50n_199x223.json](../cases/circular_50n_199x223.json)
+and [circular_50n_223x199.json](../cases/circular_50n_223x199.json). Exact
+paths and four independent comparison bundles are preserved locally under
+`results/limited_mesh_50n_199x223_20261106/`,
+`results/limited_mesh_50n_223x199_20261106/`, and
+`results/limited_comparison_*_20261106/`. Improved resource/peak-memory
+estimation remains deferred to a separate optimization round.

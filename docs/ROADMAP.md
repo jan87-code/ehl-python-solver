@@ -16,13 +16,18 @@ established on multiple grids through 223x223 (49,729 nodes). The new
 199->223 same-domain comparison independently passes root audits, but its
 pressure L2 changes (1.772% overall, 4.530% in the exit region) fail the
 provisional 1% mesh-sensitivity gate; the 141->173 and 173->199 comparisons
-also fail it. Two fixed-spacing, one-axis 50 N domain extensions from a
-173x173 root satisfy the provisional 1%/one-cell gate individually, but the
-simultaneous fixed-spacing
-x/y extension fails it: exit pressure L2 changes by 1.362% and the minimum
-shifts two fine cells in x. The 48-attempt-cap retry reached an exact audited
-root; extending the domain slightly further to 223x223 passes incrementally,
-but the cumulative 173-to-223 comparison still fails the exit-pressure and
+also fail it. New fixed-domain anisotropic refinements (199x223 and 223x199)
+each reach independently audited exact roots. Refining x changes pressure L2
+by 1.357% and exit pressure L2 by 3.588%; refining y changes them by 1.096%
+and 2.427%. Both exceed the provisional 1% gate, and square-grid directional
+increments show the same ordering. Thus x resolution has a larger measured
+effect in these comparisons, but directional pressure sensitivity remains
+unresolved. Earlier fixed-spacing domain comparisons from 173x173 show the
+individual one-axis extensions passing provisionally, while the simultaneous
+x/y extension fails: exit pressure L2 changes by 1.362% and the minimum shifts
+two fine cells in x. The 48-attempt-cap retry reached an exact audited root;
+extending the domain slightly further to 223x223 passes incrementally, but the
+cumulative 173-to-223 comparison still fails the exit-pressure and
 minimum-location limits. The default stage-attempt budget remains 24 (48
 maximum). See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for criteria,
 caveats, and measured results. These are numerical sensitivity results, not
@@ -2403,3 +2408,18 @@ Verification for the 2026-11-06 223-grid endpoint and comparison: full CPU
 suite **701 passed, 62 skipped** (442.57 s); `ruff check .` and
 `git diff --check` passed. The full suite includes the preserved local driver
 edit. No GPU validation was run or claimed.
+
+Next action: the 50 N fixed-domain directional probes show x refinement has
+a larger pressure effect than y refinement but neither direction reaches the
+provisional 1% pressure gate. Do not rerun these four same-domain comparisons
+or raise the node cap. Investigate the next error source using already
+available audit fields (domain extent, non-nested interpolation, pressure
+support/front location and boundary conditions), then propose one distinct,
+bounded benchmark before running it. Broader-load robustness remains a
+separate concern; no physical EHL validation or mesh convergence is established.
+
+Verification for the 2026-11-06 anisotropic cases/report: full CPU suite
+**702 passed, 62 skipped** (373.03 s); `ruff check .` and `git diff --check`
+passed. The new input regression confirms axis order, equal physical domains,
+unchanged physical signatures and node budgets. No GPU validation was run or
+claimed.

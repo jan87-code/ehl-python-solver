@@ -3937,3 +3937,47 @@ verification of a finite-grid root and mesh change, not physical validation.
 Verification: repository-wide `ruff check .` passed; the complete CPU suite
 passed **701 tests with 62 optional skips** in 442.57 s. This run included the
 preserved local driver edit. No GPU validation was run or claimed.
+
+## 35. Fixed-domain directional 50 N refinement (2026-11-06)
+
+The 50 N case was independently solved on anisotropic meshes with the same
+physical inputs and fixed +/-4a domain: `(ny,nx)=199x223` refines the
+entrainment/x direction, and `223x199` refines the transverse/y direction.
+Each grid has 44,377 nodes. The accepted 199x199 exact MC root was used only as
+an interpolated initial guess; it was not promoted as a candidate solution.
+Both continuation paths pass the unchanged exact endpoint/direct-elasticity
+gates. The x-refined path accepts fraction one in ten attempts (one rejection);
+the y-refined path does likewise.
+
+| Grid | Force [N] | Relative local/global mass balance | Complementarity | Minimum / central film [nm] |
+| --- | ---: | ---: | ---: | ---: |
+| 199x223 | 50.00000000000000 | 1.561e-11 / 1.063e-15 | 1.235e-27 | 287.077 / 470.678 |
+| 223x199 | 49.99999999999999 | 4.492e-11 / 1.259e-14 | 1.886e-30 | 287.478 / 469.764 |
+
+Each final direct-source elastic reconstruction agrees with the coupled film
+to <=1.53e-20 m. Independent spatial comparisons against the 199x199 root
+find:
+
+| Refinement | Full pressure L2 / max | Exit pressure L2 / max | Minimum / central film change |
+| --- | ---: | ---: | ---: |
+| x: 199x199 -> 199x223 | 1.357% / 9.929% | 3.588% / 10.884% | +0.135% / +0.206% |
+| y: 199x199 -> 223x199 | 1.096% / 9.572% | 2.427% / 10.575% | +0.275% / +0.011% |
+
+The x-direction refinement causes the larger measured pressure change in this
+pair, though the y refinement also changes pressure beyond the provisional 1%
+gate. Comparing each anisotropic result against the square 223x223 endpoint
+adds one refinement in the other direction and reproduces the ordering: y
+refinement gives 1.140% full / 2.563% exit L2 changes; x refinement gives
+1.350% full / 3.577% exit L2 changes. These are non-nested bilinear
+fine-at-coarse comparisons; they include interpolation effects and are not a
+formal directional truncation-error estimate. Mesh/continuum convergence,
+physical accuracy and experimental validity remain unestablished.
+
+The accepted cases and complete independent comparisons are recorded in
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md). Coarse adjusted resource estimates
+were 1,042,314,243 bytes (x-refined) and 1,097,789,678 bytes (y-refined);
+measured peak RSS remains deliberately deferred to a separate optimization
+round. Verification: full CPU suite **702 passed, 62 skipped** (373.03 s),
+`ruff check .` passed and `git diff --check` passed. The added configuration
+regression checks equal domains, unchanged physical signatures, axis order,
+per-axis spacing and node caps. No GPU validation was run or claimed.

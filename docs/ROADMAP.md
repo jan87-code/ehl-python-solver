@@ -38,9 +38,23 @@ audited donor roots on 33x33, 65x65 and 129x129, with minimum films
 central-film change is -2.927%, and the NASA fluid law and rupture boundary
 are not fully matched. A separate limited-MC path exhausted its 24 attempts
 just short of the exact endpoint; its blended stage is not an MC root.
-These results do not establish benchmark or experimental validation. See
-section 36 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for reproducible
-inputs, audits, assumptions and unresolved limitations.
+These results do not establish benchmark or experimental validation. A
+source audit has since recovered historical fluid inputs in NASA TN D-8166,
+but a reported material-group inconsistency and the different D-8317 load
+prevent treating them as an exact match. A conditional MacLaren PAO4
+experimental-case probe now closes numerically through 129x129, but its final
+minimum/central film changes are +50.32%/+3.28% on refinement, and its
+pressure-viscosity input is fitted from the same film measurements. Neither
+the case nor its correlation comparison is independent experimental validation.
+See sections 36-37 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for
+reproducible inputs, audits, assumptions and unresolved limitations.
+
+Next, obtain independent raw film measurements and high-pressure lubricant
+properties, verify the specimen/boundary conditions and reconcile the NASA
+source discrepancy before a quantitative validation claim. Develop and
+benchmark bounded higher-accuracy transport or multilevel methods to reduce
+mesh error, with unchanged conservation and acceptance gates; do not make a
+larger uniform grid or further outlet-spike study the sole next step.
 The bounded nonlinear adapter and its recovery/acceptance checks remain
 experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate

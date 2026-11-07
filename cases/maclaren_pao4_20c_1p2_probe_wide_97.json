@@ -1,0 +1,17 @@
+{
+  "load_n": 50.0,
+  "radius_m": 0.009525,
+  "contact_modulus_pa": 58749804167.31944,
+  "viscosity_pa_s": 0.03387273504247976,
+  "density_kg_m3": 816.75,
+  "entrainment_m_s": 1.2,
+  "alpha_per_pa": 1.76e-08,
+  "roelands_pressure_pa": 196000000.0,
+  "viscosity_reference_pa_s": 6.31e-05,
+  "ny": 97,
+  "nx": 97,
+  "domain_half_width_x_m": 0.0010950850750188273,
+  "domain_half_width_y_m": 0.0010950850750188273,
+  "transport": "donor",
+  "maximum_physical_nodes": 20000
+}

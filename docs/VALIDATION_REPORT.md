@@ -4069,3 +4069,109 @@ tests, 62 skipped** with BLAS/OpenMP/MKL limited to one thread. The four
 new input regressions check the three sets of dimensionless groups, ambient
 viscosity slope, domain and nested grid consistency. No GPU validation was
 run or claimed.
+
+## 37. Source audit and conditional PAO4 experiment probe (2026-11-07)
+
+**Outcome: reproducible numerical roots, not experimental validation.**
+The published experiment supplies useful operating data, but the
+pressure-viscosity coefficient is fitted from film measurements and the
+computed film is not mesh converged. The further NASA source information
+below also does not make the section-36 case a fully matched benchmark.
+
+### Historical NASA inputs
+
+[NASA TN D-8166](https://ntrs.nasa.gov/api/citations/19760010312/downloads/19760010312.pdf),
+printed p. 13, Table I, specifies equal solid Young's moduli 200 GPa and
+Poisson ratios 0.3, a ball radius of 11.113 mm in both directions, ambient
+viscosity 0.0411 Pa s, Roelands index 0.67, density-law coefficients
+5.83e-10 and 1.68e-9 Pa^-1, and asymptotic isoviscous pressure 45.22 MPa.
+It gives force 10 N and x surface velocity 0.1 m/s; its Table II identifies
+the k=1 opposing surface as flat and gives U=0.1683e-11, W=0.3686e-6,
+G=4522. These are historical source inputs, not the freely chosen SI
+parameterization of section 36.
+
+There is a material-group inconsistency needing resolution: the printed
+moduli yield E*=109.8901 GPa and E'=219.7802 GPa; E'/45.22 MPa is 4860.24,
+not the printed 4522, using the later D-8317 definition G=E'/p_iv,as.
+No cause or correction has been established. D-8166 Table III's k=1 ratio
+is 0.1366 relative to its printed Hmin,L=6.955e-6; **D-8317 explicitly
+reports corrected ellipticity results**. Moreover, the section-36 D-8317
+k=1 row has W=0.1106e-6, not D-8166's W=0.3686e-6. Neither the old ratio
+nor the different-load row is an interchangeable validated target, and we
+have not established that all fluid inputs carry over unchanged. Thus the
+earlier statement that exact inputs were not established remains true for
+the selected D-8317 row, but should not be read as saying no historical
+fluid table exists. The public case adapter currently uses its default
+density coefficients; the historical coefficients have not been silently
+substituted. Differences in rupture and finite boundaries also remain.
+
+### PAO4 conditions and limitations
+
+[MacLaren and Kadiric (2024)](https://doi.org/10.1007/s11249-024-01894-w),
+Tables 1-4 and Fig. 7, motivate a steel/BK7-glass, 50 N, 9.525 mm ball,
+20 C, pure-rolling 1.2 m/s PAO4 probe. The Fig. 7 caption does not itself
+identify the disc; the steel/glass assignment to that figure is a conditional
+interpretation. E*=58.749804 GPa follows from 210 GPa, nu=0.3 steel and
+75 GPa, nu=0.22 glass, giving dry Hertz radius a=182.514 um. The VFT and
+density fits give eta0=0.033872735 Pa s and rho0=816.75 kg/m^3.
+
+Table 3 reports alpha=17.6 GPa^-1, while the Fig. 7 legend rounds it to
+17.5. We conditionally interpret the Table 3 value as the ambient
+logarithmic Roelands slope using reference viscosity 6.31e-5 Pa s and
+pressure scale 196 MPa. This does not establish a measured high-pressure
+viscosity law; the default Dowson-Higginson pressure density and isothermal,
+fully flooded Newtonian model are additional assumptions. Crucially, the
+paper fits alpha to Chittenden's correlation using low-speed film
+measurements, including the range containing 1.2 m/s. Comparing the same
+measurements with this input is therefore circular, not independent
+validation. Figure 7 contains plotted means of five and +/-3 sigma error
+bars, not a tabulated 1.2 m/s target. The supplementary PDF contains graphs,
+not the underlying raw table; the authors state that data are available on
+reasonable request. No value or experimental tolerance has been fabricated.
+
+### Results and reproduction
+
+The donor cases are fixed-temperature SI inputs, with x entrainment and
+arrays ordered (ny,nx). Each root was separately reloaded with a checksum
+and re-audited with SI mass flux and direct source-cell film reconstruction:
+
+| Grid and half-width | Minimum / central film [nm] | Relative local / global mass balance |
+| --- | ---: | ---: |
+| 33x33, 4a | 12.41300 / 174.26474 | 2.671e-12 / 3.623e-17 |
+| 65x65, 4a | 70.65507 / 237.34708 | 2.435e-14 / 1.233e-16 |
+| 129x129, 4a | 106.20606 / 245.12753 | 5.189e-14 / 2.087e-16 |
+| 97x97, 6a | 70.62335 / 237.56843 | 4.179e-14 / 0 |
+
+All four have force 50 N to roundoff, maximum scaled mass defect 5.31e-15,
+maximum complementarity 9.98e-29, and direct film reconstruction discrepancy
+at most 1.49e-20 m. Min/central changes relative to the preceding grid are
++469.20%/+36.20% and +50.32%/+3.28%. The 97x97 wider domain holds the
+65x65 spacing fixed and changes min/central film by approximately
+-0.045%/+0.093%, respectively. This is only one domain comparison on the
+coarser spacing, not a finer-mesh domain-convergence bound. Agreement of
+the 65x65 central film with the solver's Hamrock-Dowson correlation
+(238.233 nm) is not evidence of experimental accuracy or mesh convergence.
+
+The following commands create fresh output directories. Seeds are initial
+guesses only; each target is independently solved and accepted.
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/maclaren_pao4_20c_1p2_probe.json --output results/pao4_33_new --no-plots
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/maclaren_pao4_20c_1p2_probe_65.json --seed results/pao4_33_new --output results/pao4_65_new --no-plots
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/maclaren_pao4_20c_1p2_probe_129.json --seed results/pao4_65_new --output results/pao4_129_new --no-plots
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/maclaren_pao4_20c_1p2_probe_wide_97.json --seed results/pao4_65_new --output results/pao4_wide_97_new --no-plots
+```
+
+Archived local outputs are in `results/maclaren_pao4_20c_1p2_donor_*_20261107/`
+and are not committed. Independently reload with `load_run` and call
+`audit_root(case, root)` to recompute the stated checks. Future work requires
+independently measured pressure-dependent fluid properties and numerical
+experimental data, matched configuration and uncertainty, plus controlled
+mesh and domain error. No GPU or new constitutive physics was added.
+
+Verification: `ruff check .` passed; the complete CPU suite passed **723
+tests, 62 skipped** with BLAS/OpenMP/MKL limited to one thread. Five new
+tests check the three input conversions, nested refinement and fixed-spacing
+domain expansion. Optional device tests were skipped; no GPU result is
+claimed.

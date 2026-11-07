@@ -2435,10 +2435,16 @@ accepted 0.999945 stage (50 N, local mass balance 7.350e-13, direct-elasticity
 check passed) after a rejected 0.99999 attempt. Its following 0.99999 Newton
 stage remained active at iteration 30 after about 3,611 seconds, with no
 completed-stage archive or terminal status. The exact stop cause is unknown;
-the stale `running` summary is not an endpoint. The accepted stage is now
-resumable from a fresh output directory; an in-progress Newton iterate is not
-promoted. Adjacent-grid audits remain necessary and will not by themselves
-establish physical validation or asymptotic convergence.
+the stale `running` summary is not an endpoint. The durable accepted checkpoint
+was resumed after memory headroom was restored; the new path accepted
+0.9999725 and then the exact fraction-one root. The full 27/53/105/209 nested
+sequence now has independently accepted endpoints and shared-node adjacent
+comparisons. Pressure L2 differences are 6.931%, 5.640%, and 4.839%; exit
+pressure L2 differences are 8.167%, 13.968%, and 10.975%. The pressure L2
+trend decreases, but exit-pressure sensitivity is not monotone, minimum-film
+changes are +99.633%, +19.953%, and +2.866%, and the minimum location moves.
+Thus this sequence still does not meet the provisional 1% sensitivity gate or
+establish mesh convergence, continuum accuracy, or physical validation.
 
 The bounded limited-path runner now has optional progress callbacks and a
 timestamped heartbeat (300 seconds by default; configurable with
@@ -2455,6 +2461,8 @@ resume fraction, and interruption summary. The full CPU suite passed:
 **711 passed, 62 skipped** (434.02 s); `ruff check .` and `git diff --check`
 passed. No GPU validation was run or claimed. The first restart loaded the
 209x209 checkpoint but its resource preflight rejected the run (1.153 GB
-adjusted estimate versus 665 MB ceiling); no nonlinear stage was started. The
-exact endpoint and adjacent-grid comparisons remain pending, so no resolution
-conclusion is drawn.
+adjusted estimate versus 665 MB ceiling); no nonlinear stage was started. A
+subsequent retry passed preflight and completed the exact endpoint. The nested
+adjacent-grid comparisons are documented in [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md);
+they show continuing material sensitivity and do not support a resolution
+conclusion.

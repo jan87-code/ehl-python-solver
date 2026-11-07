@@ -682,6 +682,35 @@ were available at the post-factorization check; the 75% memory ceiling was
 rejection, not a solver convergence failure; the attempt is archived at
 `results/limited_mesh_50n_209_nested_retry_20261107/`.
 
+After memory was freed, the next restart passed preflight (adjusted estimate
+1,153,223,608 bytes; 2,297,647,104 bytes available at the check; 1,723,235,328
+byte ceiling). Starting from the accepted 0.999945 checkpoint, it accepted
+0.9999725 and then the exact fraction-one root in two attempts. The endpoint
+passes the independent exact-MC audit: force 50 N, relative local/global mass
+balance 9.332e-11/3.121e-14, complementarity 2.101e-30, and direct film
+reconstruction discrepancy 1.906e-20 m. Its minimum/central films are
+287.062/470.179 nm. The path used one CPU thread; no peak-RSS guarantee is
+implied by its coarse preflight.
+
+All adjacent grids in the 27x27 -> 53x53 -> 105x105 -> 209x209 sequence now
+have independently accepted exact fraction-one endpoints. The fine-at-coarse
+shared-node comparisons are:
+
+| Comparison | Pressure L2 | Exit pressure L2 | Minimum film change | Central film change | Minimum location `(x/a, |y|/a)`, coarse -> fine |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 27x27 -> 53x53 | 6.931% | 8.167% | +99.633% | +63.799% | (0.000, 0.923) -> (0.308, 0.769) |
+| 53x53 -> 105x105 | 5.640% | 13.968% | +19.953% | +12.586% | (0.308, 0.769) -> (0.231, 0.846) |
+| 105x105 -> 209x209 | 4.839% | 10.975% | +2.866% | +2.922% | (0.231, 0.846) -> (0.269, 0.808) |
+
+The pressure L2 differences decrease, but exit-pressure changes are not
+monotone and remain large; minimum locations also move. The coarsest grid's
+minimum film nearly doubles on the first refinement. Therefore, the observed
+sequence does not meet the provisional 1% field-sensitivity gate and does not
+establish mesh convergence, continuum accuracy, or physical validation. All
+three comparisons use shared nodes on the same physical domain, with
+independently recomputed exact-root audits. The JSON reports and source
+checksums are preserved under `results/limited_comparison_50n_*_nested_20261107/`.
+
 The bounded runner now supports timestamped progress heartbeats. By default it
 reports every 300 seconds, including elapsed time, current continuation
 attempt/fraction, Newton iteration and available mass/force audit values.
@@ -708,4 +737,7 @@ it. A hard kill or power loss cannot write a terminal reason, but the latest
 atomic accepted-stage checkpoint remains available. In that case the source
 summary may still say `running`; the new run records that source status and
 does not guess at the stop cause. An in-progress Newton iterate is not an
-accepted state and is not promoted or resumed.
+accepted state and is not promoted or resumed. The successful resumed endpoint
+and adjacent-grid comparisons are archived under
+`results/limited_mesh_50n_209_nested_retry2_20261107/` and
+`results/limited_comparison_50n_*_nested_20261107/`, respectively.

@@ -2446,6 +2446,16 @@ changes are +99.633%, +19.953%, and +2.866%, and the minimum location moves.
 Thus this sequence still does not meet the provisional 1% sensitivity gate or
 establish mesh convergence, continuum accuracy, or physical validation.
 
+A nearby comparison of the nested 209x209 endpoint with the existing
+same-physics/domain 223x223 endpoint required no new root solve. The grids are
+non-nested and use bilinear fine-at-coarse sampling; pressure L2 changes by
+1.808% overall and 4.008% in the exit region, while minimum/central film
+changes are +0.281%/+0.118%. The small scalar changes therefore do not imply
+pressure convergence; the field differences remain above the provisional
+1% gate. This is not a formal error estimate. Inspect support/front and
+boundary effects before proposing a substantially larger grid. Full audits
+and limitations are in [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md).
+
 The bounded limited-path runner now has optional progress callbacks and a
 timestamped heartbeat (300 seconds by default; configurable with
 `--progress-interval`). It reports the active attempt/fraction and Newton

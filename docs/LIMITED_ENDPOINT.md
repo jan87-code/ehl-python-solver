@@ -711,6 +711,29 @@ three comparisons use shared nodes on the same physical domain, with
 independently recomputed exact-root audits. The JSON reports and source
 checksums are preserved under `results/limited_comparison_50n_*_nested_20261107/`.
 
+## 209x209 to existing 223x223 endpoint
+
+To check whether the nearby 50k-node root changes the nested-grid picture
+without another nonlinear solve, the accepted 209x209 endpoint was compared
+against the existing 223x223 endpoint. Both use the same 50 N physics and
+fixed +/-4a domain and independently pass the exact MC, mass, force,
+complementarity and direct-elasticity audits. The grids are non-nested, so the
+fine pressure is bilinearly interpolated to coarse nodes:
+
+| Comparison | Pressure L2 / max | Exit pressure L2 / max | Minimum / central film change | Minimum location `(x/a, |y|/a)`, coarse -> fine |
+| --- | ---: | ---: | ---: | --- |
+| 209x209 -> 223x223 | 1.808% / 11.647% | 4.008% / 12.338% | +0.281% / +0.118% | (0.269, 0.808) -> (0.252, 0.829) |
+
+This nearby higher-resolution comparison shows smaller scalar-film changes,
+but pressure and exit-region differences remain above the provisional 1% gate.
+The minimum moves by about 0.017a in x and 0.021a in |y|. Since this is a
+non-nested comparison and not an independent truncation-error estimate, it
+does not establish convergence or explain the larger nested-grid exit
+sensitivity. A localized support/front and boundary-condition diagnostic is
+still warranted before deciding on a much larger grid. The independently
+audited comparison bundle and source-summary checksums are preserved under
+`results/limited_comparison_50n_209_to_223_20261107/`.
+
 The bounded runner now supports timestamped progress heartbeats. By default it
 reports every 300 seconds, including elapsed time, current continuation
 attempt/fraction, Newton iteration and available mass/force audit values.

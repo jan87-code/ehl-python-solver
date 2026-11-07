@@ -10,47 +10,30 @@ line contact, transient isothermal behavior, steady TEHL and combined transient
 TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
-Current numerical priority is broader-load limited-flux cavitation-front
-robustness and measured mesh/domain sensitivity. Exact 50 N endpoints are
-established on multiple grids through 223x223 (49,729 nodes). The new
-199->223 same-domain comparison independently passes root audits, but its
-pressure L2 changes (1.772% overall, 4.530% in the exit region) fail the
-provisional 1% mesh-sensitivity gate; the 141->173 and 173->199 comparisons
-also fail it. New fixed-domain anisotropic refinements (199x223 and 223x199)
-each reach independently audited exact roots. Refining x changes pressure L2
-by 1.357% and exit pressure L2 by 3.588%; refining y changes them by 1.096%
-and 2.427%. Both exceed the provisional 1% gate, and square-grid directional
-increments show the same ordering. Thus x resolution has a larger measured
-effect in these comparisons, but directional pressure sensitivity remains
-unresolved. Earlier fixed-spacing domain comparisons from 173x173 show the
-individual one-axis extensions passing provisionally, while the simultaneous
-x/y extension fails: exit pressure L2 changes by 1.362% and the minimum shifts
-two fine cells in x. The 48-attempt-cap retry reached an exact audited root;
-extending the domain slightly further to 223x223 passes incrementally, but the
-cumulative 173-to-223 comparison still fails the exit-pressure and
-minimum-location limits. The default stage-attempt budget remains 24 (48
-maximum). A new shared-node localization audit of the exact 105x105 and
-209x209 roots finds that 71.95% of their squared pressure difference lies in
-the inner half of the exit window (`0.5 <= x/a < 1`, `|y/a| <= 1.2`), with the
-maximum difference 210.8 MPa at `(x/a,y/a)=(0.846,0)`. The pressure error
-there is present while both sampled cells are full-film; four cavitation
-classifications differ elsewhere. First-cavitated sample positions across
-shared transverse rows move by at most 0.0769a (one coarse or two fine x
-intervals); these are nodal positions, not subcell front estimates. This
-localizes the leading pressure sensitivity to the downstream shoulder of an
-exit pressure ridge. The independently reported native-grid maxima are
-750.8 MPa at `x/a=0.6154, |y/a|=0.4615` (105x105) and 801.0 MPa at
-`x/a=0.6154, |y/a|=0.5` (209x209), followed by an exit film constriction and
-pressure fall. This morphology is consistent with an expected
-Petrusevich-type outlet spike; it should be resolved and characterized, not
-smoothed away. The sampled peak height differs by about 6.7%; its width and
-continuum profile are not yet established, and the values are not physically
-validated. A bounded directional-refinement study is the next numerical step,
-not an immediate uniform 417x417 solve. See
-[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the evidence, caveats, and
-reproducible diagnostics. These are numerical sensitivity results, not
-physical accuracy claims. The bounded nonlinear adapter and its
-recovery/acceptance checks are experimental. The existing CLI already has an
+Current priority is **benchmark-led physical validation**, not further
+outlet-spike or uniform-grid refinement. The exact 50 N endpoints through
+223x223 and the directional probes are useful sensitivity evidence, but they
+do not meet the provisional pressure-mesh gate or validate physical accuracy.
+The 105x105/209x209 outlet feature is morphologically consistent with an
+expected Petrusevich-type pressure spike; preserve it and defer additional
+spike-focused work. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the
+recorded measurements and caveats.
+
+The next numerical milestone is to select and reproduce a published
+fully-flooded point-contact benchmark with matched definitions and inputs.
+First verify the benchmark's SI conversions, Roelands viscosity and
+pressure-dependent density laws, derivatives, geometry, and supply/boundary
+conditions against their source equations. Then run a bounded CPU reference
+case and compare the reported minimum/central film metrics with the published
+numerical results, keeping nonlinear residual, load balance, boundary/domain
+error, and mesh error separate. NASA TN D-8049 and TN D-8317 are the current
+candidate formulation and target table; see
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md) for the known readiness gaps.
+Do not call this physical validation if the benchmark assumptions or
+acceptance tolerances are not matched. Real-experiment validation remains a
+later step requiring measured pressure/film data and complete test conditions.
+The bounded nonlinear adapter and its recovery/acceptance checks remain
+experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.
 
@@ -2427,14 +2410,15 @@ suite **701 passed, 62 skipped** (442.57 s); `ruff check .` and
 `git diff --check` passed. The full suite includes the preserved local driver
 edit. No GPU validation was run or claimed.
 
-Next action: the 50 N fixed-domain directional probes show x refinement has
-a larger pressure effect than y refinement but neither direction reaches the
-provisional 1% pressure gate. Do not rerun these four same-domain comparisons
-or raise the node cap. Investigate the next error source using already
-available audit fields (domain extent, non-nested interpolation, pressure
-support/front location and boundary conditions), then propose one distinct,
-bounded benchmark before running it. Broader-load robustness remains a
-separate concern; no physical EHL validation or mesh convergence is established.
+Priority update: defer further 50 N outlet-spike and same-domain directional
+refinement. The next development increment is the benchmark-matched
+fully-flooded point-contact validation described at the top of this roadmap:
+verify source equations/units and constitutive laws first, then establish a
+bounded case with matched geometry, operating conditions, supply and boundary
+assumptions before comparing published film metrics. Retain all existing
+50 N/200 N sensitivity evidence; do not treat it as physical validation or
+mesh convergence. Real experimental comparison requires measured data and
+test conditions not currently present in the repository.
 
 Verification for the 2026-11-06 anisotropic cases/report: full CPU suite
 **702 passed, 62 skipped** (373.03 s); `ruff check .` and `git diff --check`

@@ -2430,18 +2430,29 @@ fraction-one roots have been accepted on the first three grids. Interpolated
 root transfers failed at the initial correction for 27->53 and 53->105, while
 cold runs succeeded; this limits claims about refinement warm starts. The
 first 209x209 run reached fraction 0.9999 in six accepted stages but was
-interrupted before fraction one. Its stale `running` summary and partial
-diagnostics are preserved, not treated as an endpoint. A fresh seeded retry
-and adjacent-grid audits are required before assessing the nested sequence;
-even those results will not establish physical validation or asymptotic
-convergence.
+interrupted before fraction one. A later heartbeat-enabled retry reached an
+accepted 0.999945 stage (50 N, local mass balance 7.350e-13, direct-elasticity
+check passed) after a rejected 0.99999 attempt. Its following 0.99999 Newton
+stage remained active at iteration 30 after about 3,611 seconds, with no
+completed-stage archive or terminal status. The exact stop cause is unknown;
+the stale `running` summary is not an endpoint. The accepted stage is now
+resumable from a fresh output directory; an in-progress Newton iterate is not
+promoted. Adjacent-grid audits remain necessary and will not by themselves
+establish physical validation or asymptotic convergence.
 
 The bounded limited-path runner now has optional progress callbacks and a
 timestamped heartbeat (300 seconds by default; configurable with
 `--progress-interval`). It reports the active attempt/fraction and Newton
-iteration, plus available local-mass and force diagnostics. Its focused
-regressions verify both callback propagation and timed reporting. The required
-full CPU suite passed: **705 passed, 62 skipped**; `ruff check .` and
-`git diff --check` passed. No GPU validation was run or claimed. The 209x209
-retry remains in progress; its outcome and any adjacent-grid comparisons must
-be recorded separately before drawing a resolution conclusion.
+iteration, plus available local-mass and force diagnostics. Completed stage
+archives and the latest accepted state are written atomically. `Ctrl+C` and
+`SIGTERM` record an explicit interrupted status, reason, and latest progress;
+`--resume-from` verifies and independently re-audits the latest completed
+accepted checkpoint in a fresh output directory. Forced termination cannot
+record a reason, but the prior accepted checkpoint remains resumable and the
+new run labels the source status as unknown-ended rather than guessing.
+Regressions cover timed reporting, callback propagation, checkpoint checksum,
+resume fraction, and interruption summary. The full CPU suite passed:
+**711 passed, 62 skipped** (434.02 s); `ruff check .` and `git diff --check`
+passed. No GPU validation was run or claimed. The 209x209 retry's outcome and
+adjacent-grid comparisons remain pending before drawing a resolution
+conclusion.

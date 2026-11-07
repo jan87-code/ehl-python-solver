@@ -173,6 +173,44 @@ def test_progress_observer_receives_stage_and_newton_status(cold_path, monkeypat
     assert events[2][4] == "accepted_stage"
 
 
+def test_continuation_resumes_from_a_reaudited_accepted_fraction(cold_path, monkeypatch):
+    _, stages = cold_path
+    checkpoint = stages[1]
+    seen = []
+
+    def solve(case, state, **kwargs):
+        seen.append((kwargs["transport_fraction"], state.copy()))
+        return replace(checkpoint, transport_fraction=kwargs["transport_fraction"])
+
+    monkeypatch.setattr(module, "solve_limited_load", solve)
+    with pytest.raises(module.LimitedPathError) as exc:
+        module.continue_limited_transport(
+            checkpoint.case,
+            checkpoint.state,
+            maximum_attempts=1,
+            endpoint_prediction=False,
+            initial_transport_fraction=checkpoint.transport_fraction,
+        )
+
+    assert len(seen) == 1
+    assert seen[0][0] == 0.75
+    np.testing.assert_array_equal(seen[0][1], checkpoint.state)
+    assert exc.value.last_result.transport_fraction == 0.75
+
+
+@pytest.mark.parametrize(
+    "fraction,state",
+    [(True, np.zeros(3)), (1.0, np.zeros(3)), (0.5, None)],
+)
+def test_invalid_continuation_resume_metadata_is_rejected(fraction, state):
+    with pytest.raises(ValueError, match="Resuming requires"):
+        module.continue_limited_transport(
+            PointContactCase(),
+            state,
+            initial_transport_fraction=fraction,
+        )
+
+
 def test_prediction_can_be_disabled_without_changing_retry_seeds(cold_path, monkeypatch):
     _, stages = cold_path
     first, second = stages[:2]

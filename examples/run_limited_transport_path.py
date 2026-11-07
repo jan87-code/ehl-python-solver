@@ -3,8 +3,10 @@
 import argparse
 import gc
 import json
+import os
 import platform
 import shutil
+import signal
 import sys
 import threading
 import time
@@ -28,6 +30,21 @@ from ehl_solver.limited_newton import LimitedNewtonError
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json, digest, load_run
+
+
+class _RunInterrupted(KeyboardInterrupt):
+    pass
+
+
+def _termination_handler(signum, _frame):
+    name = signal.Signals(signum).name
+    raise _RunInterrupted(f"Received {name}")
+
+
+def _write_json_atomic(path, data):
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(clean_json(data), indent=2, allow_nan=False))
+    os.replace(temporary, path)
 
 
 class _ProgressReporter:
@@ -137,6 +154,57 @@ def _interpolate_limited_seed(directory, case):
         accepted_for_target=False,
         physical_offset_m=float(offset_m),
     )
+
+
+def _load_resume_checkpoint(directory, case):
+    summary_path = Path(directory) / "summary.json"
+    summary = json.loads(summary_path.read_text())
+    if summary.get("status") == "accepted_numerical_root":
+        raise ValueError("A completed numerical root is not a resumable partial path")
+    if PointContactCase(**summary["case"]) != case:
+        raise ValueError("Resume checkpoint and target case must match exactly")
+    stages = summary.get("stages", [])
+    for index in range(len(stages) - 1, -1, -1):
+        stage = stages[index]
+        if stage.get("status") != "accepted_stage":
+            continue
+        fraction = stage.get("transport_fraction")
+        if (
+            isinstance(fraction, bool)
+            or not isinstance(fraction, (int, float))
+            or not np.isfinite(fraction)
+            or fraction >= 1
+            or fraction < 0
+            or PointContactCase(**stage["case"]) != case
+        ):
+            if fraction == 1:
+                raise ValueError("Latest completed stage is already an exact endpoint")
+            raise ValueError("Latest accepted resume stage has invalid metadata")
+        state_path = Path(directory) / f"attempt_{index:03d}" / "state.npz"
+        if digest(state_path) != stage.get("state_sha256"):
+            raise ValueError("Latest accepted resume checkpoint checksum does not match")
+        with np.load(state_path, allow_pickle=False) as saved:
+            if "state_dimensionless" not in saved:
+                raise ValueError("Resume checkpoint has no dimensionless state")
+            state = np.array(saved["state_dimensionless"], dtype=np.float64, copy=True)
+        expected_size = 2 * (case.ny - 2) * (case.nx - 2) + 1
+        if state.shape != (expected_size,) or not np.all(np.isfinite(state)):
+            raise ValueError("Resume checkpoint state has invalid shape or values")
+        metadata = dict(
+            directory=str(directory),
+            source_status=summary.get("status"),
+            source_stop_note=(
+                "The source summary has no terminal status; its stop cause is unknown."
+                if summary.get("status") == "running"
+                else None
+            ),
+            summary_sha256=digest(summary_path),
+            stage_index=index,
+            transport_fraction=float(fraction),
+            state_sha256=stage["state_sha256"],
+        )
+        return state, float(fraction), metadata
+    raise ValueError("Resume directory has no completed accepted stage below fraction one")
 
 
 def _payload_bytes(matrix):
@@ -333,6 +401,7 @@ def main(
     *,
     endpoint_prediction=True,
     limited_seed=None,
+    resume_from=None,
     use_measured_peak=True,
     progress_interval=300.0,
 ):
@@ -342,10 +411,22 @@ def main(
         or progress_interval <= 0
     ):
         raise ValueError("Progress interval must be a finite positive number of seconds")
-    if seed is not None and limited_seed is not None:
-        raise ValueError("Choose either a prototype seed or a limited MC seed, not both")
+    if sum(value is not None for value in (seed, limited_seed, resume_from)) > 1:
+        raise ValueError(
+            "Choose only one of a prototype seed, limited MC seed, or resume checkpoint"
+        )
     seed_metadata = None
-    if limited_seed is not None:
+    resume_fraction = 0.0
+    if resume_from is not None:
+        summary = json.loads((resume_from / "summary.json").read_text())
+        saved_case = PointContactCase(**summary["case"])
+        case = (
+            PointContactCase(**json.loads(case_path.read_text()))
+            if case_path is not None
+            else saved_case
+        )
+        initial, resume_fraction, seed_metadata = _load_resume_checkpoint(resume_from, case)
+    elif limited_seed is not None:
         if case_path is None:
             raise ValueError("A target case is required when refining an MC seed")
         case = PointContactCase(**json.loads(case_path.read_text()))
@@ -377,14 +458,16 @@ def main(
         case=asdict(case),
         operator_transport="limited_capacity_target",
         target_transport_fraction=1.0,
+        initial_transport_fraction=resume_fraction,
         initial_state_accepted_for_target=False,
         seed=(
             seed_metadata
-            if limited_seed is not None
+            if limited_seed is not None or resume_from is not None
             else None
             if seed is None
             else dict(path=str(seed), sha256=digest(seed / "solution.npz"))
         ),
+        resume_checkpoint=seed_metadata if resume_from is not None else None,
         maximum_attempts=maximum_attempts,
         maximum_physical_nodes=case.maximum_physical_nodes,
         endpoint_prediction_enabled=endpoint_prediction,
@@ -412,9 +495,7 @@ def main(
     report["driver_sha256"] = digest(__file__)
 
     def write():
-        (output / "summary.json").write_text(
-            json.dumps(clean_json(report), indent=2, allow_nan=False)
-        )
+        _write_json_atomic(output / "summary.json", report)
 
     def stage(index, stage_case, fraction, outcome):
         folder = output / f"attempt_{index:03d}"
@@ -423,17 +504,21 @@ def main(
         p, t, h = probe.fields(outcome.state)
         probe.system.sync(outcome.state)
         _, _, _, w, offset = probe.system.base.unpack(outcome.state[:-1])
-        np.savez_compressed(
-            folder / "state.npz",
-            state_dimensionless=outcome.state,
-            pressure_pa=p,
-            theta=t,
-            film_m=h,
-            displacement_m=w,
-            offset_m=offset,
-            x_m=probe.system.problem.x_m,
-            y_m=probe.system.problem.y_m,
-        )
+        state_path = folder / "state.npz"
+        temporary_state_path = folder / "state.npz.tmp"
+        with temporary_state_path.open("wb") as stream:
+            np.savez_compressed(
+                stream,
+                state_dimensionless=outcome.state,
+                pressure_pa=p,
+                theta=t,
+                film_m=h,
+                displacement_m=w,
+                offset_m=offset,
+                x_m=probe.system.problem.x_m,
+                y_m=probe.system.problem.y_m,
+            )
+        os.replace(temporary_state_path, state_path)
         info = dict(
             case=asdict(stage_case),
             transport_fraction=fraction,
@@ -446,53 +531,82 @@ def main(
         )
         if isinstance(outcome, LimitedNewtonError):
             info["reason"] = str(outcome)
-        (folder / "summary.json").write_text(
-            json.dumps(clean_json(info), indent=2, allow_nan=False)
-        )
+        _write_json_atomic(folder / "summary.json", info)
         report["stages"].append({k: v for k, v in info.items() if k != "history"})
+        if info["status"] == "accepted_stage" and fraction < 1:
+            checkpoint_path = output / "last_accepted_state.npz"
+            temporary_checkpoint_path = output / "last_accepted_state.npz.tmp"
+            shutil.copyfile(state_path, temporary_checkpoint_path)
+            os.replace(temporary_checkpoint_path, checkpoint_path)
+            report["latest_accepted_checkpoint"] = dict(
+                stage_index=index,
+                transport_fraction=fraction,
+                state_file=checkpoint_path.name,
+                state_sha256=digest(checkpoint_path),
+            )
         write()
 
     write()
-    if case.maximum_physical_nodes > 20000:
-        # For preflight on large grids without a seed, create a default initial state
-        if initial is None:
-            preflight_probe = LimitedLoadProbe(case, transport_fraction=0.0)
-            initial_for_preflight = np.ones(2 * preflight_probe.n + 1) * 0.5
-            initial_for_preflight[-1] = 0.1  # offset
-        else:
-            initial_for_preflight = initial
-        try:
-            preflight = resource_preflight(
-                case, initial_for_preflight, use_measured_peak=use_measured_peak
-            )
-        except (MemoryError, OSError, RuntimeError, ValueError) as exc:
-            report.update(
-                status="rejected_preflight",
-                preflight_error=f"{type(exc).__name__}: {exc}",
-            )
-            write()
-            print(report["status"], report["preflight_error"], flush=True)
-            return 1
-        report["resource_preflight"] = preflight
-        if not preflight["passed"]:
-            report.update(
-                status="rejected_preflight",
-                reason="Sparse-factor/resource preflight failed",
-            )
-            write()
-            print(report["status"], report["reason"], flush=True)
-            return 1
-        write()
+    active_progress = {}
+    previous_sigterm = signal.signal(signal.SIGTERM, _termination_handler)
+    result = None
     try:
+        if case.maximum_physical_nodes > 20000:
+            if initial is None:
+                preflight_probe = LimitedLoadProbe(case, transport_fraction=0.0)
+                initial_for_preflight = np.ones(2 * preflight_probe.n + 1) * 0.5
+                initial_for_preflight[-1] = 0.1
+            else:
+                initial_for_preflight = initial
+            try:
+                preflight = resource_preflight(
+                    case, initial_for_preflight, use_measured_peak=use_measured_peak
+                )
+            except (MemoryError, OSError, RuntimeError, ValueError) as exc:
+                report.update(
+                    status="rejected_preflight",
+                    preflight_error=f"{type(exc).__name__}: {exc}",
+                )
+                write()
+                print(report["status"], report["preflight_error"], flush=True)
+                return 1
+            report["resource_preflight"] = preflight
+            if not preflight["passed"]:
+                report.update(
+                    status="rejected_preflight",
+                    reason="Sparse-factor/resource preflight failed",
+                )
+                write()
+                print(report["status"], report["reason"], flush=True)
+                return 1
+            write()
+
+        def observe_progress(attempt, fraction, iteration, audit, status):
+            progress.update(attempt, fraction, iteration, audit, status)
+            active_progress.update(
+                attempt=attempt,
+                transport_fraction=fraction,
+                newton_iteration=iteration,
+                status=status,
+                updated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+                relative_local_balance=(
+                    None
+                    if audit is None
+                    else audit.get("mass", {}).get("relative_local_balance")
+                ),
+                force_n=None if audit is None else audit.get("force_n"),
+            )
+
         with _ProgressReporter(progress_interval) as progress:
-            progress.update(None, None, None, None, "continuation starting")
+            observe_progress(None, None, None, None, "continuation starting")
             path = continue_limited_transport(
                 case,
                 initial,
                 maximum_attempts=maximum_attempts,
                 stage_observer=stage,
                 endpoint_prediction=endpoint_prediction,
-                progress_observer=progress.update,
+                progress_observer=observe_progress,
+                initial_transport_fraction=resume_fraction,
             )
         result = path.result
         report.update(
@@ -510,6 +624,18 @@ def main(
             last_accepted_fraction=None if result is None else result.transport_fraction,
             last_stage_audit=None if result is None else result.audit,
         )
+    except KeyboardInterrupt as exc:
+        checkpoint = report.get("latest_accepted_checkpoint")
+        report.update(
+            status="interrupted",
+            reason=str(exc) or "Received KeyboardInterrupt",
+            last_progress=active_progress or None,
+            last_accepted_fraction=(
+                None if checkpoint is None else checkpoint["transport_fraction"]
+            ),
+        )
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
     if result is not None:
         np.savez_compressed(output / "last_accepted_state.npz", state_dimensionless=result.state)
         report["last_accepted_state_sha256"] = digest(output / "last_accepted_state.npz")
@@ -527,6 +653,11 @@ if __name__ == "__main__":
     parser.add_argument("--case", type=Path)
     parser.add_argument("--seed", type=Path)
     parser.add_argument("--limited-seed", type=Path)
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        help="Resume at the latest completed accepted stage in an interrupted run",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--max-attempts",
@@ -553,6 +684,7 @@ if __name__ == "__main__":
             args.case, args.seed, args.output, args.max_attempts,
             endpoint_prediction=args.endpoint_prediction,
             limited_seed=args.limited_seed,
+            resume_from=args.resume_from,
             use_measured_peak=args.use_measured_peak,
             progress_interval=args.progress_interval,
         )

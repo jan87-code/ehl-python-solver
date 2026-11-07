@@ -12,7 +12,12 @@ from types import SimpleNamespace
 import numpy as np
 
 from ehl_solver.limited_audit import audit_limited_state
-from ehl_solver.limited_newton import LimitedNewtonError, LimitedObserverError, solve_limited_load
+from ehl_solver.limited_newton import (
+    LimitedNewtonError,
+    LimitedNewtonResult,
+    LimitedObserverError,
+    solve_limited_load,
+)
 from ehl_solver.limited_system import LimitedLoadProbe
 
 MAXIMUM_STAGE_ATTEMPTS = 48
@@ -199,7 +204,7 @@ def _endpoint_prediction(previous, last):
 
 def continue_limited_transport(
     case, initial_state=None, *, maximum_attempts=24, stage_observer=None,
-    endpoint_prediction=True, progress_observer=None,
+    endpoint_prediction=True, progress_observer=None, initial_transport_fraction=0.0,
 ):
     """Conservative donor->MC homotopy, plus bounded bisection/rollback.
 
@@ -213,6 +218,14 @@ def continue_limited_transport(
         raise ValueError("progress_observer must be callable")
     if type(endpoint_prediction) is not bool:
         raise ValueError("endpoint_prediction must be boolean")
+    if (
+        isinstance(initial_transport_fraction, bool)
+        or not isinstance(initial_transport_fraction, (int, float, np.number))
+        or not np.isfinite(initial_transport_fraction)
+        or not 0 <= initial_transport_fraction < 1
+        or (initial_transport_fraction > 0 and initial_state is None)
+    ):
+        raise ValueError("Resuming requires a finite accepted fraction in [0,1) and its state")
     pending = [
         0.0,
         0.5,
@@ -232,6 +245,18 @@ def continue_limited_transport(
     pending_prediction = None
     failure = None
     state = None if initial_state is None else np.array(initial_state, dtype=np.float64, copy=True)
+    if initial_transport_fraction > 0:
+        probe = LimitedLoadProbe(case, transport_fraction=initial_transport_fraction)
+        audit = audit_limited_state(probe, state, direct=True)
+        if (
+            not audit["numerically_accepted"]
+            or audit["mass"]["relative_local_balance"] > 1e-12
+        ):
+            raise ValueError("Resume state fails the independent accepted-stage audit")
+        state.setflags(write=False)
+        last = LimitedNewtonResult(case, state, (), audit, initial_transport_fraction)
+        state = last.state.copy()
+        pending = []
     while len(attempts) < maximum_attempts:
         if not pending:
             if last is None:

@@ -663,17 +663,41 @@ A fresh retry is required before any 105->209 comparison. Even if all roots are
 obtained, the sequence is evidence for observed grid sensitivity, not physical
 validation or asymptotic convergence by itself.
 
+The later heartbeat-enabled retry started from 105x105, passed the 209-grid
+resource preflight and recorded a durable accepted 0.999945 stage after an
+initial rejection at 0.99999. The checkpoint independently reports exactly
+50 N, local mass balance 7.350e-13 and direct-elasticity verification. Its
+following 0.99999 Newton attempt was still active at iteration 30 after about
+3,611 seconds. No completed stage archive or terminal status followed; the
+summary remains `running`, so the stop cause is unknown and the fraction-one
+endpoint was not established. The resumable state is the accepted stage, not
+the in-progress Newton iterate. It is the source for the fresh-output resume
+command below.
+
 The bounded runner now supports timestamped progress heartbeats. By default it
 reports every 300 seconds, including elapsed time, current continuation
 attempt/fraction, Newton iteration and available mass/force audit values.
 Override the interval with `--progress-interval SECONDS`; the normal final
-accepted/rejected status is still emitted when the run exits. For example:
+accepted/rejected status is still emitted when the run exits.
+Every completed stage is archived atomically; the latest accepted state and
+its fraction are also recorded as a restart checkpoint. `Ctrl+C` and `SIGTERM`
+write `status="interrupted"`, the interruption reason and the last progress
+snapshot. A fresh run can resume from the latest completed accepted stage
+without changing the original results directory:
 
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
   .venv/bin/python examples/run_limited_transport_path.py \
   --case cases/circular_50n_209.json \
-  --limited-seed results/limited_mesh_50n_105_nested_cold48_20261106 \
-  --output results/limited_mesh_50n_209_nested_retry_20261106 \
+  --resume-from results/limited_mesh_50n_209_nested_retry_20261106 \
+  --output results/limited_mesh_50n_209_nested_retry_20261107 \
   --no-measured-peak --progress-interval 300
 ```
+
+The resume loader checks the case, completed-stage status, state checksum and
+state shape; continuation independently re-audits the checkpoint before using
+it. A hard kill or power loss cannot write a terminal reason, but the latest
+atomic accepted-stage checkpoint remains available. In that case the source
+summary may still say `running`; the new run records that source status and
+does not guess at the stop cause. An in-progress Newton iterate is not an
+accepted state and is not promoted or resumed.

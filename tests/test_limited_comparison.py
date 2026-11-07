@@ -10,12 +10,14 @@ import numpy as np
 import pytest
 
 import ehl_solver
+import examples.run_limited_transport_path as limited_runner
 from ehl_solver.limited_comparison import compare_fields, file_sha256, load_limited_path
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from examples.compare_limited_paths import main
 from examples.run_limited_transport_path import (
     _interpolate_limited_seed,
+    _load_resume_checkpoint,
     _ProgressReporter,
     resource_preflight,
 )
@@ -300,6 +302,81 @@ def test_progress_reporter_emits_periodic_solver_status(capsys):
     assert "Newton_iteration=4/30" in output
     assert "local_mass=2.000e-08" in output
     assert "force=50N" in output
+
+
+def test_resume_loader_uses_latest_complete_accepted_stage(tmp_path, accepted_mc_path):
+    _, stages = accepted_mc_path
+    checkpoint = stages[1]
+    directory = tmp_path / "interrupted"
+    stage_directory = directory / "attempt_000"
+    stage_directory.mkdir(parents=True)
+    state_path = stage_directory / "state.npz"
+    np.savez_compressed(state_path, state_dimensionless=checkpoint.state)
+    summary = {
+        "status": "interrupted",
+        "case": asdict(checkpoint.case),
+        "stages": [
+            {
+                "status": "accepted_stage",
+                "case": asdict(checkpoint.case),
+                "transport_fraction": checkpoint.transport_fraction,
+                "state_sha256": file_sha256(state_path),
+            }
+        ],
+    }
+    summary_path = directory / "summary.json"
+    summary_path.write_text(json.dumps(summary))
+
+    state, fraction, metadata = _load_resume_checkpoint(directory, checkpoint.case)
+
+    np.testing.assert_array_equal(state, checkpoint.state)
+    assert fraction == checkpoint.transport_fraction
+    assert metadata["stage_index"] == 0
+    assert metadata["state_sha256"] == file_sha256(state_path)
+
+    state_path.write_bytes(state_path.read_bytes() + b"corrupt")
+    with pytest.raises(ValueError, match="checksum"):
+        _load_resume_checkpoint(directory, checkpoint.case)
+
+
+def test_interrupted_runner_persists_reason_and_latest_accepted_state(
+    tmp_path, monkeypatch, accepted_mc_path
+):
+    root = Path(__file__).parents[1]
+    case_path = root / "cases/circular_50n.json"
+    accepted_stage = accepted_mc_path[1][0]
+    output = tmp_path / "interrupted_run"
+
+    def interrupt_after_checkpoint(case, _initial, **options):
+        options["stage_observer"](0, case, 0.0, accepted_stage)
+        options["progress_observer"](
+            0, 0.0, 1, accepted_stage.audit, "Newton correction"
+        )
+        raise limited_runner._RunInterrupted("Received SIGTERM")
+
+    monkeypatch.setattr(limited_runner, "continue_limited_transport", interrupt_after_checkpoint)
+    exit_code = limited_runner.main(
+        case_path,
+        None,
+        output,
+        24,
+        use_measured_peak=False,
+        progress_interval=0.01,
+    )
+
+    summary = json.loads((output / "summary.json").read_text())
+    assert exit_code == 1
+    assert summary["status"] == "interrupted"
+    assert summary["reason"] == "Received SIGTERM"
+    assert summary["last_accepted_fraction"] == 0.0
+    assert summary["last_progress"]["status"] == "Newton correction"
+    checkpoint = output / summary["latest_accepted_checkpoint"]["state_file"]
+    assert file_sha256(checkpoint) == summary["latest_accepted_checkpoint"]["state_sha256"]
+    resumed_state, fraction, metadata = _load_resume_checkpoint(
+        output, accepted_stage.case
+    )
+    np.testing.assert_array_equal(resumed_state, accepted_stage.state)
+    assert fraction == 0.0 and metadata["source_status"] == "interrupted"
 
 
 def test_limited_seed_transfer_is_interpolated_unaccepted_and_resource_preflighted(saved):

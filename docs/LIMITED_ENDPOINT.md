@@ -674,6 +674,14 @@ endpoint was not established. The resumable state is the accepted stage, not
 the in-progress Newton iterate. It is the source for the fresh-output resume
 command below.
 
+The first restart attempt loaded and checksum-verified that checkpoint, then
+was safely stopped by the resource preflight before any nonlinear stage. The
+adjusted coarse estimate was 1,153,223,608 bytes, while only 887,304,192 bytes
+were available at the post-factorization check; the 75% memory ceiling was
+665,478,144 bytes. The factor residual passed at 3.085e-16. This is a resource
+rejection, not a solver convergence failure; the attempt is archived at
+`results/limited_mesh_50n_209_nested_retry_20261107/`.
+
 The bounded runner now supports timestamped progress heartbeats. By default it
 reports every 300 seconds, including elapsed time, current continuation
 attempt/fraction, Newton iteration and available mass/force audit values.
@@ -690,7 +698,7 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
   .venv/bin/python examples/run_limited_transport_path.py \
   --case cases/circular_50n_209.json \
   --resume-from results/limited_mesh_50n_209_nested_retry_20261106 \
-  --output results/limited_mesh_50n_209_nested_retry_20261107 \
+  --output results/limited_mesh_50n_209_nested_retry2_20261107 \
   --no-measured-peak --progress-interval 300
 ```
 

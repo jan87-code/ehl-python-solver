@@ -2453,6 +2453,8 @@ new run labels the source status as unknown-ended rather than guessing.
 Regressions cover timed reporting, callback propagation, checkpoint checksum,
 resume fraction, and interruption summary. The full CPU suite passed:
 **711 passed, 62 skipped** (434.02 s); `ruff check .` and `git diff --check`
-passed. No GPU validation was run or claimed. The 209x209 retry's outcome and
-adjacent-grid comparisons remain pending before drawing a resolution
-conclusion.
+passed. No GPU validation was run or claimed. The first restart loaded the
+209x209 checkpoint but its resource preflight rejected the run (1.153 GB
+adjusted estimate versus 665 MB ceiling); no nonlinear stage was started. The
+exact endpoint and adjacent-grid comparisons remain pending, so no resolution
+conclusion is drawn.

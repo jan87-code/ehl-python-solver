@@ -3981,3 +3981,91 @@ round. Verification: full CPU suite **702 passed, 62 skipped** (373.03 s),
 `ruff check .` passed and `git diff --check` passed. The added configuration
 regression checks equal domains, unchanged physical signatures, axis order,
 per-axis spacing and node caps. No GPU validation was run or claimed.
+
+## 36. NASA Table I inspired circular-contact probe (2026-11-07)
+
+This is a numerical comparison, **not an experimentally validated or fully
+matched NASA benchmark**. Table I of [NASA TN D-8317](https://ntrs.nasa.gov/api/citations/19770004457/downloads/19770004457.pdf),
+printed p. 17, gives the point-contact numerical result `Hmin=hmin/Rx =
+3.367e-6` at `k=1`, `U=0.1683e-11`, `W=0.1106e-6` and `G=4522`.
+For the independently chosen `Rx=0.015 m`, this corresponds to a target
+minimum film of 50.505 nm. This target is a tabled numerical result, not a
+measurement or the fitted correlation. No central film value is asserted
+from this table row.
+
+The three new case files explicitly choose `E*=113 GPa`, `E'=2E*=226 GPa`,
+`eta0=0.04 Pa s`, `Ue=0.14263425 m/s`, `Q=5.62401 N` and
+`alpha=4522/E'=2.0008849557522124e-8 Pa^-1`. They reproduce the rounded
+table groups using `U=eta0 Ue/(E' Rx)`, `W=Q/(E' Rx^2)` and
+`G=alpha E'`; these SI values are one selected parameterization, not
+reported NASA test conditions. Here `Ue=(u1+u2)/2`, x is entrainment, and
+arrays are `(ny,nx)`. Grids are 33x33, 65x65 and 129x129 on the same
+square `[-4a,4a]` domain, where `a=82.42141277 um`; maximum node budget is
+20,000. Refinement seeds are interpolated initial guesses and are never
+accepted without a new solve and audit.
+
+Matching these four groups does **not** make this the same physical problem.
+NASA defines G via the asymptotic isoviscous pressure, approximated by
+`1/alpha`; this probe instead uses alpha as the *ambient* logarithmic slope
+of a chosen Roelands curve. Ambient viscosity, density 850 kg/m^3, Roelands
+reference viscosity 6.31e-5 Pa s, pressure 196 MPa and the present
+Dowson-Higginson coefficients are explicit choices; they are not established
+as the table's exact fluid. The older NASA TN D-8049 reference-viscosity SI
+and cP labels disagree by a factor of 100; see
+[CONSTITUTIVE.md](CONSTITUTIVE.md). NASA applies a Reynolds rupture condition,
+whereas this solver uses finite-domain conservative pressure/content
+complementarity and donor transport. A flooded west node on a finite domain
+does not prove the fully flooded far-field limit. The older tabulated solution
+also has its own discretization uncertainty. None of these differences is
+absorbed into a tolerance or treated as solved by matching a film value.
+
+The donor CLI's initial Hertz state is unaccepted; its correlation-based
+offset is only a starting guess, not a constraint on the final film. Each
+root was independently reopened using `load_run` and re-audited with direct
+source-cell elasticity, SI fluxes and trapezoidal load:
+
+| Grid | Minimum / central film [nm] | Minimum vs NASA table | Relative local / global mass balance |
+| --- | ---: | ---: | ---: |
+| 33x33 | 47.17520 / 92.82430 | -6.593% | 3.190e-15 / 3.774e-17 |
+| 65x65 | 53.95931 / 94.47625 | +6.840% | 6.400e-15 / 9.202e-17 |
+| 129x129 | 54.40787 / 91.71068 | +7.728% | 1.379e-14 / 0.000e+00 |
+
+Each integrated force is 5.62401 N; the maximum complementarity is
+1.567e-26 and the greatest direct film-reconstruction discrepancy is
+1.748e-21 m. Minimum film changes +14.381% and +0.831% over successive
+refinements; central film changes +1.780% and -2.927%. A small final
+minimum-film change or approximate agreement with the NASA value does not
+prove domain independence, continuum convergence or matched physics.
+
+As a separate solver-robustness probe, the 33x33 limited-MC continuation
+exhausted its 24-attempt budget at fraction `0.9999703125`. Its last blended
+stage passed its own audit but is **not** an exact limited-MC endpoint; its
+film must not be reported as a successful MC result. The driver snapshot
+includes the pre-existing local changes to
+`examples/run_limited_transport_path.py`; those changes were not part of this
+milestone. No altered stopping gates, clipped fields or bigger budget were
+used.
+
+Reproduce the donor calculations into fresh output directories:
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/nasa_d8317_table1_k1_probe.json --output results/nasa_probe_33_new --no-plots
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/nasa_d8317_table1_k1_probe_65.json --seed results/nasa_probe_33_new --output results/nasa_probe_65_new --no-plots
+.venv/bin/python -m ehl_solver.prototype_cli --case cases/nasa_d8317_table1_k1_probe_129.json --seed results/nasa_probe_65_new --output results/nasa_probe_129_new --no-plots
+.venv/bin/python -m examples.run_limited_transport_path --case cases/nasa_d8317_table1_k1_probe.json --output results/nasa_probe_mc_new --max-attempts 24
+```
+
+The runs are retained locally under `results/nasa_d8317_table1_k1_donor_*`
+and `results/nasa_d8317_table1_k1_probe_20261107/`, including inputs, source
+snapshots, checksums and audit histories; they are not committed datasets.
+Next, establish the exact historical fluid parameters and boundary
+assumptions or construct a matched experimental case with independently
+measured lubricant properties. Do not equate this preliminary comparison
+with physical validation.
+
+Verification: `ruff check .` passed; the complete CPU suite passed **718
+tests, 62 skipped** with BLAS/OpenMP/MKL limited to one thread. The four
+new input regressions check the three sets of dimensionless groups, ambient
+viscosity slope, domain and nested grid consistency. No GPU validation was
+run or claimed.

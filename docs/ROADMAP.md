@@ -32,6 +32,15 @@ candidate formulation and target table; see
 Do not call this physical validation if the benchmark assumptions or
 acceptance tolerances are not matched. Real-experiment validation remains a
 later step requiring measured pressure/film data and complete test conditions.
+An initial NASA Table I inspired 5.62401 N probe now reaches independently
+audited donor roots on 33x33, 65x65 and 129x129, with minimum films
+47.175, 53.959 and 54.408 nm versus the 50.505 nm table value. The last
+central-film change is -2.927%, and the NASA fluid law and rupture boundary
+are not fully matched. A separate limited-MC path exhausted its 24 attempts
+just short of the exact endpoint; its blended stage is not an MC root.
+These results do not establish benchmark or experimental validation. See
+section 36 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for reproducible
+inputs, audits, assumptions and unresolved limitations.
 The bounded nonlinear adapter and its recovery/acceptance checks remain
 experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate

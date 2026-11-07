@@ -4,7 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
-from ehl_solver.limited_comparison import compare_fields, file_sha256, load_limited_path
+from ehl_solver.limited_comparison import (
+    compare_fields,
+    compare_nested_state_diagnostics,
+    file_sha256,
+    load_limited_path,
+)
 
 
 def main(argv=None):
@@ -23,10 +28,17 @@ def main(argv=None):
             coarse.film_m,
             fine.film_m,
         )
+        nested_diagnostics = None
+        if (
+            fine.case.nx - 1 == 2 * (coarse.case.nx - 1)
+            and fine.case.ny - 1 == 2 * (coarse.case.ny - 1)
+        ):
+            nested_diagnostics = compare_nested_state_diagnostics(coarse, fine)
         report.update(
             format="limited_spatial_comparison_v1",
             numerical_acceptance_checked=True,
             physical_validation_complete=False,
+            nested_resolution_diagnostics=nested_diagnostics,
             coarse_audit=coarse.audit,
             fine_audit=fine.audit,
             source_runs={
@@ -78,6 +90,66 @@ values are approximate fully flooded correlation references, not acceptance
 thresholds. Non-nested sampling includes interpolation error and must not be
 presented as shared-node error.
 See the JSON for source checksums, independent audits and minimum locations.
+"""
+    if nested_diagnostics is not None:
+        region_lines = []
+        region_labels = {
+            "exit_inner_half_x_0.5_to_1.0a_abs_y_le_1.2a": (
+                "Exit inner half (0.5<=x/a<1.0, |y/a|<=1.2)"
+            ),
+            "exit_outer_half_x_1.0_to_1.5a_abs_y_le_1.2a": (
+                "Exit outer half (1.0<=x/a<=1.5, |y/a|<=1.2)"
+            ),
+            "exit_inner_center_x_0.5_to_1.0a_abs_y_le_0.5a": (
+                "Exit inner center band (0.5<=x/a<1.0, |y/a|<=0.5)"
+            ),
+        }
+        for key, region in nested_diagnostics["regions"].items():
+            relative_l2 = region["relative_l2"]
+            relative_text = (
+                f"{relative_l2:.6g}"
+                if relative_l2 is not None
+                else "undefined (near-zero pressure)"
+            )
+            region_lines.append(
+                f"- {region_labels[key]}: squared-error share "
+                f"{region['total_squared_error_share']:.6g}; relative L2 {relative_text}; "
+                f"cavitation-state flips {region['cavitation_state_flip_count']}."
+            )
+        maximum_front_shift = nested_diagnostics[
+            "first_cavitated_sample_maximum_absolute_x_shift_over_a"
+        ]
+        mean_front_shift = nested_diagnostics[
+            "first_cavitated_sample_mean_absolute_x_shift_over_a"
+        ]
+        front_shift_text = (
+            f"{maximum_front_shift:.6g} a max / {mean_front_shift:.6g} a mean"
+            if maximum_front_shift is not None
+            else "not measured"
+        )
+        text += f"""
+## Nested-grid localization
+
+- Shared-node pressure relative L2: {nested_diagnostics["pressure_relative_l2"]:.6g}.
+- Maximum shared-node pressure difference:
+  {nested_diagnostics["pressure_maximum_absolute_difference_pa"] / 1e6:.6g} MPa at
+  (x/a,y/a)=({nested_diagnostics["pressure_maximum_difference_location_x_over_a"]:.6g},
+  {nested_diagnostics["pressure_maximum_difference_location_y_over_a"]:.6g}).
+{chr(10).join(region_lines)}
+- Fractional-content relative L2 / maximum absolute difference:
+  {nested_diagnostics["fractional_content_relative_l2"]:.6g} /
+  {nested_diagnostics["fractional_content_maximum_absolute_difference"]:.6g}.
+- Cavitation-state flips at shared nodes
+  ({nested_diagnostics["cavitation_state_threshold"]}):
+  {nested_diagnostics["cavitation_state_flip_count"]}.
+- First-cavitated-node x shift, rows with |y/a|<=1.2:
+  {front_shift_text} across
+  {nested_diagnostics["first_cavitated_sample_shift_rows_abs_y_le_1.2a"]} shared rows.
+
+These are localization diagnostics, not convergence criteria. The existing
+exit window is split into x and transverse bands so localized differences are
+visible alongside the existing aggregate metric. Front shifts are first
+cavitated sample locations on shared rows, not subcell front estimates.
 """
     (args.output / "report.md").write_text(text)
     print(f"Audited numerical roots; spatial convergence unassessed: {args.output}")

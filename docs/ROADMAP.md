@@ -29,9 +29,20 @@ two fine cells in x. The 48-attempt-cap retry reached an exact audited root;
 extending the domain slightly further to 223x223 passes incrementally, but the
 cumulative 173-to-223 comparison still fails the exit-pressure and
 minimum-location limits. The default stage-attempt budget remains 24 (48
-maximum). See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for criteria,
-caveats, and measured results. These are numerical sensitivity results, not
-physical accuracy claims. The bounded nonlinear adapter and its
+maximum). A new shared-node localization audit of the exact 105x105 and
+209x209 roots finds that 71.95% of their squared pressure difference lies in
+the inner half of the exit window (`0.5 <= x/a < 1`, `|y/a| <= 1.2`), with the
+maximum difference 210.8 MPa at `(x/a,y/a)=(0.846,0)`. The pressure error
+there is present while both sampled cells are full-film; four cavitation
+classifications differ elsewhere. First-cavitated sample positions across
+shared transverse rows move by at most 0.0769a (one coarse or two fine x
+intervals); these are nodal positions, not subcell front estimates. This
+localizes the leading pressure sensitivity but does not establish its
+continuum value or rule out boundary effects. The next justified experiment
+is bounded x refinement of this exit region, not an immediate uniform
+417x417 solve. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for criteria,
+caveats, and reproducible diagnostics. These are numerical sensitivity
+results, not physical accuracy claims. The bounded nonlinear adapter and its
 recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.

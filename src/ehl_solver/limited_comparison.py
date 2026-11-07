@@ -247,3 +247,206 @@ def compare_fields(
         numerical_acceptance_checked=False,
         mesh_convergence_assessed=False,
     )
+
+
+def compare_nested_state_diagnostics(coarse, fine):
+    """Localize pressure changes and active-state flips on a nested grid pair.
+
+    The fine mesh must double the coarse interval count in each direction and
+    preserve the physical case/domain. Pressure and theta are compared at
+    shared nodes; theta < 1 - 1e-10 labels a cavitated state for the flip count.
+    """
+    coarse_case, fine_case = coarse.case, fine.case
+    if coarse_case.physical_signature() != fine_case.physical_signature():
+        raise ValueError("Identical physical case required for nested diagnostics")
+    if (
+        coarse_case.domain_half_width_x_m != fine_case.domain_half_width_x_m
+        or coarse_case.domain_half_width_y_m != fine_case.domain_half_width_y_m
+    ):
+        raise ValueError("Identical physical domain required for nested diagnostics")
+    if (
+        fine_case.nx - 1 != 2 * (coarse_case.nx - 1)
+        or fine_case.ny - 1 != 2 * (coarse_case.ny - 1)
+    ):
+        raise ValueError("Fine grid must double the coarse interval count on both axes")
+
+    def field(run, name):
+        value = np.asarray(getattr(run, name), dtype=np.float64)
+        if value.shape != (run.case.ny, run.case.nx) or not np.isfinite(value).all():
+            raise ValueError(f"Finite {name} field in (ny,nx) order required")
+        return value
+
+    coarse_pressure = field(coarse, "pressure_pa")
+    fine_pressure = field(fine, "pressure_pa")
+    coarse_theta = field(coarse, "theta")
+    fine_theta = field(fine, "theta")
+    if (
+        np.any((coarse_theta < 0) | (coarse_theta > 1))
+        or np.any((fine_theta < 0) | (fine_theta > 1))
+    ):
+        raise ValueError("Fractional film content must be in [0,1]")
+
+    sampled_pressure = fine_pressure[::2, ::2]
+    sampled_theta = fine_theta[::2, ::2]
+    pressure_difference = sampled_pressure - coarse_pressure
+    total_squared_error = float(np.sum(pressure_difference**2))
+    sampled_pressure_norm = float(np.linalg.norm(sampled_pressure))
+    sampled_theta_norm = float(np.linalg.norm(sampled_theta))
+    if sampled_pressure_norm == 0:
+        raise ValueError("Nonzero fine pressure required for nested diagnostics")
+    if sampled_theta_norm == 0:
+        raise ValueError("Nonzero fine fractional content required for nested diagnostics")
+    radius = coarse_case.hertz.radius_m
+    x_over_a = np.linspace(
+        -coarse_case.domain_half_width_x_m,
+        coarse_case.domain_half_width_x_m,
+        coarse_case.nx,
+    ) / radius
+    y_over_a = np.linspace(
+        -coarse_case.domain_half_width_y_m,
+        coarse_case.domain_half_width_y_m,
+        coarse_case.ny,
+    ) / radius
+    xx, yy = np.meshgrid(x_over_a, y_over_a)
+    fine_x = np.linspace(
+        -fine_case.domain_half_width_x_m,
+        fine_case.domain_half_width_x_m,
+        fine_case.nx,
+    ) / radius
+    fine_y = np.linspace(
+        -fine_case.domain_half_width_y_m,
+        fine_case.domain_half_width_y_m,
+        fine_case.ny,
+    ) / radius
+    fine_xx, fine_yy = np.meshgrid(fine_x, fine_y)
+
+    flips = (coarse_theta < 1 - 1e-10) != (sampled_theta < 1 - 1e-10)
+
+    def region_report(mask, fine_mask):
+        count = int(np.count_nonzero(mask))
+        if count == 0:
+            return {
+                "shared_node_count": 0,
+                "relative_l2": None,
+                "total_squared_error_share": None,
+                "maximum_absolute_difference_pa": None,
+                "maximum_difference_location_x_over_a": None,
+                "maximum_difference_location_y_over_a": None,
+                "coarse_peak_pressure_pa": None,
+                "fine_peak_pressure_pa": None,
+                "cavitation_state_flip_count": 0,
+            }
+        error = pressure_difference[mask]
+        denominator = float(np.linalg.norm(sampled_pressure[mask]))
+        local_error = float(np.sum(error**2))
+        local_max_index = np.unravel_index(
+            np.argmax(np.where(mask, np.abs(pressure_difference), -np.inf)),
+            pressure_difference.shape,
+        )
+        coarse_peak = float(np.max(coarse_pressure[mask]))
+        fine_peak = float(np.max(fine_pressure[fine_mask]))
+        relative_l2 = (
+            float(np.linalg.norm(error) / denominator)
+            if denominator > np.finfo(np.float64).eps * sampled_pressure_norm
+            else None
+        )
+        return {
+            "shared_node_count": count,
+            "relative_l2": relative_l2,
+            "total_squared_error_share": (
+                local_error / total_squared_error if total_squared_error else 0.0
+            ),
+            "maximum_absolute_difference_pa": float(np.max(np.abs(error))),
+            "maximum_difference_location_x_over_a": float(xx[local_max_index]),
+            "maximum_difference_location_y_over_a": float(yy[local_max_index]),
+            "coarse_peak_pressure_pa": coarse_peak,
+            "fine_peak_pressure_pa": fine_peak,
+            "cavitation_state_flip_count": int(np.count_nonzero(flips[mask])),
+        }
+
+    exit_inner = (
+        (xx >= 0.5) & (xx < 1.0) & (np.abs(yy) <= 1.2)
+    )
+    fine_exit_inner = (
+        (fine_xx >= 0.5) & (fine_xx < 1.0) & (np.abs(fine_yy) <= 1.2)
+    )
+    exit_outer = (
+        (xx >= 1.0) & (xx <= 1.5) & (np.abs(yy) <= 1.2)
+    )
+    fine_exit_outer = (
+        (fine_xx >= 1.0) & (fine_xx <= 1.5) & (np.abs(fine_yy) <= 1.2)
+    )
+    exit_centerline = (
+        (xx >= 0.5) & (xx < 1.0) & (np.abs(yy) <= 0.5)
+    )
+    fine_exit_centerline = (
+        (fine_xx >= 0.5) & (fine_xx < 1.0) & (np.abs(fine_yy) <= 0.5)
+    )
+    flip_coordinates = np.where(flips)
+    cavitated_coarse = coarse_theta < 1 - 1e-10
+    front_shifts = []
+    for row in np.flatnonzero(np.abs(y_over_a) <= 1.2):
+        coarse_front = np.flatnonzero(cavitated_coarse[row])
+        fine_front = np.flatnonzero(fine_theta[2 * row] < 1 - 1e-10)
+        if coarse_front.size and fine_front.size:
+            front_shifts.append(
+                (float(y_over_a[row]), float(fine_x[fine_front[0]] - x_over_a[coarse_front[0]]))
+            )
+    maximum_index = np.unravel_index(
+        np.argmax(np.abs(pressure_difference)), pressure_difference.shape
+    )
+    return {
+        "sampling": "fine_shared_nodes",
+        "coarse_shape": [coarse_case.ny, coarse_case.nx],
+        "fine_shape": [fine_case.ny, fine_case.nx],
+        "pressure_relative_l2": float(
+            np.linalg.norm(pressure_difference) / sampled_pressure_norm
+        ),
+        "pressure_maximum_absolute_difference_pa": float(
+            np.max(np.abs(pressure_difference))
+        ),
+        "pressure_maximum_difference_location_x_over_a": float(xx[maximum_index]),
+        "pressure_maximum_difference_location_y_over_a": float(yy[maximum_index]),
+        "regions": {
+            "exit_inner_half_x_0.5_to_1.0a_abs_y_le_1.2a": region_report(
+                exit_inner, fine_exit_inner
+            ),
+            "exit_outer_half_x_1.0_to_1.5a_abs_y_le_1.2a": region_report(
+                exit_outer, fine_exit_outer
+            ),
+            "exit_inner_center_x_0.5_to_1.0a_abs_y_le_0.5a": region_report(
+                exit_centerline, fine_exit_centerline
+            ),
+        },
+        "fractional_content_relative_l2": float(
+            np.linalg.norm(sampled_theta - coarse_theta) / sampled_theta_norm
+        ),
+        "fractional_content_maximum_absolute_difference": float(
+            np.max(np.abs(sampled_theta - coarse_theta))
+        ),
+        "cavitation_state_threshold": "theta < 1 - 1e-10",
+        "cavitation_state_flip_count": int(np.count_nonzero(flips)),
+        "cavitation_state_flip_fraction": float(np.mean(flips)),
+        "cavitation_state_flip_extent_x_over_a": (
+            [float(np.min(xx[flip_coordinates])), float(np.max(xx[flip_coordinates]))]
+            if len(flip_coordinates[0])
+            else None
+        ),
+        "cavitation_state_flip_extent_y_over_a": (
+            [float(np.min(yy[flip_coordinates])), float(np.max(yy[flip_coordinates]))]
+            if len(flip_coordinates[0])
+            else None
+        ),
+        "first_cavitated_sample_shift_rows_abs_y_le_1.2a": len(front_shifts),
+        "first_cavitated_sample_maximum_absolute_x_shift_over_a": (
+            max(abs(shift) for _, shift in front_shifts) if front_shifts else None
+        ),
+        "first_cavitated_sample_mean_absolute_x_shift_over_a": (
+            float(np.mean([abs(shift) for _, shift in front_shifts]))
+            if front_shifts
+            else None
+        ),
+        "first_cavitated_sample_maximum_shift_y_over_a": (
+            max(front_shifts, key=lambda row: abs(row[1]))[0] if front_shifts else None
+        ),
+    }

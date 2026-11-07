@@ -11,7 +11,13 @@ import pytest
 
 import ehl_solver
 import examples.run_limited_transport_path as limited_runner
-from ehl_solver.limited_comparison import compare_fields, file_sha256, load_limited_path
+from ehl_solver.limited_comparison import (
+    LimitedRun,
+    compare_fields,
+    compare_nested_state_diagnostics,
+    file_sha256,
+    load_limited_path,
+)
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from examples.compare_limited_paths import main
@@ -196,6 +202,117 @@ def test_nested_and_nonnested_sampling_of_exact_bilinear_si_fields(fine_shape, s
     assert result["exit_pressure_relative_max_on_coarse_nodes"] < 1e-14
     assert abs(result["minimum_film_relative_change"]) < 1e-14
     assert not result["numerical_acceptance_checked"] and not result["mesh_convergence_assessed"]
+
+
+def test_nested_diagnostics_localize_pressure_error_and_cavitation_flips():
+    base = PointContactCase(ny=5, nx=5)
+    radius = base.hertz.radius_m
+    coarse_case = replace(
+        base,
+        domain_half_width_x_m=2.5 * radius,
+        domain_half_width_y_m=2.5 * radius,
+    )
+    fine_case = replace(coarse_case, ny=9, nx=9)
+    coarse_pressure = np.full((5, 5), 1e8)
+    fine_pressure = np.full((9, 9), 1e8)
+    coarse_theta = np.ones((5, 5))
+    fine_theta = np.ones((9, 9))
+    fine_pressure[4, 6] += 5e7
+    fine_theta[4, 6] = 0.5
+    coarse = LimitedRun(
+        coarse_case,
+        np.empty(0),
+        coarse_pressure,
+        coarse_theta,
+        np.full((5, 5), 1e-6),
+        {},
+    )
+    fine = LimitedRun(
+        fine_case,
+        np.empty(0),
+        fine_pressure,
+        fine_theta,
+        np.full((9, 9), 1e-6),
+        {},
+    )
+
+    report = compare_nested_state_diagnostics(coarse, fine)
+
+    exit_inner = report["regions"]["exit_inner_half_x_0.5_to_1.0a_abs_y_le_1.2a"]
+    exit_outer = report["regions"]["exit_outer_half_x_1.0_to_1.5a_abs_y_le_1.2a"]
+    assert report["pressure_relative_l2"] > 0
+    assert report["pressure_maximum_difference_location_x_over_a"] == pytest.approx(1.25)
+    assert report["pressure_maximum_difference_location_y_over_a"] == pytest.approx(0)
+    assert exit_inner["shared_node_count"] == 0
+    assert exit_outer["total_squared_error_share"] == pytest.approx(1)
+    assert exit_outer["maximum_absolute_difference_pa"] == pytest.approx(5e7)
+    assert exit_outer["cavitation_state_flip_count"] == 1
+    assert report["cavitation_state_flip_count"] == 1
+    assert report["cavitation_state_flip_extent_x_over_a"] == pytest.approx([1.25, 1.25])
+    assert report["cavitation_state_flip_extent_y_over_a"] == pytest.approx([0, 0])
+
+
+def test_nested_diagnostics_reject_non_nested_grids():
+    case = PointContactCase(ny=5, nx=5)
+    coarse = LimitedRun(
+        case,
+        np.empty(0),
+        np.ones((5, 5)),
+        np.ones((5, 5)),
+        np.ones((5, 5)),
+        {},
+    )
+    fine_case = replace(case, ny=11, nx=11)
+    fine = LimitedRun(
+        fine_case,
+        np.empty(0),
+        np.ones((11, 11)),
+        np.ones((11, 11)),
+        np.ones((11, 11)),
+        {},
+    )
+    with pytest.raises(ValueError, match="double the coarse interval count"):
+        compare_nested_state_diagnostics(coarse, fine)
+
+
+def test_nested_diagnostics_report_first_cavitated_node_shift_in_hertz_radii():
+    base = PointContactCase(ny=5, nx=5)
+    radius = base.hertz.radius_m
+    coarse_case = replace(
+        base,
+        domain_half_width_x_m=2.5 * radius,
+        domain_half_width_y_m=2.5 * radius,
+    )
+    fine_case = replace(coarse_case, ny=9, nx=9)
+    coarse_theta = np.ones((5, 5))
+    fine_theta = np.ones((9, 9))
+    coarse_theta[2, 3:] = 0.5
+    fine_theta[4, 5:] = 0.5
+    coarse = LimitedRun(
+        coarse_case,
+        np.empty(0),
+        np.ones((5, 5)),
+        coarse_theta,
+        np.ones((5, 5)),
+        {},
+    )
+    fine = LimitedRun(
+        fine_case,
+        np.empty(0),
+        np.ones((9, 9)),
+        fine_theta,
+        np.ones((9, 9)),
+        {},
+    )
+
+    report = compare_nested_state_diagnostics(coarse, fine)
+
+    assert report["first_cavitated_sample_shift_rows_abs_y_le_1.2a"] == 1
+    assert report["first_cavitated_sample_maximum_absolute_x_shift_over_a"] == pytest.approx(
+        0.625
+    )
+    assert report["first_cavitated_sample_mean_absolute_x_shift_over_a"] == pytest.approx(0.625)
+    assert report["first_cavitated_sample_maximum_shift_y_over_a"] == pytest.approx(0)
 
 
 def test_changed_case_domain_and_coarsening_are_rejected():
@@ -405,6 +522,7 @@ def test_comparison_cli_marks_audits_separately_from_convergence(saved, tmp_path
     report = json.loads((output / "comparison.json").read_text())
     correlation = load_limited_path(saved).case.correlation()
     assert report["numerical_acceptance_checked"]
+    assert report["nested_resolution_diagnostics"] is None
     assert (
         report["sampling"] == "shared_nodes"
         and report["pressure_relative_max_on_coarse_nodes"] == 0

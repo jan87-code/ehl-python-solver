@@ -764,3 +764,70 @@ accepted state and is not promoted or resumed. The successful resumed endpoint
 and adjacent-grid comparisons are archived under
 `results/limited_mesh_50n_209_nested_retry2_20261107/` and
 `results/limited_comparison_50n_*_nested_20261107/`, respectively.
+
+## Localized nested-grid pressure and front diagnostics
+
+The comparison command now adds `nested_resolution_diagnostics` to its JSON
+when the fine grid doubles the interval count on both axes. It compares fine
+fields at shared coarse nodes, partitions the existing exit window, reports
+pressure-error locations and squared-error shares, compares cavitation states
+using `theta < 1 - 1e-10`, and reports native-grid first-cavitated sample shifts
+on shared transverse rows. These extra metrics are diagnostics, not acceptance
+gates; first-node shifts are not subcell front estimates. Non-nested
+comparisons retain their existing interpolation-based metrics and omit this
+nested-only analysis.
+
+The 50 N 105x105 -> 209x209 exact roots use the same +/-4a domain, with
+Hertz radius `a=0.170745 mm`. The root audits independently pass force, mass,
+complementarity and direct-elasticity checks. Shared-node pressure L2 changes
+4.839%; the existing exit-window L2 change is 10.975%. Spatial localization
+shows:
+
+| Region | Share of total squared pressure difference | Regional pressure L2 | Cavitation-state flips |
+| --- | ---: | ---: | ---: |
+| `0.5 <= x/a < 1.0`, `|y/a| <= 1.2` | 71.954% | 10.974% | 2 |
+| `1.0 <= x/a <= 1.5`, `|y/a| <= 1.2` | 0.025% | 25.852% | 0 |
+| `0.5 <= x/a < 1.0`, `|y/a| <= 0.5` | 70.757% | 11.221% | 0 |
+
+The maximum shared-node pressure difference is 210.791 MPa at
+`(x/a,y/a)=(0.84615,0)`: 438.612 MPa on 105x105 versus 649.403 MPa on 209x209.
+Both cells have `theta=1`, so this largest pressure discrepancy is not an
+active-set classification flip. On the centerline, the 105 grid has 694 MPa
+at `x/a=0.769` and 439 MPa at `x/a=0.846`; the 209 grid has 633 and 649 MPa
+at those shared nodes and 665 MPa at the intervening `x/a=0.808` node. This
+shows a steep, poorly represented outlet-side pressure feature on the coarse
+grid, but does not establish the continuum peak or its physical accuracy.
+
+Four of 11,025 shared nodes change cavitation classification; two are in the
+inner exit half. Across 31 shared transverse rows with `|y/a|<=1.2`, native
+first-cavitated sample positions shift by a maximum of `0.076923a` and a mean
+absolute `0.024814a`. The sampled pressure is zero on all outer edges; the
+largest pressure on the first interior x and y rows is respectively
+`5.68e-5` and `1.80e-5` of the global peak. This makes a large edge pressure
+value an unlikely explanation for the localized discrepancy, but it does not
+prove domain independence or exclude nonlocal boundary effects.
+
+The earlier 53x53 -> 105x105 comparison is similarly concentrated: 76.748% of
+its squared pressure difference lies in `0.5 <= x/a < 1.0`, `|y/a|<=1.2`,
+with a 139.266 MPa maximum difference at `(0.76923,0.30769)`. Across the
+27->53, 53->105 and 105->209 sequence, global pressure L2 changes decrease
+from 6.931% to 5.640% to 4.839%, but the local pressure differences remain
+large. The diagnostic bundles, each with fresh root audits and source
+checksums, are under `results/limited_sensitivity_diag_50n_*_verified_20261107/`.
+
+Reproduce the final comparison and localization audit with:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
+  .venv/bin/python -m examples.compare_limited_paths \
+  results/limited_mesh_50n_105_nested_cold48_20261106 \
+  results/limited_mesh_50n_209_nested_retry2_20261107 \
+  --output results/limited_sensitivity_diag_50n_105_to_209_verified_20261107
+```
+
+The next targeted experiment is a fixed-domain x-only refinement in this
+inner exit region (for example 105x209, about 22k nodes), with y spacing held
+at the 105 grid. This can test whether x resolution captures the sharp
+pressure feature before spending the substantially larger memory budget of a
+uniform 417x417 solve. The result will still require a separate y/domain
+study and must not be used as physical validation.

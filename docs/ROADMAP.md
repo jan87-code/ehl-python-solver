@@ -37,12 +37,19 @@ there is present while both sampled cells are full-film; four cavitation
 classifications differ elsewhere. First-cavitated sample positions across
 shared transverse rows move by at most 0.0769a (one coarse or two fine x
 intervals); these are nodal positions, not subcell front estimates. This
-localizes the leading pressure sensitivity but does not establish its
-continuum value or rule out boundary effects. The next justified experiment
-is bounded x refinement of this exit region, not an immediate uniform
-417x417 solve. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for criteria,
-caveats, and reproducible diagnostics. These are numerical sensitivity
-results, not physical accuracy claims. The bounded nonlinear adapter and its
+localizes the leading pressure sensitivity to the downstream shoulder of an
+exit pressure ridge. The independently reported native-grid maxima are
+750.8 MPa at `x/a=0.6154, |y/a|=0.4615` (105x105) and 801.0 MPa at
+`x/a=0.6154, |y/a|=0.5` (209x209), followed by an exit film constriction and
+pressure fall. This morphology is consistent with an expected
+Petrusevich-type outlet spike; it should be resolved and characterized, not
+smoothed away. The sampled peak height differs by about 6.7%; its width and
+continuum profile are not yet established, and the values are not physically
+validated. A bounded directional-refinement study is the next numerical step,
+not an immediate uniform 417x417 solve. See
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the evidence, caveats, and
+reproducible diagnostics. These are numerical sensitivity results, not
+physical accuracy claims. The bounded nonlinear adapter and its
 recovery/acceptance checks are experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate
 remain planned. Detailed implementation history and evidence follow below.

@@ -792,11 +792,42 @@ shows:
 The maximum shared-node pressure difference is 210.791 MPa at
 `(x/a,y/a)=(0.84615,0)`: 438.612 MPa on 105x105 versus 649.403 MPa on 209x209.
 Both cells have `theta=1`, so this largest pressure discrepancy is not an
-active-set classification flip. On the centerline, the 105 grid has 694 MPa
-at `x/a=0.769` and 439 MPa at `x/a=0.846`; the 209 grid has 633 and 649 MPa
-at those shared nodes and 665 MPa at the intervening `x/a=0.808` node. This
-shows a steep, poorly represented outlet-side pressure feature on the coarse
-grid, but does not establish the continuum peak or its physical accuracy.
+active-set classification flip. More importantly, this location is on the
+downstream shoulder of the exit pressure ridge, not at the ridge's peak. The
+105 grid has 694 MPa on the centerline at `x/a=0.769` and 439 MPa at
+`x/a=0.846`; the 209 grid has 633 and 649 MPa at those shared nodes, with a
+local centerline maximum of 665 MPa at the intervening `x/a=0.808` node.
+
+The native-grid maximum within the full exit window is 750.776 MPa at
+`(x/a,y/a)=(0.6154,0.4615)` on 105x105 and 801.045 MPa at
+`(0.6154,-0.5000)` on 209x209 (about a 6.7% rise; the peak values occur at
+similar `|y/a|`, within the grids' transverse sampling). At the fine-grid
+peak, `theta=1`; the nearby sampled local film minimum is 360.94 nm at
+`x/a=0.7692`, followed downstream by zero pressure / cavitated content
+beginning at `x/a=1.0`.
+Thus the 2-D field has a secondary exit-side pressure maximum followed by a
+rapid pressure fall through the exit film constriction toward rupture. This
+shape and location are consistent with a **Petrusevich-type EHL outlet
+pressure spike**, rather than a numerical peak that should be smoothed away.
+The 210.8 MPa worst shared-node discrepancy measures how poorly the coarser
+grid places/resolves the spike's downstream shoulder; it is not evidence that
+the expected spike itself is unphysical.
+
+This identification is morphological, not a quantitative validation of the
+classical Petrusevich solution. The case is a 2-D circular, isothermal,
+pressure-dependent-viscosity/density calculation with a mass-conserving
+cavitation condition and a stated but unvalidated Roelands/Dowson-Higginson
+fluid assumption. It is not the original 1-D line-contact benchmark, and
+neither the spike magnitude nor the particular lubricant properties have
+independent experimental validation here. Classical literature treats an
+outlet pressure spike as an expected EHL feature, including elastic
+interpretations and in-situ point-contact pressure measurements
+([Greenwood, “Elastohydrodynamic Lubrication” (2020)](https://doi.org/10.3390/lubricants8050051);
+[Hall, “Pressure spikes in elastohydrodynamics—some elastic considerations” (1989)](https://www.sciencedirect.com/science/article/pii/0043164889902512);
+[Jubault et al., in-situ Raman point-contact measurements (2002)](https://hal.science/hal-00507947)).
+Temperature, lubricant-specific constitutive calibration and experimental
+conditions affect spike amplitude and shape, so these references do not
+validate this run's numerical values.
 
 Four of 11,025 shared nodes change cavitation classification; two are in the
 inner exit half. Across 31 shared transverse rows with `|y/a|<=1.2`, native
@@ -825,9 +856,10 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=.:src \
   --output results/limited_sensitivity_diag_50n_105_to_209_verified_20261107
 ```
 
-The next targeted experiment is a fixed-domain x-only refinement in this
-inner exit region (for example 105x209, about 22k nodes), with y spacing held
-at the 105 grid. This can test whether x resolution captures the sharp
-pressure feature before spending the substantially larger memory budget of a
-uniform 417x417 solve. The result will still require a separate y/domain
-study and must not be used as physical validation.
+The next targeted experiment is to measure the spike's peak, width, location
+and downstream decay under controlled directional refinement, not to suppress
+or smooth it. A fixed-domain 105x209 x-refinement (about 22k nodes), followed
+by a matching 209x105 y-refinement, can distinguish streamwise and transverse
+resolution effects while staying far below the uniform 417x417 node count.
+The result will still require a domain check and must not be used as physical
+validation.

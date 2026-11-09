@@ -2560,3 +2560,22 @@ subsequent retry passed preflight and completed the exact endpoint. The nested
 adjacent-grid comparisons are documented in [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md);
 they show continuing material sensitivity and do not support a resolution
 conclusion.
+
+### Exact limited-endpoint correction diagnosis (2026-11-09)
+
+A bounded exact-`tau=1` correction diagnostic from the rejected 33x33
+`attempt_047` state did not establish a limited-capacity root. Its natural
+active-set preconditioner has structural rank 1907/1923 and fails sparse LU.
+Additional diagnostic content pivots reach only rank 1914/1923; the existing
+production eight-model budget was not increased. A donor-reconstruction
+preconditioner is structurally full rank but the true matrix-free GMRES
+residual stalls at `1.216e-2` after 600 iterations and remains there after
+3000 iterations. An all-full alternate active-row solve is too constrained
+by the original feasibility bound to provide a useful step. No acceptance
+criterion, equation, or iteration budget changed. Further work should target
+a rank-aware active-set linear correction that preserves the exact limited
+operator, true Krylov residual gate, feasible Armijo globalization, and
+independent endpoint audits. See [VALIDATION_REPORT.md](VALIDATION_REPORT.md)
+for the measured diagnostics. Equation closure, numerical convergence, and
+experimental validation remain separate; this investigation adds no evidence
+for the latter two.

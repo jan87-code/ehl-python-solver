@@ -4375,3 +4375,45 @@ suite passed **797 tests, 1 skipped**; `tests/test_joint_refinement.py` remains
 uncollectable on Windows because it imports the Unix-only `resource` module.
 `ruff check .` still reports the pre-existing 101-character line in
 `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`.
+
+#### Exact limited-endpoint linearization diagnosis (2026-11-09)
+
+A bounded diagnostic was run from the archived rejected `attempt_047` state
+at `transport_fraction = 0.9995532653808594`, using the exact
+`transport_fraction = 1` equations. No tolerance, solver budget, or production
+equation was changed, and this did not produce an accepted endpoint root.
+
+The natural active-set frozen bordered preconditioner has structural rank
+1907 of 1923 and sparse LU reports an exactly singular factor. This is a
+preconditioner-matrix failure; it is not proof that the full matrix-free
+Jacobian is singular. Continuing the existing one-way free-content pivot rule
+as a diagnostic beyond its production eight recovery models raised structural
+rank only to 1914 of 1923 after 29 pivots, then stopped finding eligible
+content pivots. Unpreconditioned GMRES reached its existing 10-cycle,
+restart-60 budget (600 iterations) with independently recomputed relative
+residual `0.519`.
+
+Two preconditioner-only alternatives were screened, without promotion:
+
+- Replacing the limited-capacity reconstruction by donor reconstruction in
+  the sparse preconditioner made that matrix structurally full rank, but the
+  true limited matrix-free solve stalled at relative residual `1.216e-2`
+  after 600 iterations. Extending this diagnostic to 50 cycles (3000
+  iterations) did not improve the residual materially.
+- An all-full active-row matrix factorized, but using it to precondition the
+  natural active-set Jacobian did not converge (true residual `0.283` after
+  1200 iterations). Solving its own alternate active-row system produced a
+  direction with relative linear residual `6.78e-13`, but the original
+  nonlinear feasibility bound reduced the trial fraction to `1.83e-9`;
+  this is not meaningful progress.
+
+A nonzero guide formed from the preceding archived continuation-stage
+difference also left the natural exact-endpoint preconditioner singular.
+These results do not justify increasing iteration limits, relaxing mass
+acceptance, or changing the nonlinear equations. The remaining numerical
+obstacle is the rank-deficient/ineffective active-set linear correction near
+the limited-capacity endpoint. A future remedy must retain the exact
+matrix-free operator and independent true-residual checks, demonstrate a
+feasible Armijo step, and pass all unchanged endpoint audits before it can be
+considered. No pressure-spike or experimental-validation conclusion follows
+from this diagnostic.

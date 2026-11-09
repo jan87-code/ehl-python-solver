@@ -88,12 +88,16 @@ The first Ciulli Level 1 record is now available for the configured donor
 discretization: independently audited roots close at 33x33, 65x65, and
 129x129 on the fixed +/-0.4 mm domain, and preliminary fixed-spacing scalar
 checks cover 65x65, 81x81, and 97x97. These are closure and sensitivity
-results, not a resolved solution. A 193x193 fixed-domain attempt exhausted
-its Newton correction budget and failed the independent mass/complementarity
-audit. Consequently Level 2 is still open: no accepted finest-grid root or
-common-coordinate main-pressure comparison is available, and the domain study
-does not yet establish domain independence. See the Ciulli evidence section
-in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+results, not a resolved solution. Only the 33x33 pressure field is retained;
+its centerline has one contact peak and no separately identifiable outlet
+peak at 25 um spacing. The accepted 65x65, 129x129, 81x81 and 97x97 fields
+must be rerun and archived before pressure refinement/domain differences can
+be computed. A 193x193 fixed-domain attempt exhausted its Newton correction
+budget and failed the independent mass/complementarity audit; the iteration
+history needed to attribute a specific subsolver failure was not retained.
+Consequently Level 2 is still open, and the domain study does not establish
+domain independence. See the Ciulli evidence section in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
 Next, establish a reproducible accepted refinement sequence and compare film
 thickness and main pressure on common physical coordinates, while keeping

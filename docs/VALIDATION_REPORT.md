@@ -4282,9 +4282,12 @@ A separate fixed-spacing sequence holds the grid spacing at approximately
 | 81x81, +/-0.5 mm | 283.483 / 493.981 | 9.65e-15 / 3.79e-17 |
 | 97x97, +/-0.6 mm | 283.809 / 494.698 | 6.41e-15 / 8.59e-17 |
 
-The scalar film changes are small in this sequence, but no pressure profiles
-were sampled on common physical coordinates, so this is preliminary boundary
-sensitivity evidence only and does not establish domain independence.
+The scalar film changes are small in this sequence, but the accepted 65x65,
+81x81, and 97x97 pressure arrays were not retained. The 33x33 pressure field
+is the only Ciulli donor field currently available in the local result
+archives, so no fixed-spacing pressure profiles can be compared on common
+physical coordinates. This is preliminary scalar boundary-sensitivity
+evidence only and does not establish domain independence.
 
 The 193x193 fixed-domain attempt (`+/-0.4 mm`, spacing `4.167 um`) exhausted
 its 30-correction Newton budget. Its final iterate was **not accepted**:
@@ -4305,3 +4308,70 @@ solver-vs-Ciulli film-profile comparison has been made; Level 3 is deferred.
 The digitized Figure 13 profiles remain the initial experimental reference,
 with their stated digitization and uncorrected-optics uncertainty. They
 contain film thickness only and cannot validate pressure or the outlet spike.
+
+#### Retained pressure-field analysis and missing archives
+
+The local Ciulli archives contain complete stage fields for the 33x33
+continuation only. `attempt_000/state.npz` is an independently accepted
+donor root (`transport_fraction = 0`) with pressure, coordinates, content,
+film and displacement. The remaining saved states in those continuation
+archives have nonzero transport fraction; they are blended equations and are
+not substituted for donor or exact limited-capacity roots. No pressure arrays
+for the accepted 65x65, 129x129, 81x81, or 97x97 donor roots were found in
+the Ciulli result archives.
+
+The reproducible analysis command is:
+
+```text
+PYTHONPATH=src python examples/analyze_pressure_field.py results/ciulli_20261109_33_fixed_domain/attempt_000/state.npz
+```
+
+It verifies the adjacent accepted-stage metadata, samples the centerline
+(`y=0`) on the saved physical x coordinates, and reports global/local maxima,
+pressure support and the first centerline zero-pressure node with deficient
+film content. Its shared-coordinate profile comparator and explicit-window
+outlet-spike diagnostic are in `src/ehl_solver/pressure_analysis.py`; spike
+shoulder bounds must be specified from the finest field and are never guessed
+by the tool.
+
+For the retained 33x33 donor field (`+/-0.4 mm`, `dx = dy = 25 um`), the
+sampled two-dimensional maximum is `760.606 MPa` at
+`(x,y) = (50,-25) um`. The centerline maximum is `751.145 MPa` at `x=0`,
+with immediate neighboring samples `721.167` and `738.187 MPa`; it is the
+only interior centerline local maximum. Centerline pressure is positive from
+`x=-375` through `+100 um`; at `x=+125 um` pressure is zero and
+`theta=0.78219`. Thus this coarse profile has no separately identifiable
+downstream local peak. It does not show that a physical outlet spike is
+absent: the spike window, shoulders, half-prominence width, and resolving
+cell count are undefined for this field and must not be reported as zero.
+No main-contact cross-grid pressure difference is possible from one grid.
+
+The separate 193x193 donor attempt reached its 30-correction limit with load
+exactly `15 N`, but relative local/global mass balance remained
+`8.589e-1`/`3.273e-4`, maximum complementarity `1.047e-3`, and maximum SI
+mass divergence `97.08 kg/(m^2 s)`. Direct elasticity was not checked on
+that iterate, and it is not a solution. The available record establishes
+nonlinear equation nonconvergence despite force closure; its iteration,
+active-set, line-search and Krylov histories were not retained, so it cannot
+identify which correction mechanism stalled. Do not infer a 193x193 pressure
+profile or diagnose a specific linear-solver cause from the terminal audit.
+
+To complete pressure sensitivity, rerun and archive the accepted donor fields
+for 65x65 and 129x129 on the fixed `+/-0.4 mm` domain, and 81x81 and 97x97
+on their respective fixed-spacing `+/-0.5 mm` and `+/-0.6 mm` domains. The
+65x65 fixed-domain root can serve both sequences. Each archive must retain
+`pressure_pa`, `x_m`, `y_m`, the exact case, transport fraction and passing
+independent audit. Then compare the main-contact centerline profiles on an
+explicit common physical interval and analyze any outlet peak separately
+with shoulder bounds frozen from the finest accepted field. The 193x193
+failure needs a diagnostic rerun that preserves nonlinear/Krylov histories
+before choosing a numerical remedy; do not extend iteration budgets blindly.
+
+The field-analysis helpers have regression coverage for y=0 interpolation,
+physical-coordinate comparison across unlike grids, regional spike-width
+measurement, unresolved-peak reporting, and rejection of nonaccepted field
+archives. `ruff check src tests examples` passed. The Windows-compatible CPU
+suite passed **797 tests, 1 skipped**; `tests/test_joint_refinement.py` remains
+uncollectable on Windows because it imports the Unix-only `resource` module.
+`ruff check .` still reports the pre-existing 101-character line in
+`.kilo/skills/jupyter-notebook/scripts/new_notebook.py`.

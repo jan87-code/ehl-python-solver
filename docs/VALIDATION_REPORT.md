@@ -4239,3 +4239,67 @@ tests, 62 skipped** with BLAS/OpenMP/MKL limited to one thread. Five new
 tests check the three input conversions, nested refinement and fixed-spacing
 domain expansion. Optional device tests were skipped; no GPU result is
 claimed.
+
+### Ciulli Figure 13: initial donor-discretization closure and convergence status
+
+The initial CPU studies use the Figure 13 steady pure-rolling operating point:
+15 N, `u_e = 0.2 m/s`, `S = 0`, `T = 12 deg C`, `eta_0 = 0.497 Pa s`,
+`rho_0 = 892 kg/m^3`, `alpha_p = 2.87e-8 Pa^-1`, and the reported 10.319 mm
+ball diameter. The effective modulus is inferred from the paper's rounded
+0.1 mm Hertz radius. The configured fluid uses the Roelands index matched to
+the reported zero-pressure viscosity slope and the assumed
+Dowson-Higginson density coefficients described in
+[EXPERIMENTAL_VALIDATION.md](EXPERIMENTAL_VALIDATION.md). These are declared
+model assumptions, not measured full-pressure SN500 properties.
+
+The accepted roots below solve the donor-flux discretization
+(`transport_fraction = 0`) on the fixed +/-0.4 mm square domain. They passed
+the independent force, local and global SI mass, JFO complementarity, film
+reconstruction, and direct-elasticity audits:
+
+| Grid | Spacing [um] | Minimum / central film [nm] | Relative local / global mass balance | Maximum complementarity |
+| --- | ---: | ---: | ---: | ---: |
+| 33x33 | 25.000 | 216.706 / 456.136 | 2.93e-15 / 5.91e-17 | 2.13e-29 |
+| 65x65 | 12.500 | 282.747 / 492.246 | 6.25e-15 / 3.83e-17 | 3.36e-28 |
+| 129x129 | 6.250 | 285.231 / 485.267 | 1.79e-14 / 7.58e-17 | 4.14e-28 |
+
+Load is 15 N to the reported precision. The maximum film-reconstruction
+discrepancy on the 33x33 root is `3.39e-21 m`; the direct elasticity audit
+passed on each accepted root. Refinement is not yet a convergence result:
+minimum/central film change by about +30.5%/+7.9% from 33x33 to 65x65 and
++0.88%/-1.42% from 65x65 to 129x129. No accepted finer-grid pressure field is
+available for common-coordinate main-contact comparison or the separate
+outlet-spike analysis.
+
+A separate fixed-spacing sequence holds the grid spacing at approximately
+12.5 um while expanding both domain half-widths:
+
+| Grid and half-width | Minimum / central film [nm] | Relative local / global mass balance |
+| --- | ---: | ---: |
+| 65x65, +/-0.4 mm | 282.747 / 492.246 | 6.25e-15 / 3.83e-17 |
+| 81x81, +/-0.5 mm | 283.483 / 493.981 | 9.65e-15 / 3.79e-17 |
+| 97x97, +/-0.6 mm | 283.809 / 494.698 | 6.41e-15 / 8.59e-17 |
+
+The scalar film changes are small in this sequence, but no pressure profiles
+were sampled on common physical coordinates, so this is preliminary boundary
+sensitivity evidence only and does not establish domain independence.
+
+The 193x193 fixed-domain attempt (`+/-0.4 mm`, spacing `4.167 um`) exhausted
+its 30-correction Newton budget. Its final iterate was **not accepted**:
+relative local/global mass balance was `8.589e-1`/`3.273e-4`,
+maximum complementarity was `1.047e-3`, and maximum SI mass divergence was
+`97.08 kg/(m^2 s)`. The audit reported 15 N load, but direct elasticity was
+not checked for this failed iterate. Its reported 339.455 nm minimum and
+462.396 nm central film are not solution values and must not be used in a
+refinement comparison.
+
+These results establish Level 1 closure only for the listed donor-flux roots.
+They do not close the distinct limited-capacity endpoint
+(`transport_fraction = 1`): the bounded transport continuation previously
+stopped at fraction 0.9995491, and its blended state is not an exact endpoint
+root. Level 2 remains incomplete because a finer accepted root and
+common-coordinate pressure/domain comparisons are missing. Therefore no
+solver-vs-Ciulli film-profile comparison has been made; Level 3 is deferred.
+The digitized Figure 13 profiles remain the initial experimental reference,
+with their stated digitization and uncorrected-optics uncertainty. They
+contain film thickness only and cannot validate pressure or the outlet spike.

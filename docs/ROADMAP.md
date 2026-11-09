@@ -84,19 +84,28 @@ the case nor its correlation comparison is independent experimental validation.
 See sections 36-37 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for
 reproducible inputs, audits, assumptions and unresolved limitations.
 
-Next, complete the Ciulli preparation for a controlled CPU comparison against
-both digitized profiles at 15 N, 0.2 m/s, pure rolling. First produce a
-reproducible Level 1 closure record for the selected Ciulli configuration.
-Then run separate Level 2 studies: mesh refinement at fixed physical domain,
-and domain expansion at approximately fixed grid spacing. Compare central and
-minimum film thickness and main pressure on common physical coordinates;
-report load, Reynolds, local/global mass, JFO, boundary/domain and grid
+The first Ciulli Level 1 record is now available for the configured donor
+discretization: independently audited roots close at 33x33, 65x65, and
+129x129 on the fixed +/-0.4 mm domain, and preliminary fixed-spacing scalar
+checks cover 65x65, 81x81, and 97x97. These are closure and sensitivity
+results, not a resolved solution. A 193x193 fixed-domain attempt exhausted
+its Newton correction budget and failed the independent mass/complementarity
+audit. Consequently Level 2 is still open: no accepted finest-grid root or
+common-coordinate main-pressure comparison is available, and the domain study
+does not yet establish domain independence. See the Ciulli evidence section
+in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+
+Next, establish a reproducible accepted refinement sequence and compare film
+thickness and main pressure on common physical coordinates, while keeping
+fixed-domain mesh refinement separate from fixed-spacing domain expansion.
+Report load, Reynolds, local/global mass, JFO, boundary/domain and grid
 diagnostics separately from experimental and constitutive-model uncertainty.
 Analyze the outlet pressure spike independently using the regional protocol in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md); do not demand monotone peak or
-width changes or choose unsupported tolerances. Only then make the Level 3
-film-profile comparison. Keep original interferograms, calibration files and
-pressure-dependent optical properties optional improvements, not prerequisites.
+width changes or choose unsupported tolerances. Only after Level 2 is supported
+for the declared model should the Level 3 film-profile comparison be made.
+Keep original interferograms, calibration files and pressure-dependent optical
+properties optional improvements, not prerequisites.
 In parallel, reconcile the NASA source discrepancy and develop bounded
 higher-accuracy transport or multilevel methods to reduce mesh error, with
 unchanged conservation and acceptance gates; do not make a larger uniform

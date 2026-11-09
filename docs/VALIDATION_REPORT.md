@@ -4251,6 +4251,8 @@ the reported zero-pressure viscosity slope and the assumed
 Dowson-Higginson density coefficients described in
 [EXPERIMENTAL_VALIDATION.md](EXPERIMENTAL_VALIDATION.md). These are declared
 model assumptions, not measured full-pressure SN500 properties.
+The CPU runs used Python 3.13 with `OPENBLAS_NUM_THREADS=1` and
+`OMP_NUM_THREADS=1`.
 
 The accepted roots below solve the donor-flux discretization
 (`transport_fraction = 0`) on the fixed +/-0.4 mm square domain. They passed

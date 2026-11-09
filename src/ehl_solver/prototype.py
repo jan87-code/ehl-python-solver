@@ -16,7 +16,7 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.signal import convolve2d
 
 from ehl_solver.cavitating_coupled import CavitatingElasticityProblem
-from ehl_solver.constitutive import IsothermalFluid
+from ehl_solver.constitutive import IsothermalFluid, roelands_index_from_ambient_slope
 from ehl_solver.donor_load import DonorLoadSystem, donor_mass_audit
 from ehl_solver.elasticity import cell_integrated_kernel
 from ehl_solver.film_correlations import hamrock_dowson_point_contact
@@ -92,10 +92,11 @@ class PointContactCase:
     def fluid(self):
         if self.viscosity_pa_s <= self.viscosity_reference_pa_s:
             raise ValueError("Ambient viscosity must exceed its Roelands reference")
-        z = (
-            self.alpha_per_pa
-            * self.roelands_pressure_pa
-            / np.log(self.viscosity_pa_s / self.viscosity_reference_pa_s)
+        z = roelands_index_from_ambient_slope(
+            self.alpha_per_pa,
+            self.viscosity_pa_s,
+            self.viscosity_reference_pa_s,
+            self.roelands_pressure_pa,
         )
         return IsothermalFluid(
             self.viscosity_pa_s,

@@ -7,6 +7,70 @@ matrix-free force path now closes 200 N on 33x49, 65x97 and 97x145 nodes;
 mesh/domain accuracy remain open. This report records numerical verification,
 **not complete physical validation of classical piezoviscous EHL**.
 
+## Verification and validation evidence levels
+
+Keep the evidence hierarchy explicit:
+
+1. **Equation closure:** For each returned solution, independently check
+   integrated pressure/load, the original Reynolds mass-flux residual and
+   local/global conservation, JFO pressure/content feasibility and
+   complementarity, reconstructed elastic film coupling, and nonlinear
+   convergence. Existing reduced-model and coupled tests exercise these
+   properties (including the cavitation/complementarity checks in
+   `tests/test_cavitating_coupled.py` and
+   `tests/test_cavitating_newton.py`). A test passing at one case or grid does
+   not establish closure for all regimes, nor numerical accuracy.
+2. **Numerical convergence:** Independently study (a) mesh refinement at a
+   fixed physical domain and (b) domain expansion while holding physical grid
+   spacing approximately fixed. Track central/minimum film and the main
+   pressure field on common physical coordinates. Do not combine domain
+   truncation error and mesh error into one sequence or infer physical
+   accuracy from small equation residuals.
+3. **Experimental validation:** Only after Levels 1 and 2 are demonstrated
+   for the same declared model and case, compare its converged film against
+   independent measurements. Ciulli Figure 13 is the first prepared
+   reference, not yet a solver-vs-experiment result. Its digitization and
+   uncorrected pressure-dependent optical effect remain part of the
+   experimental uncertainty.
+
+### Pressure comparison and outlet-spike protocol
+
+An outlet-side Petrusevich-type pressure spike is an expected EHL feature, not
+automatically a numerical error. Do not use a global pointwise pressure L2
+error that mixes it with the main contact: a reference may not resolve the
+spike, refinement can change its shape, and a small peak shift can dominate
+that norm. Compare pressure on shared physical coordinates, not array indices.
+
+For each fixed-domain mesh study, state physical bounds for three regions:
+the main contact, a separately excluded outlet-spike window, and the
+pressure-release/cavitation region, with bounds in physical coordinates (or
+explicitly normalized by a fixed physical scale). Define and record the
+spike window from the finest field being assessed using the secondary
+downstream peak and its bracketing shoulders; freeze those dimensional bounds
+when sampling the coarser meshes. Reuse the same physical bounds for the
+corresponding fixed-spacing domain study. If the peak or shoulders are not
+unambiguous, report that and do not claim a unique spike width.
+
+Compare the main pressure profile/field only in the main-contact region,
+excluding both the spike window and release/cavitation region. In the
+pressure-release region, report the zero-pressure/cavitation front and its
+mass-content/flux behavior rather than smoothing or scoring it as a
+positive-pressure main-contact profile.
+
+Analyze the outlet feature separately: record both the field-global maximum
+and outlet-window peak pressure and `(x,y)` location; pressure at the nearest
+samples on each side of the outlet peak and at the window shoulders; width at
+half prominence using a linearly interpolated baseline between shoulder
+pressures along the downstream line through the peak; the physical width and
+number of grid cells across that width; and the spike-region integrated
+pressure/excess-pressure quantity. Report physical grid spacing with the cell
+count. Track peak location, profile shape and integrals across grids/domains.
+Peak pressure and width need not vary monotonically; a changing spike can
+indicate added resolution but is not evidence of accuracy by itself. Do not
+impose a convergence tolerance without case-specific evidence. The Ciulli
+Figure 13 dataset contains film thickness, not a pressure profile, and
+therefore does not validate spike pressure.
+
 ## 1. Diagnostic audit before further physics changes
 
 The full-film mathematical reference solves

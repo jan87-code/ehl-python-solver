@@ -19,6 +19,17 @@ expected Petrusevich-type pressure spike; preserve it and defer additional
 spike-focused work. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the
 recorded measurements and caveats.
 
+Use the strict three-level evidence hierarchy in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md): **Level 1, equation closure**
+(independent load/Reynolds/mass/JFO/film-coupling/nonlinear audits);
+**Level 2, numerical convergence** (fixed-domain mesh refinement separately
+from fixed-spacing domain expansion); and **Level 3, experimental validation**
+(comparison against independent measurements only after Levels 1 and 2 for
+the same case/model). Successful closure is not evidence of resolved film
+heights or experimental validity. The numerical report also defines a
+three-region pressure comparison and an independent outlet-spike diagnostic;
+do not include an unresolved, shifting spike in a global pointwise L2 penalty.
+
 Three experimental-paper candidates have now been recorded in
 [EXPERIMENTAL_VALIDATION.md](EXPERIMENTAL_VALIDATION.md) and
 [`cases/experimental_validation_candidates.json`](../cases/experimental_validation_candidates.json).
@@ -30,10 +41,14 @@ viscosity, density, pressure-viscosity coefficient, temperature, load, and
 geometry needed for an initial isothermal case; neither original interferograms
 nor pressure-dependent refractive-index correction is a prerequisite. The
 reported profiles were not optically pressure-corrected, which belongs in the
-experimental-reference uncertainty budget. Note that the current implementation
-is Roelands/Dowson-Higginson, not the proposed Barus/constant-density model;
-this is a solver-model discrepancy, not missing paper data. No physics change
-or solver-vs-experiment result is part of this documentation milestone.
+experimental-reference uncertainty budget. The current case uses Roelands
+viscosity with `z=0.6269990432` matched to the reported zero-pressure
+log-viscosity slope, and assumed pressure-dependent Dowson-Higginson density
+coefficients; neither choice is a measured full-pressure SN500 law. Barus and
+Roelands are alternative models, and constant-density and pressure-dependent
+density are separate assumptions. The shared slope-conversion helper
+preserves the existing Roelands model; it does not change the EHL equations.
+No solver-vs-experiment result exists yet.
 Cameron-Gohar (1966) dimensionless curves and Gohar (1971) fringe observations
 remain useful later trend checks without direct point datasets.
 
@@ -69,14 +84,19 @@ the case nor its correlation comparison is independent experimental validation.
 See sections 36-37 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for
 reproducible inputs, audits, assumptions and unresolved limitations.
 
-Next, run a controlled CPU comparison against both digitized Ciulli profiles
-at the reported 15 N, 0.2 m/s, pure-rolling condition, and report load,
-Reynolds, mass, domain, and grid diagnostics separately from experimental and
-constitutive-model uncertainty. Select/configure the constitutive model
-explicitly; do not describe the current Roelands/Dowson-Higginson result as
-Barus/constant-density. Recovering original interferograms, calibration files,
-and pressure-dependent optical properties is optional follow-up work to
-improve the experimental reference, not a gate for starting this comparison.
+Next, complete the Ciulli preparation for a controlled CPU comparison against
+both digitized profiles at 15 N, 0.2 m/s, pure rolling. First produce a
+reproducible Level 1 closure record for the selected Ciulli configuration.
+Then run separate Level 2 studies: mesh refinement at fixed physical domain,
+and domain expansion at approximately fixed grid spacing. Compare central and
+minimum film thickness and main pressure on common physical coordinates;
+report load, Reynolds, local/global mass, JFO, boundary/domain and grid
+diagnostics separately from experimental and constitutive-model uncertainty.
+Analyze the outlet pressure spike independently using the regional protocol in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md); do not demand monotone peak or
+width changes or choose unsupported tolerances. Only then make the Level 3
+film-profile comparison. Keep original interferograms, calibration files and
+pressure-dependent optical properties optional improvements, not prerequisites.
 In parallel, reconcile the NASA source discrepancy and develop bounded
 higher-accuracy transport or multilevel methods to reduce mesh error, with
 unchanged conservation and acceptance gates; do not make a larger uniform

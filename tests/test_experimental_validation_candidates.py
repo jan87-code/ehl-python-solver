@@ -57,6 +57,16 @@ def test_ciulli_candidate_reproduces_reported_hertz_geometry_and_refines_consist
     assert reference.hertz.peak_pressure_pa == pytest.approx(
         case_data["conditions"]["reported_peak_pressure_pa"], rel=0.03
     )
+    fluid = reference.fluid()
+    _, eta, _, deta_dp = fluid.properties(0.0)
+    assert fluid.viscosity_index == pytest.approx(0.6269990432, rel=1e-10)
+    assert eta == pytest.approx(case_data["conditions"]["viscosity_pa_s"])
+    assert deta_dp / eta == pytest.approx(
+        case_data["conditions"]["pressure_viscosity_coefficient_per_pa"], rel=1e-14
+    )
+    assert fluid.density_kg_m3 == pytest.approx(case_data["conditions"]["density_kg_m3"])
+    assert fluid.density_a_per_pa == pytest.approx(0.6e-9)
+    assert fluid.density_b_per_pa == pytest.approx(1.7e-9)
     assert case_data["experimental_observation"]["central_film_thickness_um_digitized_range"] == [
         0.45,
         0.47,

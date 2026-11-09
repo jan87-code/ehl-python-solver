@@ -44,20 +44,44 @@ properties.
 These are solver/case data, not optical-correction data. Once the chosen
 isothermal constitutive law is declared, no additional pressure-density curve
 is needed to run a **constant-density** reference case; `rho_0` is reported.
+The current Ciulli `PointContactCase` does not use constant density: it uses
+the assumed Dowson-Higginson coefficients documented below.
 The paper's reported Hertz radius is rounded, so the modulus inferred from it
 is also approximate. Record that approximation rather than treating the
 rounded `0.7 GPa` pressure as an exact material property.
 
-**Implementation fact:** the current repository does not implement a Barus
-viscosity law with constant density. [`IsothermalFluid`](../src/ehl_solver/constitutive.py)
-implements Roelands viscosity and pressure-dependent Dowson-Higginson density.
-This is a solver-model/configuration discrepancy, not missing Ciulli
-experimental data. This documentation/data-only milestone does not add or
-change a fluid model. Do not label a result from the current fluid class as a
-Barus/constant-density run. A separate solver task is needed if that exact
-constitutive choice is required; alternatively, a first comparison can be
-explicitly reported as using the current model, with the difference treated
-as model-form uncertainty.
+**Viscosity model audit:** [`IsothermalFluid`](../src/ehl_solver/constitutive.py)
+implements Roelands viscosity, not Barus. Its equation is
+
+```text
+eta(p) = eta_0 exp(log(eta_0 / eta_star) * ((1 + p / p_r)^z - 1))
+```
+
+with viscosity in Pa s, pressure in gauge Pa relative to cavitation pressure
+`p_c = 0`, `eta_star = 6.31e-5 Pa s`, and `p_r = 1.96e8 Pa`. Since
+`-log(eta_star)` is approximately `9.67` when eta is expressed in Pa s, this
+is mathematically equivalent to the stated conventional Roelands expression.
+The implementation calculates the exponent with `log1p`/`expm1` and its
+analytic derivative. For Ciulli, the ambient logarithmic slope gives
+
+```text
+z = alpha_p * p_r / log(eta_0 / eta_star) = 0.6269990432
+```
+
+The shared conversion helper and tests verify `d(log eta)/dp = alpha_p` at
+zero gauge pressure, including an independent finite difference. This matches
+only the low-pressure slope; it does not show SN500 follows a Roelands curve
+throughout the EHL pressure range. Barus,
+`eta = eta_0 exp(alpha_p p)`, is an alternative model using the same reported
+ambient slope, not a second experimental dataset; do not silently treat
+`alpha_p` and `z` as interchangeable or tune either law to fit Figure 13.
+
+**Density is separate:** the candidate uses `rho_0 = 892 kg/m^3` with the
+current assumed pressure-dependent Dowson-Higginson coefficients
+`a = 0.6e-9/Pa`, `b = 1.7e-9/Pa`. Ciulli does not report those coefficients or
+a pressure-density curve. They are model assumptions, not consequences of
+`alpha_p`; a constant-density case and this pressure-dependent-density case
+must be identified separately in any comparison.
 
 ### 2. Experimental data required for comparison
 
@@ -110,14 +134,17 @@ comparison:
 ## Recommended first comparison
 
 Use the Ciulli steady point only: `S = 0`, `u_e = 0.2 m/s`, and `F = 15 N`.
-Compare the two digitized mid-plane profiles, reporting central and minimum
-film differences alongside the stated digitization and optical-reference
-uncertainties. Separately report independent load closure, Reynolds residual,
-mass conservation, and domain/grid sensitivity on at least three grids. Do
-not tune fluid parameters to fit Figure 13. Keep constitutive-model
-uncertainty (including the current Roelands/Dowson-Higginson implementation
-versus the proposed Barus/constant-density reference) separate from numerical
-and experimental uncertainty.
+First document Level 1 load, Reynolds, mass, JFO and film-coupling closure.
+For Level 2, run at least three meshes at one fixed physical domain, then a
+separate domain-expansion study at approximately fixed grid spacing. Report
+central/minimum film and main pressure changes in common physical coordinates;
+keep domain and mesh effects separate. Only after these case-specific checks
+report a Level 3 comparison of the two digitized mid-plane profiles, alongside
+the stated digitization and optical-reference uncertainties. Do not tune fluid
+or material parameters to fit Figure 13. Keep constitutive-model uncertainty
+(including the current slope-matched Roelands/assumed Dowson-Higginson model
+versus any separately implemented Barus/constant-density model) separate from
+numerical and experimental uncertainty.
 
 Do not use the paper's 0.25/1 Hz transients or nonzero slide-to-roll ratios as
 steady-isothermal validation cases. Digitize Cameron-Gohar and Gohar's

@@ -3,7 +3,7 @@ from decimal import Decimal, localcontext
 import numpy as np
 import pytest
 
-from ehl_solver.constitutive import IsothermalFluid
+from ehl_solver.constitutive import IsothermalFluid, roelands_index_from_ambient_slope
 
 
 def test_si_laws_match_independent_high_precision_reference_and_derivatives():
@@ -54,3 +54,39 @@ def test_density_units_and_viscosity_origin_slope_and_asymptote():
         fluid.ratios(-1e9)
     with pytest.raises(ValueError):
         IsothermalFluid(-1, 850)
+
+
+def test_ciulli_roelands_index_conversion_and_zero_pressure_slope():
+    viscosity_pa_s = 0.497
+    alpha_per_pa = 2.87e-8
+    index = roelands_index_from_ambient_slope(alpha_per_pa, viscosity_pa_s)
+    assert index == pytest.approx(0.627, abs=1e-3)
+    conventional_index = alpha_per_pa * 1.96e8 / (np.log(viscosity_pa_s) + 9.67)
+    assert index == pytest.approx(conventional_index, rel=1e-4)
+
+    fluid = IsothermalFluid(viscosity_pa_s, 892.0, viscosity_index=index)
+    rho, eta, drho_dp, deta_dp = fluid.properties(0.0)
+    assert rho == pytest.approx(892.0)
+    assert eta == pytest.approx(viscosity_pa_s)
+    assert drho_dp == pytest.approx(892.0 * 0.6e-9)
+    assert deta_dp / eta == pytest.approx(alpha_per_pa, rel=1e-14)
+
+    step_pa = 100.0
+    eta_plus = fluid.properties(step_pa)[1]
+    eta_minus = fluid.properties(-step_pa)[1]
+    numerical_log_slope = (np.log(eta_plus) - np.log(eta_minus)) / (2 * step_pa)
+    assert numerical_log_slope == pytest.approx(alpha_per_pa, rel=1e-8)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        (-1e-8, 0.497, 6.31e-5, 1.96e8),
+        (2.87e-8, 6.31e-5, 6.31e-5, 1.96e8),
+        (2.87e-8, 0.497, 0.0, 1.96e8),
+        (2.87e-8, 0.497, 6.31e-5, 0.0),
+    ],
+)
+def test_roelands_slope_conversion_rejects_invalid_inputs(values):
+    with pytest.raises(ValueError):
+        roelands_index_from_ambient_slope(*values)

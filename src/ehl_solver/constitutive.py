@@ -10,6 +10,31 @@ from dataclasses import dataclass
 import numpy as np
 
 
+def roelands_index_from_ambient_slope(
+    alpha_per_pa: float,
+    viscosity_pa_s: float,
+    viscosity_reference_pa_s: float = 6.31e-5,
+    roelands_pressure_pa: float = 1.96e8,
+) -> float:
+    """Convert the zero-gauge-pressure log-viscosity slope to Roelands z.
+
+    Pressures are SI gauge Pa. The reference viscosity is in Pa s and must be
+    less than the ambient viscosity. This matches the derivative at p=0; it
+    does not establish a Roelands fit over the full pressure range.
+    """
+    values = (alpha_per_pa, viscosity_pa_s, viscosity_reference_pa_s, roelands_pressure_pa)
+    if (
+        not all(np.isfinite(value) for value in values)
+        or alpha_per_pa < 0
+        or viscosity_pa_s <= viscosity_reference_pa_s
+        or viscosity_reference_pa_s <= 0
+        or roelands_pressure_pa <= 0
+    ):
+        raise ValueError("invalid SI inputs for Roelands slope conversion")
+    log_factor = np.log(viscosity_pa_s / viscosity_reference_pa_s)
+    return float(alpha_per_pa * roelands_pressure_pa / log_factor)
+
+
 @dataclass(frozen=True)
 class IsothermalFluid:
     viscosity_pa_s: float

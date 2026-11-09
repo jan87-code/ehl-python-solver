@@ -118,8 +118,8 @@
       },
       "solver_input_assumptions": [
         "The contact modulus is inferred from the rounded Hertz radius, load, and ball radius reported in the paper.",
-        "The reported pressure-viscosity coefficient parameterizes a declared Barus model; ambient reference properties are reported at 12 degrees C.",
-        "The current repository fluid implementation is Roelands viscosity with pressure-dependent Dowson-Higginson density, not Barus with constant density. This is an implementation/model-selection difference, not a missing experimental input."
+        "Current Roelands implementation uses z=0.6269990432, converted from alpha_p by matching d(log eta)/dp at zero gauge pressure; this matches only the ambient slope and does not validate the SN500 curve at EHL pressures.",
+        "The current Dowson-Higginson density coefficients (a=0.6e-9/Pa, b=1.7e-9/Pa) are assumptions, not Ciulli measurements; rho_0 alone does not determine pressure-dependent density."
       ],
       "experimental_observation": {
         "quantity": "mid-plane film-thickness profile and central/minimum film thickness",

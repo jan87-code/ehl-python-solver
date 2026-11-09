@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from ehl_solver.cavitating_coupled import CavitatingElasticityProblem
-from ehl_solver.constitutive import IsothermalFluid
+from ehl_solver.constitutive import IsothermalFluid, roelands_index_from_ambient_slope
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,9 @@ class Circular200N:
     def fluid(self):
         # Match d(log eta)/dp at p=0, rather than identifying alpha with z.
         gamma, eta_star = 1.96e8, 6.31e-5
-        z = self.alpha_per_pa * gamma / np.log(self.viscosity_pa_s / eta_star)
+        z = roelands_index_from_ambient_slope(
+            self.alpha_per_pa, self.viscosity_pa_s, eta_star, gamma
+        )
         return IsothermalFluid(self.viscosity_pa_s, 850.0, viscosity_index=z)
 
     def parameters(self):

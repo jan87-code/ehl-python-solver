@@ -75,7 +75,7 @@
     },
     {
       "id": "ciulli_2008_steady_pure_rolling",
-      "status": "reconstructed_candidate_not_validated",
+      "status": "digitized_initial_reference_not_solver_validated",
       "source": {
         "authors": "E. Ciulli, T. Draexl, and K. Stadler",
         "title": "Film Thickness Analysis for EHL Contacts under Steady-State and Transient Conditions by Automatic Digital Image Processing",
@@ -118,26 +118,32 @@
       },
       "solver_input_assumptions": [
         "The contact modulus is inferred from the rounded Hertz radius, load, and ball radius reported in the paper.",
-        "The paper reports ambient viscosity and its pressure-viscosity coefficient, not a complete pressure-viscosity curve; the repository Roelands law is only tangent-matched at zero pressure.",
-        "The solver uses its built-in Dowson-Higginson density coefficients, which are not measured for this SN500 oil in the paper."
+        "The reported pressure-viscosity coefficient parameterizes a declared Barus model; ambient reference properties are reported at 12 degrees C.",
+        "The current repository fluid implementation is Roelands viscosity with pressure-dependent Dowson-Higginson density, not Barus with constant density. This is an implementation/model-selection difference, not a missing experimental input."
       ],
       "experimental_observation": {
         "quantity": "mid-plane film-thickness profile and central/minimum film thickness",
         "source_figure": "13",
+        "source_page": 10,
+        "reference_csv": "ciulli_2008_figure13_s0_profiles.csv",
+        "digitization_method": "400 dpi local PDF render; coordinates calibrated from labeled plot ticks; values sampled every 10 micrometers and rounded to 0.01 micrometer",
         "profile_directions": {
           "x": "entrainment direction",
           "y": "transverse direction"
         },
-        "central_film_thickness_um_digitized_range": [0.42, 0.5],
-        "minimum_film_thickness_um_digitized_range": [0.2, 0.29],
-        "digitization_uncertainty_um": 0.03,
+        "central_film_thickness_um_digitized_range": [0.45, 0.47],
+        "minimum_film_thickness_um_digitized_range": [0.24, 0.28],
+        "longitudinal_minimum_film_thickness_um_digitized_range": [0.33, 0.39],
+        "digitization_uncertainty_um": 0.02,
+        "coordinate_digitization_uncertainty_um": 2.0,
         "reported_method_uncertainty_um": 0.01,
-        "additional_pressure_refractive_index_uncertainty_um": 0.01
+        "additional_pressure_refractive_index_uncertainty_um": 0.01,
+        "pressure_dependent_refractive_index_correction_applied": false
       },
-      "blocking_gaps": [
-        "The digitized profile is approximate; the original film map and raw interferogram are not included.",
-        "The pressure-dependent lubricant density and refractive-index laws are not reported.",
-        "The solver input is a reproducible candidate configuration, not a claim that the fluid model or experimental profile has been independently matched."
+      "optional_reference_improvements": [
+        "Original interferograms and the authors' calibration files.",
+        "Pressure-dependent refractive-index data and a reprocessing correction for the measured film reference.",
+        "Oil-specific pressure-density measurements and elastic constants to replace the reported-Hertz-geometry modulus inference."
       ],
       "refinement_grid_sizes": [33, 65, 129]
     }

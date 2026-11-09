@@ -22,29 +22,36 @@ recorded measurements and caveats.
 Three experimental-paper candidates have now been recorded in
 [EXPERIMENTAL_VALIDATION.md](EXPERIMENTAL_VALIDATION.md) and
 [`cases/experimental_validation_candidates.json`](../cases/experimental_validation_candidates.json).
-Ciulli et al. (2008) provides the best first steady pure-rolling profile, but
-its approximate figure digitization and missing pressure-dependent fluid and
-optical data are not sufficient for solver acceptance. Cameron-Gohar (1966)
-provides historical dimensionless curves, and Gohar (1971) a reported
-interference-fringe observation; neither currently has a complete, directly
-comparable numerical input/output set. These are preparation and data-integrity
-tests, not solver-versus-experiment validation. Obtain raw measurements and
-the missing material/fluid/optical properties before declaring a paper case
-quantitatively validated.
+Ciulli et al. (2008) Figure 13's `S=0`, `u_e=0.2 m/s` transverse and
+longitudinal profiles have now been digitized into
+[`cases/ciulli_2008_figure13_s0_profiles.csv`](../cases/ciulli_2008_figure13_s0_profiles.csv),
+with explicit plot read-off uncertainty. The paper reports the ambient
+viscosity, density, pressure-viscosity coefficient, temperature, load, and
+geometry needed for an initial isothermal case; neither original interferograms
+nor pressure-dependent refractive-index correction is a prerequisite. The
+reported profiles were not optically pressure-corrected, which belongs in the
+experimental-reference uncertainty budget. Note that the current implementation
+is Roelands/Dowson-Higginson, not the proposed Barus/constant-density model;
+this is a solver-model discrepancy, not missing paper data. No physics change
+or solver-vs-experiment result is part of this documentation milestone.
+Cameron-Gohar (1966) dimensionless curves and Gohar (1971) fringe observations
+remain useful later trend checks without direct point datasets.
 
-The next numerical milestone is to select and reproduce a published
-fully-flooded point-contact benchmark with matched definitions and inputs.
-First verify the benchmark's SI conversions, Roelands viscosity and
-pressure-dependent density laws, derivatives, geometry, and supply/boundary
-conditions against their source equations. Then run a bounded CPU reference
-case and compare the reported minimum/central film metrics with the published
-numerical results, keeping nonlinear residual, load balance, boundary/domain
-error, and mesh error separate. NASA TN D-8049 and TN D-8317 are the current
-candidate formulation and target table; see
+The separate numerical-reference milestone remains to reproduce a published
+fully flooded point-contact benchmark with matched definitions and inputs.
+First verify the benchmark's SI conversions, constitutive laws and
+derivatives, geometry, and supply/boundary conditions against their source
+equations. Then run a bounded CPU reference case and compare its reported
+minimum/central film metrics with published numerical results, keeping
+nonlinear residual, load balance, boundary/domain error, and mesh error
+separate. NASA TN D-8049 and TN D-8317 are the current candidate formulation
+and target table; see
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for the known readiness gaps.
 Do not call this physical validation if the benchmark assumptions or
-acceptance tolerances are not matched. Real-experiment validation remains a
-later step requiring measured pressure/film data and complete test conditions.
+acceptance tolerances are not matched. Separately, the digitized Ciulli
+profiles now enable an initial experiment comparison; they remain distinct
+from the NASA numerical benchmark and carry the stated digitization and
+uncorrected-optics uncertainty.
 An initial NASA Table I inspired 5.62401 N probe now reaches independently
 audited donor roots on 33x33, 65x65 and 129x129, with minimum films
 47.175, 53.959 and 54.408 nm versus the 50.505 nm table value. The last
@@ -62,12 +69,18 @@ the case nor its correlation comparison is independent experimental validation.
 See sections 36-37 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for
 reproducible inputs, audits, assumptions and unresolved limitations.
 
-Next, obtain independent raw film measurements and high-pressure lubricant
-properties, verify the specimen/boundary conditions and reconcile the NASA
-source discrepancy before a quantitative validation claim. Develop and
-benchmark bounded higher-accuracy transport or multilevel methods to reduce
-mesh error, with unchanged conservation and acceptance gates; do not make a
-larger uniform grid or further outlet-spike study the sole next step.
+Next, run a controlled CPU comparison against both digitized Ciulli profiles
+at the reported 15 N, 0.2 m/s, pure-rolling condition, and report load,
+Reynolds, mass, domain, and grid diagnostics separately from experimental and
+constitutive-model uncertainty. Select/configure the constitutive model
+explicitly; do not describe the current Roelands/Dowson-Higginson result as
+Barus/constant-density. Recovering original interferograms, calibration files,
+and pressure-dependent optical properties is optional follow-up work to
+improve the experimental reference, not a gate for starting this comparison.
+In parallel, reconcile the NASA source discrepancy and develop bounded
+higher-accuracy transport or multilevel methods to reduce mesh error, with
+unchanged conservation and acceptance gates; do not make a larger uniform
+grid or further outlet-spike study the sole next step.
 The bounded nonlinear adapter and its recovery/acceptance checks remain
 experimental. The existing CLI already has an
 [everyday guide](USER_GUIDE.md); the packaged GUI and physical release gate

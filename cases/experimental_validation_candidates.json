@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "purpose": "Paper-derived experimental benchmark records; these records are not solver validation results.",
+  "cases": [
+    {
+      "id": "cameron_gohar_1966_oil_3_load_series",
+      "status": "source_data_only",
+      "source": {
+        "authors": "A. Cameron and R. Gohar",
+        "title": "Theoretical and Experimental Studies of the Oil Film in Lubricated Point Contact",
+        "publication": "Proceedings of the Royal Society of London A, 291(1427), 520-536 (1966)",
+        "doi": "10.1098/rspa.1966.0112",
+        "figures": ["6", "7", "8", "9"]
+      },
+      "conditions": {
+        "contact": "1-inch-diameter steel ball on a glass plate",
+        "ball_radius_m": 0.0127,
+        "glass_young_modulus_pa": 56536976800.0,
+        "glass_poisson_ratio": 0.25,
+        "steel_young_modulus_pa": 206842718400.0,
+        "steel_poisson_ratio": 0.3,
+        "load_kgf": [0.78, 1.3],
+        "lubricant": "Mineral oil No. 3; 9% paraffinic distillate and 91% bright stock",
+        "dynamic_viscosity_cp_at_100_f": 398.0,
+        "dynamic_viscosity_cp_at_210_f": 24.4,
+        "reported_temperature_k": null,
+        "pressure_viscosity_coefficient_per_pa": null
+      },
+      "experimental_observation": {
+        "quantity": "central film thickness divided by ball radius",
+        "presentation": "Experimental curves against theoretical film thickness and dimensionless load",
+        "source_figures": ["6", "8"],
+        "digitized_points_available": false
+      },
+      "blocking_gaps": [
+        "The paper does not provide a machine-readable point table for the plotted film data.",
+        "The exact inlet temperature and oil-specific pressure-viscosity law for the plotted oil-3 points are not recovered.",
+        "The figure-based values must be digitized and assigned uncertainty before a quantitative solver comparison."
+      ]
+    },
+    {
+      "id": "gohar_1971_tungsten_carbide_glass",
+      "status": "source_data_only",
+      "source": {
+        "authors": "R. Gohar",
+        "title": "Oil Film Thickness and Rolling Friction in Elastohydrodynamic Point Contact",
+        "publication": "ASME Journal of Lubrication Technology, 1971",
+        "figures": ["3", "4", "5"]
+      },
+      "conditions": {
+        "contact": "1-inch-diameter tungsten-carbide ball on glass plate",
+        "ball_radius_m": 0.0127,
+        "load_n": 34.918540,
+        "rolling_speed_m_s": 0.29972,
+        "viscosity_pa_s": 0.028958,
+        "pressure_viscosity_coefficient_per_pa": 2.52e-8,
+        "viscosity_source_value_reyn": 4.2e-6,
+        "pressure_viscosity_source_value_cm2_per_dyne": 2.52e-9,
+        "ball_young_modulus_pa": 675e9,
+        "glass_young_modulus_pa": 75.8e9,
+        "poisson_ratios": null,
+        "pressure_density_law": null
+      },
+      "experimental_observation": {
+        "quantity": "central optical interference fringe order",
+        "reported_value": "second black fringe",
+        "source_figure": "3(a)",
+        "numerical_film_thickness_available": false
+      },
+      "blocking_gaps": [
+        "The reported fringe order cannot be converted to film thickness without the pressure-dependent optical index and the exact fringe calibration.",
+        "Poisson ratios and the lubricant pressure-density relation are not specified for this plotted operating point.",
+        "The source presents dimensional film trends in figures rather than a numerical experimental point table."
+      ]
+    },
+    {
+      "id": "ciulli_2008_steady_pure_rolling",
+      "status": "reconstructed_candidate_not_validated",
+      "source": {
+        "authors": "E. Ciulli, T. Draexl, and K. Stadler",
+        "title": "Film Thickness Analysis for EHL Contacts under Steady-State and Transient Conditions by Automatic Digital Image Processing",
+        "publication": "Advances in Tribology, Volume 2008, Article 325187",
+        "doi": "10.1155/2008/325187",
+        "figures": ["13"]
+      },
+      "conditions": {
+        "mode": "steady state, pure rolling",
+        "load_n": 15.0,
+        "ball_diameter_m": 0.010319,
+        "ball_radius_m": 0.0051595,
+        "reported_hertz_radius_m": 0.0001,
+        "reported_peak_pressure_pa": 700000000.0,
+        "entrainment_m_s": 0.2,
+        "slide_to_roll_ratio": 0.0,
+        "temperature_k": 285.15,
+        "lubricant": "SN500 paraffin-base mineral oil",
+        "viscosity_pa_s": 0.497,
+        "density_kg_m3": 892.0,
+        "pressure_viscosity_coefficient_per_pa": 2.87e-8,
+        "glass_spacer_layer_m": 6e-8
+      },
+      "solver_input": {
+        "load_n": 15.0,
+        "radius_m": 0.0051595,
+        "contact_modulus_pa": 58044375000.0,
+        "viscosity_pa_s": 0.497,
+        "density_kg_m3": 892.0,
+        "entrainment_m_s": 0.2,
+        "alpha_per_pa": 2.87e-8,
+        "roelands_pressure_pa": 196000000.0,
+        "viscosity_reference_pa_s": 6.31e-5,
+        "ny": 65,
+        "nx": 65,
+        "domain_half_width_x_m": 0.0004,
+        "domain_half_width_y_m": 0.0004,
+        "transport": "donor",
+        "maximum_physical_nodes": 20000
+      },
+      "solver_input_assumptions": [
+        "The contact modulus is inferred from the rounded Hertz radius, load, and ball radius reported in the paper.",
+        "The paper reports ambient viscosity and its pressure-viscosity coefficient, not a complete pressure-viscosity curve; the repository Roelands law is only tangent-matched at zero pressure.",
+        "The solver uses its built-in Dowson-Higginson density coefficients, which are not measured for this SN500 oil in the paper."
+      ],
+      "experimental_observation": {
+        "quantity": "mid-plane film-thickness profile and central/minimum film thickness",
+        "source_figure": "13",
+        "profile_directions": {
+          "x": "entrainment direction",
+          "y": "transverse direction"
+        },
+        "central_film_thickness_um_digitized_range": [0.42, 0.5],
+        "minimum_film_thickness_um_digitized_range": [0.2, 0.29],
+        "digitization_uncertainty_um": 0.03,
+        "reported_method_uncertainty_um": 0.01,
+        "additional_pressure_refractive_index_uncertainty_um": 0.01
+      },
+      "blocking_gaps": [
+        "The digitized profile is approximate; the original film map and raw interferogram are not included.",
+        "The pressure-dependent lubricant density and refractive-index laws are not reported.",
+        "The solver input is a reproducible candidate configuration, not a claim that the fluid model or experimental profile has been independently matched."
+      ],
+      "refinement_grid_sizes": [33, 65, 129]
+    }
+  ]
+}

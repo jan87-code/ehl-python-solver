@@ -19,6 +19,19 @@ expected Petrusevich-type pressure spike; preserve it and defer additional
 spike-focused work. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the
 recorded measurements and caveats.
 
+Three experimental-paper candidates have now been recorded in
+[EXPERIMENTAL_VALIDATION.md](EXPERIMENTAL_VALIDATION.md) and
+[`cases/experimental_validation_candidates.json`](../cases/experimental_validation_candidates.json).
+Ciulli et al. (2008) provides the best first steady pure-rolling profile, but
+its approximate figure digitization and missing pressure-dependent fluid and
+optical data are not sufficient for solver acceptance. Cameron-Gohar (1966)
+provides historical dimensionless curves, and Gohar (1971) a reported
+interference-fringe observation; neither currently has a complete, directly
+comparable numerical input/output set. These are preparation and data-integrity
+tests, not solver-versus-experiment validation. Obtain raw measurements and
+the missing material/fluid/optical properties before declaring a paper case
+quantitatively validated.
+
 The next numerical milestone is to select and reproduce a published
 fully-flooded point-contact benchmark with matched definitions and inputs.
 First verify the benchmark's SI conversions, Roelands viscosity and

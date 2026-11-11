@@ -5151,3 +5151,225 @@ Figure 13 comparison and does not establish physical validation. The
 strongest supported claim remains independently audited equation closure
 plus a pressure/film L2 contraction trend, not numerical mesh convergence
 or physical accuracy.
+
+## Core pressure-ridge mechanism diagnosis (post-processing only)
+
+The accepted 65x65, 129x129, 257x257 and 513x513 donor roots were reanalyzed
+without running or modifying a solver. The analysis is reproducible with
+[`examples/diagnose_ciulli_core_ridge.py`](../examples/diagnose_ciulli_core_ridge.py);
+focused regression tests are in
+[`tests/test_ciulli_core_ridge_diagnostics.py`](../tests/test_ciulli_core_ridge_diagnostics.py).
+The full post-processing output and field/checkpoint archives remain local
+under `results/`. Compact values and source-state hashes are committed in
+[`cases/ciulli_core_ridge_diagnostic_summary.json`](../cases/ciulli_core_ridge_diagnostic_summary.json).
+The command used was:
+
+```powershell
+$env:PYTHONPATH='src'
+$env:OPENBLAS_NUM_THREADS='4'
+$env:OMP_NUM_THREADS='4'
+$env:MKL_NUM_THREADS='4'
+$env:BLIS_NUM_THREADS='4'
+$env:NUMEXPR_NUM_THREADS='4'
+$env:VECLIB_MAXIMUM_THREADS='4'
+python examples\diagnose_ciulli_core_ridge.py --roots `
+  results\ciulli_20261111_donor_65_fixed `
+  results\ciulli_20261111_donor_129_fixed `
+  results\ciulli_20261111_donor_257_fixed `
+  results\ciulli_20261111_donor_513_fixed `
+  --output results\ciulli_20261111_core_ridge_diagnostics.json
+```
+
+The diagnostic used Python 3.13, NumPy 2.5.4 and SciPy 1.18.1. NumPy
+reported the `scipy-openblas` 0.3.34.106.0 backend (build maximum 24);
+process environment limits were set to four threads for BLAS/OpenMP-style
+backends. The SciPy FFT path used its default single worker. These are
+post-processing resource limits, not evidence that the earlier solver used
+four compute threads; no EHL solve was run here.
+
+### Symmetry and ridge geometry
+
+The expected reflection is `y -> -y`. For every accepted grid, pressure,
+film, deformation, theta, density and viscosity are symmetric to floating
+point roundoff. The pressure relative-L2 errors are `1.39e-15`, `2.64e-15`,
+`3.72e-15` and `4.86e-15` from 65x65 through 513x513. Across all four grids,
+the largest relative-L2 symmetry errors for film, deformation, theta,
+density and viscosity are respectively `2.00e-16`, `2.02e-15`, `1.32e-16`,
+`8.38e-17` and `5.97e-14`; their largest RMS/Linf errors are respectively
+`2.17e-21/1.02e-20 m`, `9.28e-22/3.39e-21 m`,
+`1.10e-16/1.78e-15`, `7.54e-14/1.59e-12 kg/m^3`, and
+`6.06e-9/5.27e-7 Pa s`. Per-grid relative-L2, RMS and Linf values for each
+field are in the compact diagnostic metadata. Reflection in x is not a
+physical symmetry because entrainment selects +x; its pressure relative-L2
+asymmetry is about 0.24-0.25.
+
+The equal upper/lower ridge maxima differ by at most about `4e-12 MPa`.
+Consequently, a global `argmax` changing from one lateral sign to the other
+is a tie-selection/roundoff effect, not symmetry breaking. This does not
+explain the amplitude and location changes: the two mirrored local maxima
+move from `(50,50) um`, through `(56.25,50) um` and
+`(53.125,56.25) um`, to `(51.5625,59.375) um`; their nodal pressure rises
+from `687.30` to `705.39`, `739.67` and `812.88 MPa`. The global maxima on
+the first two grids are instead the central values `746.30` and `741.27 MPa`.
+Thus the coarse-grid fixed-ROI ridge maxima are boundary-limited in y and
+must not be treated as resolved ridge vertices.
+
+Ridge traces were extracted as the maximum along fixed `x=[25,75] um` cuts
+at fixed y coordinates, not by defining a window around each global maximum.
+For example, the cut maxima at `y=50/55/60 um` have x positions (um)
+`50/25/25`, `56.25/43.75/31.25`, `62.5/53.125/46.875`, and
+`64.05/57.8/48.45` on the four grids. Some coarse cut maxima touch the
+analysis-window edge. A quadratic fit to these cuts produces trace lengths
+of `70.6`, `147.7`, `56.4` and `50.1 um`, with large changes in orientation
+and curvature; these are fit descriptors of jagged, sometimes boundary-
+limited maxima, not physical ridge length/orientation estimates. The trace
+does not settle to a unique geometrical ridge.
+
+### Sampling, fixed neighborhoods and pressure-error energy
+
+For comparison, all fields were also evaluated by piecewise-bilinear
+interpolation on the nested 513x513 nodal coordinates. The maximum in the
+fixed ridge region on this aligned grid equals the native nodal maximum for
+each root (the grids are nested). A separate 0.5 um sampling lattice does
+not include the 513-grid peak coordinate: its maximum is only `795.16 MPa`
+at `(45,62.5) um`, versus the aligned-grid/nodal `812.88 MPa` at
+`(51.5625,59.375) um`. This quantifies a real peak-sampling sensitivity, but
+the aligned-grid comparison confirms that sampling alone does not remove the
+257-to-513 increase. A local 3x3 quadratic fit is rejected as not a strict
+maximum on the 129-, 257- and 513-grids (the 65-grid fit leaves the fixed
+ridge band). Independent one-dimensional quadratic fits at 513 estimate
+`821.9 MPa` in x and `835.0 MPa` in y at inconsistent coordinates; neither is
+a defensible two-dimensional subcell peak. No extrapolated peak is accepted.
+
+At 513x513 only one x interval (`1.5625 um`) is contiguous above 90% of the
+local peak on the ridge-peak row, and no adjacent y interval is above that
+threshold on the peak column. The 257-grid has no adjacent interval in
+either direction; the 65-grid threshold trace is clipped by the fixed
+analysis band. At 513, only 3 of the 5x5 neighboring nodes exceed 95% of the
+peak and 8 of the 9x9 nodes exceed 90%. The core ridge width is therefore
+not resolved.
+
+The same fixed upper-lobe neighborhood `x=[45,60] um`, `y=[50,65] um`
+(and its mirror) has mean pressure `323.5`, `398.1`, `448.1`, `468.2 MPa`
+and integrated pressure `0.07269`, `0.08985`, `0.10167`, `0.10642 N` from
+65x65 through 513x513. Both neighborhood measures change even though the
+integration window is fixed. Their last increments are smaller, but do not
+establish convergence. The peak of grid-specific cell averages in the larger
+fixed ridge region rises from `487.6` to `646.9`, `667.1` and `724.8 MPa`;
+because those averages have different cell sizes, they are not a common-
+resolution peak estimate.
+
+The pressure-error energy was split using the fixed core-ridge mask
+`x=[35,60] um`, `45<=|y|<=75 um`, with the complement retained inside the
+main contact region:
+
+| Grid pair | Main RMS (MPa) | Fixed-ridge RMS (MPa) | Main error energy in ridge | Main RMS outside ridge (MPa) |
+|---|---:|---:|---:|---:|
+| 65 -> 129 | 31.64 | 86.35 | 46.65% | 23.87 |
+| 129 -> 257 | 24.78 | 71.68 | 52.38% | 17.66 |
+| 257 -> 513 | 19.06 | 58.06 | 58.12% | 12.74 |
+
+Both the ridge-region and complementary RMS differences contract, so bulk
+pressure behavior can be assessed separately from the ridge. The contraction
+is slow, and the ridge accounts for an increasing fraction of the remaining
+main-region squared error. The main RMS difference-norm orders remain only
+about 0.35 and 0.38; these are descriptive orders of intergrid differences,
+not solution-error orders. No asymptotic range, Richardson estimate or GCI is
+established.
+
+### Pressure/flux and elasticity operator checks
+
+At the 513-grid ridge maximum, `p=812.88 MPa`, `h=405.87 nm`,
+`rho=1074.65 kg/m^3`, `eta=4.839e6 Pa s`, mobility is
+`1.237e-24 m s`, and `theta=1`. The 3x3 surrounding stencil is entirely
+full-film. With positive +x entrainment, the donor is always the west/left
+node; no cavitation branch, limiter or coefficient clipping is active there.
+Face mobility is arithmetically averaged. At the peak, west/east x pressure-
+gradient fluxes are `-1.42e-10` and `3.32e-9 kg/(m s)`, compared with
+Couette fluxes `8.76e-5` and `8.72e-5 kg/(m s)`. The pressure-gradient
+contribution is tiny relative to Couette transport in x; y flux is pressure
+diffusion only. The center discrete divergence is
+`5.93e-14 kg/(m^2 s)` and the surrounding 3x3 residuals remain of order
+`1e-13 kg/(m^2 s)` or smaller. The diagnostic output retains the neighboring
+3x3 pressure, film, density, viscosity, mobility, theta, directional face
+fluxes, donor nodes and residuals for all four meshes.
+
+At the 257-grid ridge maximum, viscosity is `1.523e6 Pa s`, density is
+`1067.36 kg/m^3` and film is `423.07 nm`. From 257 to 513, peak pressure
+increases by `73.21 MPa`, peak viscosity by a factor of about 3.18, while
+film decreases by `17.20 nm`. This is consistent with strong constitutive
+feedback in the local discrete solution, but is correlation rather than
+proof that the viscosity law causes the ridge.
+
+A separate smooth, fully flooded manufactured-field check of the production
+flux gives first-order total residual convergence, first-order donor/Couette
+advection (donor selection follows velocity sign) and second-order
+pressure-diffusion convergence (orders about `1.00` and `1.99`). This matches
+the implemented first-order upwind donor stencil and second-order centered
+pressure gradient; it identifies no flux implementation defect. It does mean
+the scheme has an expected low-order contribution to the slow coupled-field
+convergence. The
+test is a smooth full-film operator check, not a local truncation-error
+estimate for the narrow ridge.
+
+The elastic operator analytically integrates the rectangular source-cell
+kernel `1/(pi E* r)`, including the self-cell, and uses zero-padded linear
+FFT convolution with a centered crop. A positive smooth Gaussian pressure
+field compared with its analytic infinite-domain center displacement gives
+relative errors `0.1172%`, `0.03094%`, `0.00794%` and `0.00201%` on 65, 129,
+257 and 513 grids, with observed orders `1.92`, `1.96` and `1.98`. The
+response is nonnegative, symmetric to roundoff, translates away from the
+boundaries with relative-L2 discrepancy `1.1e-7`, and doubles linearly when
+pressure is doubled. This argues against an obvious standalone elastic-kernel
+defect; it does not prove that elasticity has no coupled effect on the ridge.
+
+### Seed history, interpretation and next decision
+
+The 513-grid seed already contained the 257-grid precursor ridge at
+`739.67 MPa`. After the first Newton correction, the global maximum was
+`811.02 MPa` at `(60.94,-53.125) um`, while the fixed upper-branch ridge was
+`809.35 MPa` at `(51.5625,59.375) um`. The maximum subsequently moved between
+the exactly symmetric lateral branches and settled at `812.88 MPa`.
+The first correction changed 309 cavitation-state nodes; 6 changed at the
+third correction, then the active state remained fixed. The first Newton step
+used four recovery models across seven line-search trial checks; the second
+accepted a damped step `alpha=0.1356`; subsequent accepted corrections used
+full steps.
+Saved Krylov counts were 63-69 iterations with true residuals about
+`1.3e-10` to `3.8e-10`; the nonlinear residual reached `2.26e-11`.
+Thus the final ridge is amplified/moved during nonlinear correction rather
+than simply being copied unchanged from the prolonged seed. This history
+alone does not establish seed independence.
+
+**Mechanism assessment:** common-grid sampling contributes to the reported
+point maximum, but cannot explain the rising aligned-grid peak and fixed-
+neighborhood means/integrals (A is not the whole cause). The evidence supports
+a narrow, grid-sensitive feature of the discrete coupled solution, but does
+not show that the continuous physical solution has a singular or equally
+narrow ridge (B remains unproven). First-order donor advection is verified as
+an expected discretization property and may contribute to slow convergence;
+no donor, cavitation, coefficient-switching or clipping defect was found (C
+is not established as a bug). The standalone elasticity operator passes the
+smooth reference tests (D is less likely, not excluded in the coupled
+system). Because the ridge is seeded, amplified early and later changes
+lateral branch under a symmetric problem, nonlinear branch dependence remains
+plausible but unproven (E).
+
+**Decision:** do not launch 1025x1025 and do not change solver physics based
+on this evidence. After the operator regression is retained, the minimum
+discriminating follow-up is one same-513-grid solve seeded by independent
+direct prolongation of the accepted 129x129 root (not the accepted 257x257
+root), with the same model, boundaries, tolerances and audits. If it reaches
+a different independently accepted 513-grid field/ridge, seed or nonlinear
+branch sensitivity is demonstrated. If it reaches the same field and
+fixed-neighborhood measures, seed sensitivity becomes less likely and local
+resolution/discretization is the next focus. This is a proposed test only;
+no run was launched here. Keep the 65/129/257/513 accepted fields, the
+outlet-spike analysis separate, and all existing acceptance gates.
+
+The strongest supported statement after this phase is: the four accepted
+roots preserve transverse symmetry and pass their prior equation-closure
+audits; both main-field pressure differences and independent smooth-operator
+errors decrease under refinement, but the ridge remains under-resolved,
+grid-sensitive and potentially seed-sensitive. Neither mesh convergence,
+outlet-spike resolution nor physical EHL validation is established.

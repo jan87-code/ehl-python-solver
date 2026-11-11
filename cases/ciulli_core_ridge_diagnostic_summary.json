@@ -1,0 +1,177 @@
+{
+  "case": "Ciulli 15 N donor-flux, fixed +/-0.4 mm domain",
+  "diagnostic_runtime": {
+    "python": "3.13",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "blas_backend": "scipy-openblas 0.3.34.106.0; build maximum 24 threads",
+    "environment_thread_limits": 4,
+    "fft_workers": 1,
+    "ehl_solve_run": false
+  },
+  "source_roots": [
+    {
+      "grid": 65,
+      "state_sha256": "52621d703d50487a4ebd1f6f1fc448a0f7f86248912815b7048f84d53b29f634"
+    },
+    {
+      "grid": 129,
+      "state_sha256": "162c271ea11dcba892cefb798b846d78d43a95949721e093e21865c7740dda56"
+    },
+    {
+      "grid": 257,
+      "state_sha256": "9c3e870e9d2aa7ec8950556ff522559f5a41ecda739b3bc5c0df1337c1b3137a"
+    },
+    {
+      "grid": 513,
+      "state_sha256": "4d6376f51c0056f0414a8bed3cab8916c88f27db8f738d8ab77f060ffcf0ce06"
+    }
+  ],
+  "methods": {
+    "axis_order": "(ny, nx); arrays compared using physical x and y coordinates",
+    "expected_reflection": "y -> -y; x reflection is not expected with +x entrainment",
+    "fixed_ridge_region_um": {
+      "x": [35, 60],
+      "absolute_y": [45, 75]
+    },
+    "fixed_upper_neighborhood_um": {
+      "x": [45, 60],
+      "y": [50, 65]
+    },
+    "common_peak_grid": "Nested 513x513 nodal coordinates; piecewise bilinear interpolation",
+    "secondary_peak_sampling": "0.5 um lattice; sampling maximum is not a subcell peak estimate",
+    "peak_fit": "Local 3x3 quadratic accepted only for a strict interior maximum"
+  },
+  "transverse_symmetry": {
+    "pressure_pa": {
+      "units": "Pa",
+      "65": [1.385444023185604e-15, 1.5501544394137983e-7, 2.2649765014648438e-6],
+      "129": [2.6396641258264565e-15, 2.9637182814418826e-7, 5.0067901611328125e-6],
+      "257": [3.722016244220841e-15, 4.187904485384972e-7, 9.417533874511719e-6],
+      "513": [4.858038307822464e-15, 5.473529086641335e-7, 1.430511474609375e-5]
+    },
+    "film_m": {
+      "units": "m",
+      "65": [1.7212897345733257e-16, 1.9930198833291817e-21, 6.776263578034403e-21],
+      "129": [1.782323858497272e-16, 2.0302222603371672e-21, 1.0164395367051604e-20],
+      "257": [1.994983921836626e-16, 2.252493102267385e-21, 1.0164395367051604e-20],
+      "513": [1.9270577494413918e-16, 2.1658324376525588e-21, 1.0164395367051604e-20]
+    },
+    "deformation_m": {
+      "units": "m",
+      "65": [5.203168782160399e-16, 2.3709937656899207e-22, 1.0058516248644817e-21],
+      "129": [5.490903457414564e-16, 2.517497060211985e-22, 1.2440796412797536e-21],
+      "257": [1.0116457702970643e-15, 4.651860997745824e-22, 1.879354351720479e-21],
+      "513": [2.0149283456166878e-15, 9.278557189713448e-22, 3.3881317890172014e-21]
+    },
+    "theta": {
+      "units": "dimensionless",
+      "65": [1.23307147505883e-16, 1.035300560542214e-16, 7.771561172376096e-16],
+      "129": [1.205414881595994e-16, 1.0120458886840679e-16, 1.1102230246251565e-15],
+      "257": [1.25315239100782e-16, 1.0519016987001586e-16, 1.6653345369377348e-15],
+      "513": [1.311053862987002e-16, 1.1003262107141998e-16, 1.7763568394002505e-15]
+    },
+    "density_kg_m3": {
+      "units": "kg/m^3",
+      "65": [3.5125006862599565e-17, 3.157952765494357e-14, 4.547473508864641e-13],
+      "129": [5.225020518862515e-17, 4.69821095230774e-14, 9.094947017729282e-13],
+      "257": [6.795430642053803e-17, 6.110672506150232e-14, 1.1368683772161603e-12],
+      "513": [8.380842078856077e-17, 7.536559813584117e-14, 1.5916157281026244e-12]
+    },
+    "viscosity_pa_s": {
+      "units": "Pa s",
+      "65": [1.521196491321097e-14, 1.7642318978864615e-9, 5.3783878684043884e-8],
+      "129": [2.877918323138013e-14, 2.9297366127451468e-9, 8.079223334789276e-8],
+      "257": [4.324145006393662e-14, 4.196864509804316e-9, 2.1629966795444489e-7],
+      "513": [5.964593467252047e-14, 6.063874463004963e-9, 5.271285772323608e-7]
+    },
+    "tuple_order": ["relative_l2", "rms", "linf"],
+    "pressure_x_reflection_relative_l2": {
+      "65": 0.243042,
+      "129": 0.239198,
+      "257": 0.245038,
+      "513": 0.251651
+    }
+  },
+  "ridge_peaks": {
+    "grid_order": [65, 129, 257, 513],
+    "global_pmax_mpa": [746.300735, 741.269896, 739.669290, 812.880981],
+    "global_pmax_xy_um": [[0, 0], [0, 0], [53.125, 56.25], [51.5625, 59.375]],
+    "upper_roi_pmax_mpa": [687.295210, 705.394597, 739.669290, 812.880981],
+    "upper_roi_pmax_xy_um": [[50, 50], [56.25, 50], [53.125, 56.25], [51.5625, 59.375]],
+    "lower_branch_peak_difference_max_pa": 4.55e-6,
+    "cut_maxima_at_y_50_55_60_um": {
+      "65": [[50, 687.3], [25, 642.2], [25, 614.9]],
+      "129": [[56.25, 705.4], [43.75, 665.6], [31.25, 656.4]],
+      "257": [[62.5, 735.5], [53.125, 691.7], [46.875, 658.7]],
+      "513": [[64.05, 760.2], [57.8, 719.2], [48.45, 727.6]]
+    },
+    "cut_tuple_order": ["x_um", "pressure_mpa"],
+    "descriptive_trace_length_um": [70.62, 147.67, 56.38, 50.12],
+    "descriptive_trace_orientation_deg": [90.0, 90.0, 149.59, 145.89],
+    "interpretation": "Cut maxima are jagged/boundary-limited; fitted lengths/orientations are not physical ridge geometry"
+  },
+  "peak_sampling": {
+    "common_513_grid_max_mpa": [687.295210, 705.394597, 739.669290, 812.880981],
+    "common_513_grid_max_xy_um": [[50, -50], [56.25, -50], [53.125, 56.25], [51.5625, 59.375]],
+    "0_5um_upper_neighborhood_sample_max_mpa": [687.295210, 702.390474, 726.999285, 795.156542],
+    "0_5um_sample_max_xy_um": [[50, 50], [56, 50], [53, 56], [45, 62.5]],
+    "nodes_above_95_percent_in_5x5": [11, 4, 2, 3],
+    "nodes_above_90_percent_in_9x9": [32, 17, 9, 8],
+    "contiguous_90_percent_width_cells_x": [1, 0, 0, 1],
+    "contiguous_90_percent_width_cells_y": [0, 0, 0, 0],
+    "subcell_quadratic_peak": "Rejected for every grid: boundary/strict-maximum test fails"
+  },
+  "fixed_upper_neighborhood": {
+    "mean_pressure_mpa": [323.526593, 398.146169, 448.113950, 468.180054],
+    "integrated_pressure_n": [0.07269060, 0.08985288, 0.10167028, 0.10641906]
+  },
+  "main_pressure_difference": {
+    "grid_pairs": ["65->129", "129->257", "257->513"],
+    "main_rms_mpa": [31.6351, 24.7833, 19.0568],
+    "fixed_ridge_rms_mpa": [86.3499, 71.6802, 58.0611],
+    "fixed_ridge_error_energy_share_percent": [46.652, 52.380, 58.124],
+    "main_outside_ridge_rms_mpa": [23.8655, 17.6643, 12.7372],
+    "descriptive_difference_norm_orders": [0.353, 0.380]
+  },
+  "flux_operator": {
+    "smooth_fully_flooded_error_order_total": [0.998, 0.999, 1.000],
+    "smooth_fully_flooded_error_order_advection": [1.008, 1.004, 1.002],
+    "smooth_fully_flooded_error_order_diffusion": [1.988, 1.996, 1.998],
+    "513_ridge_center": {
+      "pressure_mpa": 812.880981,
+      "film_nm": 405.866552,
+      "density_kg_m3": 1074.650123,
+      "viscosity_pa_s": 4839081.406749,
+      "mobility_m_s": 1.2372934212222953e-24,
+      "theta": 1.0,
+      "west_x_pressure_gradient_flux_kg_m_s": -1.41960884919349e-10,
+      "west_x_couette_flux_kg_m_s": 8.75978053127243e-5,
+      "east_x_pressure_gradient_flux_kg_m_s": 3.3185792841849086e-9,
+      "east_x_couette_flux_kg_m_s": 8.723290793648838e-5,
+      "cell_divergence_kg_m2_s": 5.931366509059899e-14
+    },
+    "core_stencil": "theta=1; positive x velocity selects the west donor; arithmetic face mobility; no limiter/clipping"
+  },
+  "elasticity_operator": {
+    "kernel": "Analytic rectangular-source integral of 1/(pi E* r), including self-cell; zero-padded linear FFT",
+    "self_cell_coefficient_m_pa": 1.2083424370130215e-16,
+    "nearest_x_cell_coefficient_m_pa": 3.557854370998026e-17,
+    "gaussian_center_relative_error": [0.00117218, 0.000309394, 0.0000793744, 0.0000200982],
+    "observed_order": [1.9217, 1.9627, 1.9816],
+    "translation_relative_l2_away_from_boundaries": 1.1034701472938387e-7,
+    "pressure_doubling_relative_l2": 0.0,
+    "positive_and_transversely_symmetric": true
+  },
+  "513_newton_history": {
+    "checkpoint_pmax_mpa": [739.669290, 811.023848, 810.662902, 813.830462, 812.893494, 812.881038, 812.880981, 812.880981],
+    "checkpoint_pmax_xy_um": [[53.125, 56.25], [60.9375, -53.125], [60.9375, -53.125], [51.5625, -59.375], [51.5625, 59.375], [51.5625, 59.375], [51.5625, 59.375], [51.5625, 59.375]],
+    "checkpoint_cavitation_state_changes": [null, 309, 0, 6, 0, 0, 0, 0],
+    "accepted_line_search_alpha": [1.0, 0.1355616, 1.0, 1.0, 1.0, 1.0, 1.0],
+    "line_search_model_counts": [4, 1, 2, 1, 1, 1, 1],
+    "krylov_iterations_range": [63, 69],
+    "true_krylov_residual_range": [1.328e-10, 3.782e-10],
+    "final_nonlinear_residual_linf": 2.2593485705948423e-11
+  },
+  "decision": "No 1025x1025 solve. A direct 129->513 seed test is the minimum follow-up if branch sensitivity must be resolved; compare independently audited converged roots on the same 513 grid."
+}

@@ -17,10 +17,25 @@ localized pressure maximum in the Hertz core. Main-field RMS differences
 contract on the last refinement, but pressure Linf and `p_max` do not
 stabilize, and film/scalar behavior is not uniformly asymptotic. Do not start
 another uniform refinement or redo the Figure 13 comparison automatically.
-First investigate the core pressure-ridge/grid treatment and select a
-targeted discretization or local-refinement diagnostic. The separate 50 N
-endpoints through 223x223 and their directional probes remain sensitivity
-evidence, not a pressure-mesh or physical-accuracy pass. See
+The requested post-processing diagnosis is complete: transverse symmetry is
+preserved to roundoff, common-grid sampling can miss the narrow peak, but
+fixed-neighborhood pressure averages/integrals and the peak on a nested
+513-grid still change. A smooth full-film flux test confirms the expected
+first-order donor-advection and second-order pressure-diffusion behavior; an
+independent smooth elasticity test converges at nearly second order. Neither
+test identifies a discrete defect or establishes a continuous physical ridge.
+The 513-grid Newton history shows the ridge is amplified/moved from an already
+present seed feature. The next discriminator is a controlled same-grid
+initialization study, not 1025x1025: prolong the accepted 129x129 root directly
+to 513x513 and compare independently audited converged fields, ridge
+neighborhoods and donor/active states with the accepted 257-to-513 result.
+Different accepted roots would support branch sensitivity; convergence to the
+same root would shift priority toward under-resolution/discretization.
+Do not launch that study without confirming its resource budget and preserving
+the existing root. See the diagnostic evidence and limitations in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md). The separate 50 N endpoints
+through 223x223 and their directional probes remain sensitivity evidence, not
+a pressure-mesh or physical-accuracy pass. See
 [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for those measurements and caveats.
 
 Use the strict three-level evidence hierarchy in

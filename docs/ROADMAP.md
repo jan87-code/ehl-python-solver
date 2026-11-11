@@ -131,17 +131,35 @@ measured from these two grids. Full regional metrics and common-coordinate
 difference maps are generated from the existing fields; the compressed maps
 remain in ignored `results/`.
 
-The coupled solver requires uniform axes, so local/nonuniform refinement is
-not currently supported. The main-contact share and large main-region Linf
-also mean spike-only refinement would not address the full error. A
-129x129-seeded uniform 193x193 attempt is the next optional diagnostic
-calculation only after full nonlinear/Krylov/line-search history capture is
-added; it may inform main-field trends but its expected spike width is still
-under one cell. Do not infer convergence from one added grid, and do not
-repeat the previous unauditable attempt. The physical-validation block
-remains an accepted, quantified numerical mesh uncertainty for the measured
-film profiles, not an arbitrary required grid size or a claimed convergence
-tolerance.
+The Hertz-radius partition (`a_H=100 um`) assigns 99.787% of the main
+pressure-error energy to the core footprint; the remaining outer transition
+contains 0.213%. The largest difference near `(50,-56.5) um` is mirrored and
+associated with an x-displaced pressure ridge, not cavitation: both grids
+have zero cavitated area and zero cavitation-mask mismatch in the main
+region. The ridge maximum over `x=[0,60] um` shifts from 12.5 to 44 um at
+`y=-56.5 um`, indicating broad full-film pressure reshaping.
+
+The solver requires uniform axes, so local/nonuniform refinement is not
+currently supported. Spike-only refinement would not address the main-field
+difference. The next run is 257x257, seeded by bilinear prolongation from the
+accepted 129x129 root, retaining the same +/-0.4 mm domain and numerical/
+physical acceptance gates. This gives the consistent `65 -> 129 -> 257`
+sequence at refinement ratio 2; 66,049 nodes use the explicit 70,000-node
+budget. The prior 193x193 iterate remains rejected and is not repeated.
+
+The donor runner now records per-iteration nonlinear residual blocks,
+audits, recovery/Krylov results, line-search trials, correction norms and
+packed active sets; it checkpoints complete SI fields and allows an
+explicit checkpoint seed. Preflight confirms a feasible but unaccepted 129
+to 257 prolongation. Four OpenBLAS threads are configured and runtime-
+queried; GMRES/SuperLU and NumPy FFT paths are not configured as parallel
+solvers. No competing jobs are launched. See the latest 257x257 result and
+its acceptance status in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+Only three accepted nested grids with a monotonic/asymptotic trend may
+justify observed-order or Richardson/GCI estimates. The spike remains
+separately under-resolved even at 257x257 (about 1.15 cells per prior width
+estimate). Local/nonuniform refinement remains a future solver capability,
+not a currently available shortcut.
 
 The digitized-profile comparison and remaining priorities are documented in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md). Keep the donor-flux formulation

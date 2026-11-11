@@ -10,6 +10,7 @@ import numpy as np
 from scipy.integrate import trapezoid
 from scipy.interpolate import RegularGridInterpolator
 
+from ehl_solver.hertz import circular_point_contact
 from ehl_solver.pressure_analysis import (
     centerline_pressure_profile,
     outlet_spike_diagnostics,
@@ -374,7 +375,130 @@ def regional_mesh_comparison(coarse, fine, *, spacing_um=0.5):
             "film_coarse_m": h0,
             "film_fine_m": h1,
             "film_difference_m": h1 - h0,
+            "theta_coarse": _sample_2d(coarse, coarse["theta"], xx, yy),
+            "theta_fine": _sample_2d(fine, fine["theta"], xx, yy),
         },
+    }
+
+
+def main_contact_structure_comparison(coarse, fine, *, spacing_um=0.5):
+    """Partition main contact by the independent dry-Hertz footprint."""
+    regional = regional_mesh_comparison(coarse, fine, spacing_um=spacing_um)
+    fields = regional["fields"]
+    x, y = fields["x_m"], fields["y_m"]
+    xx, yy = np.meshgrid(x, y)
+    x0, x1 = REGION_BOUNDS_UM["main_contact_excluding_spike"]
+    main = (
+        (xx >= x0 * 1e-6)
+        & (xx <= x1 * 1e-6)
+        & (abs(yy) <= 75e-6)
+    )
+    case = coarse["case"]
+    hertz_radius = circular_point_contact(
+        case["load_n"], case["radius_m"], case["contact_modulus_pa"]
+    ).radius_m
+    core = main & (xx**2 + yy**2 <= hertz_radius**2)
+    transition = main & ~core
+    pressure_difference = fields["pressure_difference_pa"]
+    film_difference = fields["film_difference_m"]
+    p0, p1 = fields["pressure_coarse_pa"], fields["pressure_fine_pa"]
+    h0 = fields["film_coarse_m"]
+    pressure_support = (p0 > 1e3) | (p1 > 1e3)
+    main_error_integral = _integral(
+        pressure_difference**2 * main * pressure_support, x, y
+    )
+    regions = {}
+    for name, mask in (("main_contact", main), ("hertz_core", core), ("transition", transition)):
+        p_mask = mask & pressure_support
+        p_error = _integral(pressure_difference**2 * p_mask, x, y)
+        p_reference = _integral(p0**2 * p_mask, x, y)
+        h_error = _integral(film_difference**2 * mask, x, y)
+        h_reference = _integral(h0**2 * mask, x, y)
+        area = _integral(mask.astype(np.float64), x, y)
+        p_area = _integral(p_mask.astype(np.float64), x, y)
+        if area <= 0 or p_area <= 0 or p_reference <= 0 or h_reference <= 0:
+            raise ValueError(f"{name} mask has insufficient sampled area/support")
+        p_abs = np.where(p_mask, abs(pressure_difference), -np.inf)
+        h_abs = np.where(mask, abs(film_difference), -np.inf)
+        pj, pi = np.unravel_index(int(np.argmax(p_abs)), p_abs.shape)
+        hj, hi = np.unravel_index(int(np.argmax(h_abs)), h_abs.shape)
+        regions[name] = {
+            "area_fraction_of_main_percent": float(
+                100 * area / _integral(main.astype(np.float64), x, y)
+            ),
+            "pressure_relative_l2": float(np.sqrt(p_error / p_reference)),
+            "pressure_rms_mpa": float(np.sqrt(p_error / p_area) / 1e6),
+            "pressure_linf_mpa": float(abs(pressure_difference[pj, pi]) / 1e6),
+            "pressure_linf_xy_um": [float(x[pi] * 1e6), float(y[pj] * 1e6)],
+            "pressure_error_energy_share_of_main_percent": float(
+                100 * p_error / main_error_integral
+            ),
+            "film_relative_l2": float(np.sqrt(h_error / h_reference)),
+            "film_rms_nm": float(np.sqrt(h_error / area) * 1e9),
+            "film_linf_nm": float(abs(film_difference[hj, hi]) * 1e9),
+            "film_linf_xy_um": [float(x[hi] * 1e6), float(y[hj] * 1e6)],
+        }
+
+    hotspot_x_m, hotspot_y_m = 50e-6, -56.5e-6
+    hotspot_window = (
+        main
+        & (abs(xx - hotspot_x_m) <= 10e-6)
+        & (abs(yy - hotspot_y_m) <= 10e-6)
+    )
+    hotspot_error = _integral(
+        pressure_difference**2 * hotspot_window * pressure_support, x, y
+    )
+    cavitated0 = (fields["theta_coarse"] < 1 - 1e-10) & (p0 <= 1e3)
+    cavitated1 = (fields["theta_fine"] < 1 - 1e-10) & (p1 <= 1e3)
+    hotspot_metrics = regions["main_contact"]
+    hotspot_metrics = {
+        "center_um": [hotspot_x_m * 1e6, hotspot_y_m * 1e6],
+        "half_width_um": 10.0,
+        "pressure_error_energy_share_of_main_percent": float(
+            100 * hotspot_error / main_error_integral
+        ),
+        "cavitation_state_mismatch_percent_in_main": float(
+            100 * np.mean(cavitated0[main] != cavitated1[main])
+        ),
+        "cavitated_area_percent_65": float(100 * np.mean(cavitated0[main])),
+        "cavitated_area_percent_129": float(100 * np.mean(cavitated1[main])),
+        "theta_linf_difference_in_main": float(
+            np.max(abs(fields["theta_fine"][main] - fields["theta_coarse"][main]))
+        ),
+        "max_pressure_difference_xy_um": hotspot_metrics["pressure_linf_xy_um"],
+        "max_pressure_difference_mpa": hotspot_metrics["pressure_linf_mpa"],
+    }
+
+    ridge = []
+    ridge_x = x[(x >= 0) & (x <= 60e-6)]
+    for y_um in (-70.0, -65.0, -60.0, -56.5, -50.0, -45.0, -40.0, 0.0,
+                 40.0, 45.0, 50.0, 56.5, 60.0, 65.0, 70.0):
+        y_value = y_um * 1e-6
+        entries = {"y_um": y_um}
+        for label, run in (("65", coarse), ("129", fine)):
+            profile = _sample_2d(
+                run,
+                run["pressure_pa"],
+                ridge_x[None, :],
+                np.full((1, len(ridge_x)), y_value),
+            )[0]
+            peak_index = int(np.argmax(profile))
+            entries[f"x_peak_{label}_um"] = float(ridge_x[peak_index] * 1e6)
+            entries[f"p_peak_{label}_mpa"] = float(profile[peak_index] / 1e6)
+        ridge.append(entries)
+    return {
+        "hertz_contact_radius_um": float(hertz_radius * 1e6),
+        "partition_definition": (
+            "Core is the main-contact portion inside the dry Hertz radius; "
+            "transition is the remainder of the declared main-contact rectangle."
+        ),
+        "regions": regions,
+        "hotspot_and_cavitation": hotspot_metrics,
+        "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate": ridge,
+        "interpretation_note": (
+            "The Hertz footprint is a geometric diagnostic partition, not a "
+            "separate Reynolds or cavitation boundary."
+        ),
     }
 
 
@@ -473,6 +597,9 @@ def main(argv=None):
         result["regional_mesh_diagnostics_65_to_129"] = {
             key: value for key, value in regional.items() if key != "fields"
         }
+        result["main_contact_structure_65_to_129"] = (
+            main_contact_structure_comparison(mesh_runs[1], mesh_runs[2])
+        )
         with args.regional_fields.open("wb") as stream:
             np.savez_compressed(stream, **regional["fields"])
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False))

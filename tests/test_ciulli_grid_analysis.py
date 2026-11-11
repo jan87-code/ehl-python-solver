@@ -10,6 +10,7 @@ from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase, hertz_guess
 from examples.analyze_ciulli_donor_grid import (
     _midplane_comparison,
+    main_contact_structure_comparison,
     profile_error_metrics,
     regional_mesh_comparison,
 )
@@ -72,6 +73,7 @@ def test_regional_comparison_separates_main_contact_and_outlet_error():
         "y_m": y_coarse,
         "pressure_pa": np.full((5, 5), 10e6),
         "film_m": np.full((5, 5), 100e-9),
+        "theta": np.ones((5, 5)),
     }
     xx, yy = np.meshgrid(x_fine, y_fine)
     pressure_fine = np.full((9, 41), 10e6)
@@ -82,6 +84,7 @@ def test_regional_comparison_separates_main_contact_and_outlet_error():
         "y_m": y_fine,
         "pressure_pa": pressure_fine,
         "film_m": np.full((9, 41), 101e-9),
+        "theta": np.ones((9, 41)),
     }
     result = regional_mesh_comparison(coarse, fine, spacing_um=1.0)
     regions = result["regions"]
@@ -94,6 +97,13 @@ def test_regional_comparison_separates_main_contact_and_outlet_error():
         100.0
     )
     assert result["fields"]["pressure_difference_pa"].shape == (151, 276)
+    structure = main_contact_structure_comparison(coarse, fine, spacing_um=1.0)
+    assert structure["hertz_contact_radius_um"] == pytest.approx(100.0)
+    assert sum(
+        structure["regions"][key]["pressure_error_energy_share_of_main_percent"]
+        for key in ("hertz_core", "transition")
+    ) == pytest.approx(100.0)
+    assert structure["hotspot_and_cavitation"]["cavitation_state_mismatch_percent_in_main"] == 0
 
 
 def test_barus_sensitivity_fluid_matches_reported_zero_pressure_slope():

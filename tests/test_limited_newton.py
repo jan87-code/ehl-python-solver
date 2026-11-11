@@ -248,6 +248,7 @@ def test_observer_mutation_and_failure_are_separate_from_numerical_failure(donor
 
 def test_failed_krylov_models_are_retained(monkeypatch):
     import ehl_solver.limited_newton as module
+    diagnostic_records = []
 
     def fail(*args, **kwargs):
         raise CavitatingLinearError(
@@ -261,11 +262,20 @@ def test_failed_krylov_models_are_retained(monkeypatch):
 
     monkeypatch.setattr(module, "solve_cavitating_correction", fail)
     with pytest.raises(LimitedNewtonError) as exc:
-        solve_limited_load(PointContactCase(ny=5, nx=7), transport_fraction=0.0)
+        solve_limited_load(
+            PointContactCase(ny=5, nx=7),
+            transport_fraction=0.0,
+            diagnostic_observer=lambda iteration, record: diagnostic_records.append(
+                (iteration, record.copy())
+            ),
+        )
     models = exc.value.history[0]["models"]
     assert 1 <= len(models) <= 8
     assert all(m["status"] == "linear_rejected" for m in models)
     assert all(m["diagnostics"]["krylov_histories"] == [[0.2, 0.1]] for m in models)
+    assert diagnostic_records[0][0] == 0
+    assert diagnostic_records[0][1]["nonlinear_residual_l2"] > 0
+    assert diagnostic_records[0][1]["mass_residual_linf"] > 0
 
 
 def test_structural_recovery_pivots_only_unmatched_free_content():

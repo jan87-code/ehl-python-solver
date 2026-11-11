@@ -4742,14 +4742,78 @@ the coupled solver enforces uniform axes and its elasticity/Reynolds
 discretizations assume uniform spacing. The regional result does not support
 refining only the spike; roughly half of pressure error energy is already in
 the main contact, and the main-region Linf is large. A spatially interpolated
-129x129 donor solution is a better initial guess for a future 193x193
-uniform-grid attempt than a fresh Hertz guess, but 193x193 would provide
-limited spike resolution (about 0.86 cells per the 129x129 width estimate)
-and the earlier 193x193 trial failed without detailed iteration history.
-Do not treat that run as a root, raise iteration limits blindly, or claim
-that one more grid proves convergence. Before retrying, preserve full
-nonlinear, line-search, active-set and Krylov histories and ensure the
-independently audited acceptance gates remain unchanged. A successful
-193x193 field would be new evidence for broad mesh trends, not by itself a
-convergence declaration; a failure should be diagnosed from the retained
-history before any larger or alternative run is chosen.
+129x129 donor solution is the starting field for the next consistent
+refinement `65 -> 129 -> 257`, with 64, 128 and 256 intervals (`r=2`).
+The prior failed 193x193 attempt is not reused as a solution or repeated.
+The 257x257 node count (66,049) requires the explicitly supported
+70,000-node budget instead of the case's default 20,000; all physical,
+nonlinear, Krylov and independent acceptance gates remain unchanged.
+
+### Main-contact pressure structure and 257x257 run preparation
+
+The main-contact split uses the case's Hertz radius, `a_H=100 um`, calculated
+from the reported load, equivalent radius and modulus. This is a geometry-
+based partition independent of the pressure-difference map: the core is the
+portion of `x=[-100,60] um`, `y=[-75,75] um` inside `x^2+y^2<=a_H^2`;
+the transition region is the remainder of that rectangle.
+
+| Region | Area share of main | Pressure relative L2 / RMS / Linf | Share of main pressure-error energy |
+|---|---:|---|---:|
+| Hertz-footprint core | 93.65% | 5.71% / 32.73 MPa / 233.23 MPa | 99.787% |
+| Outside-footprint transition | 6.35% | 5.57% / 5.80 MPa / 13.84 MPa | 0.213% |
+
+This partition indicates the discrepancy lies overwhelmingly inside the
+nominal dry-contact footprint, not in the small outside-footprint corner
+transition. It is not a Reynolds-region or cavitation-boundary definition.
+The maximum difference at `(50,-56.5) um` is not isolated: the common-grid
+10x10 um half-width window around it contains 17.07% of the main-region
+squared pressure error. The largest-error area is mirrored at positive and
+negative lateral coordinates, and pressure-ridge maxima move along `x`:
+at `y=-56.5 um`, the maximum over `x=[0,60] um` moves from 12.5 um on 65x65
+to 44 um on 129x129; at `y=-60 um` it moves from 12.5 to 31 um. The maximum
+pressures on those slices change less than the large pointwise differences,
+consistent with a broad ridge displacement/reshaping rather than one
+isolated pressure defect.
+
+The main region is full-film on both grids: the `p<=1 kPa, theta<1-1e-10`
+cavitation-mask mismatch is zero, both cavitated-area fractions are zero,
+and the maximum interpolated theta difference is roundoff
+(`4.44e-16`). The hotspot therefore is not an active-set/cavitation-boundary
+effect. This evidence identifies a mesh-dependent full-film pressure ridge
+and field shape within the Hertz footprint.
+
+The 257x257 seed was preflighted by bilinear interpolation of the accepted
+129x129 pressure and content fields while preserving the physical central
+offset. The target state is strictly feasible but is only an unaccepted
+initial guess. Its scaled initial residual has L2 `0.17383`, Linf
+`3.887e-3`, mass-block Linf `2.341e-3`, complementarity Linf `3.887e-3`,
+and relative force residual `1.18e-16`. The identical `+/-0.4 mm` domain,
+donor flux (`transport_fraction=0`), material inputs, boundary conditions
+and solver tolerances are retained; only the explicitly supported node
+budget changes to 70,000.
+
+The Newton driver now persists per-iteration scaled residual components,
+independent force/mass/JFO/film/elasticity audit, all recovery-model
+statuses, Krylov histories and true residuals, all line-search trials,
+correction norms, and packed active-set masks. It writes field checkpoints
+at each audited nonlinear iterate and preserves the rejected final candidate
+plus termination reason. A checkpoint can be supplied again as `--seed`;
+it remains a guess, never an accepted root. Runtime metadata records
+environment thread limits and the queried SciPy OpenBLAS thread count.
+
+Backend inspection found SciPy sparse GMRES and SuperLU in the Newton linear
+path, with NumPy's FFT convolution and Python matrix-free products; those
+parts are not configured here as multithreaded algorithms. SciPy reports an
+OpenBLAS build. The run is launched with OpenBLAS/OpenMP/MKL/BLIS/NumExpr
+limits set to four; the loaded SciPy OpenBLAS runtime reports four threads.
+No competing solver jobs are used. OpenBLAS is the only positively
+verified threaded backend setting; this does not imply the complete solve
+uses four cores.
+
+After the 257 run, compare only independently accepted roots on common
+physical coordinates. Evaluate main/core pressure and film changes, scalar
+trends and the pressure-error spatial distribution. Estimate order and
+Richardson/GCI only if 65/129/257 are monotone and exhibit an asymptotic
+trend. The spike remains separate: the 129x129 width predicts only about
+1.15 cells on 257x257, which cannot establish spike-height or width
+convergence.

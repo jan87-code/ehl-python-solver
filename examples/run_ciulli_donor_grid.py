@@ -1,8 +1,10 @@
 """Reproduce and archive one accepted Ciulli 15 N donor-flux grid root."""
 
 import argparse
+import ctypes
 import hashlib
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -12,9 +14,14 @@ from pathlib import Path
 
 import numpy as np
 import scipy
+from scipy.interpolate import RegularGridInterpolator
 
 from ehl_solver.limited_audit import audit_limited_state
-from ehl_solver.limited_newton import LimitedNewtonError, solve_limited_load
+from ehl_solver.limited_newton import (
+    LimitedNewtonError,
+    LimitedObserverError,
+    solve_limited_load,
+)
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json
@@ -24,7 +31,7 @@ def _digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def _save_state(path, probe, state):
+def _save_state(path, probe, state, case):
     pressure, theta, film = probe.fields(state)
     problem = probe.system.problem
     with Path(path).open("wb") as stream:
@@ -36,7 +43,177 @@ def _save_state(path, probe, state):
             film_m=film,
             x_m=problem.x_m,
             y_m=problem.y_m,
+            case_json=json.dumps(asdict(case), sort_keys=True),
         )
+
+
+def _seed_state(seed_path, case, probe):
+    source = Path(seed_path)
+    if source.is_dir():
+        summary = json.loads((source / "summary.json").read_text())
+        if (
+            summary.get("status") != "accepted_numerical_root"
+            or summary.get("transport_fraction") != 0
+            or summary.get("audit", {}).get("numerically_accepted") is not True
+        ):
+            raise ValueError(f"{source} is not an accepted donor-flux seed")
+        archive_path = source / "state.npz"
+        if _digest(archive_path) != summary.get("state_sha256"):
+            raise ValueError(f"{source} seed checksum does not match its summary")
+        source_case_data = summary["case"]
+        provenance = {
+            "path": str(source),
+            "kind": "accepted donor root",
+            "state_sha256": summary["state_sha256"],
+        }
+    elif source.is_file():
+        archive_path = source
+        source_case_data = None
+        provenance = {
+            "path": str(source),
+            "kind": "checkpoint or state archive",
+            "state_sha256": _digest(source),
+        }
+    else:
+        raise FileNotFoundError(f"Seed does not exist: {source}")
+
+    with np.load(archive_path, allow_pickle=False) as archive:
+        fields = {name: archive[name].copy() for name in archive.files}
+    if source_case_data is None:
+        if "case_json" not in fields:
+            raise ValueError("Checkpoint seed must include its source case metadata")
+        source_case_data = json.loads(str(fields["case_json"]))
+    source_case = PointContactCase(**source_case_data)
+    if source_case.physical_signature() != case.physical_signature():
+        raise ValueError("Seed and target must use identical physical parameters")
+    if (
+        source_case.domain_half_width_x_m != case.domain_half_width_x_m
+        or source_case.domain_half_width_y_m != case.domain_half_width_y_m
+    ):
+        raise ValueError("Seed and target must use the identical physical domain")
+    state = fields.get("state_dimensionless")
+    pressure, theta = fields.get("pressure_pa"), fields.get("theta")
+    old_x, old_y = fields.get("x_m"), fields.get("y_m")
+    if (
+        state is None
+        or pressure is None
+        or theta is None
+        or old_x is None
+        or old_y is None
+        or pressure.shape != (len(old_y), len(old_x))
+        or theta.shape != pressure.shape
+        or state.ndim != 1
+        or not all(np.all(np.isfinite(value)) for value in (state, pressure, theta))
+    ):
+        raise ValueError("Seed must contain finite state, pressure, content and SI axes")
+    if source_case.nx > case.nx or source_case.ny > case.ny:
+        raise ValueError("Seed cannot coarsen either target grid axis")
+    if (
+        source_case.nx == case.nx
+        and source_case.ny == case.ny
+        and old_x.shape == probe.system.problem.x_m.shape
+        and old_y.shape == probe.system.problem.y_m.shape
+    ):
+        target_state = state.astype(np.float64, copy=True)
+        provenance["interpolation"] = "none; exact-grid restart"
+    else:
+        new_x, new_y = probe.system.problem.x_m, probe.system.problem.y_m
+        yy, xx = np.meshgrid(new_y, new_x, indexing="ij")
+        points = np.column_stack((yy.ravel(), xx.ravel()))
+        pressure_new = RegularGridInterpolator((old_y, old_x), pressure)(points).reshape(
+            case.ny, case.nx
+        )
+        theta_new = RegularGridInterpolator((old_y, old_x), theta)(points).reshape(
+            case.ny, case.nx
+        )
+        offset_m = state[-1] * probe.system.problem.film_scale_m
+        target_state = np.r_[
+            (pressure_new[1:-1, 1:-1] / probe.system.problem.pressure_scale_pa).ravel(),
+            (1 - theta_new[1:-1, 1:-1]).ravel(),
+            offset_m / probe.system.problem.film_scale_m,
+        ].astype(np.float64, copy=False)
+        provenance["interpolation"] = "bilinear pressure/content; physical offset preserved"
+    if not probe.feasible(target_state):
+        raise ValueError("Prolongated seed violates target-grid feasibility")
+    provenance.update(
+        source_grid_ny_nx=[source_case.ny, source_case.nx],
+        target_grid_ny_nx=[case.ny, case.nx],
+        accepted_as_solution=False,
+    )
+    return target_state, provenance
+
+
+def _persist_solver_record(output, record, previous_active):
+    diagnostics = Path(output) / "diagnostics"
+    diagnostics.mkdir(exist_ok=True)
+    metadata = {key: value for key, value in record.items() if key != "models"}
+    models, active_masks = [], {}
+    current_active = previous_active
+    for index, model in enumerate(record.get("models", [])):
+        details = {
+            key: value
+            for key, value in model.items()
+            if key not in ("direction", "guide", "active_full")
+        }
+        direction, guide = model.get("direction"), model.get("guide")
+        if isinstance(direction, np.ndarray):
+            details["correction_norm_l2"] = float(np.linalg.norm(direction))
+            details["correction_norm_linf"] = float(np.max(abs(direction)))
+            accepted = next(
+                (trial for trial in model.get("trials", []) if trial.get("accepted")),
+                None,
+            )
+            details["accepted_correction_norm_l2"] = (
+                float(accepted["alpha"] * details["correction_norm_l2"])
+                if accepted is not None
+                else None
+            )
+            details["accepted_correction_norm_linf"] = (
+                float(accepted["alpha"] * details["correction_norm_linf"])
+                if accepted is not None
+                else None
+            )
+        else:
+            details.update(
+                correction_norm_l2=None,
+                correction_norm_linf=None,
+                accepted_correction_norm_l2=None,
+                accepted_correction_norm_linf=None,
+            )
+        details["guide_norm_l2"] = (
+            float(np.linalg.norm(guide)) if isinstance(guide, np.ndarray) else None
+        )
+        active = model.get("active_full")
+        if isinstance(active, np.ndarray):
+            active = np.asarray(active, dtype=bool)
+            details["active_full_count"] = int(np.count_nonzero(active))
+            details["active_full_size"] = int(active.size)
+            details["active_set_changed_nodes"] = (
+                int(np.count_nonzero(active != current_active))
+                if current_active is not None and current_active.shape == active.shape
+                else None
+            )
+            active_masks[f"model_{index:02d}_active_full_packed"] = np.packbits(active)
+            active_masks[f"model_{index:02d}_active_full_shape"] = np.asarray(
+                active.shape, dtype=np.int64
+            )
+            current_active = active.copy()
+        else:
+            details.update(
+                active_full_count=None,
+                active_full_size=None,
+                active_set_changed_nodes=None,
+            )
+        models.append(details)
+    metadata["models"] = models
+    metadata["active_mask_archive"] = None
+    if active_masks:
+        mask_path = diagnostics / f"active_sets_{record['iteration']:04d}.npz"
+        np.savez_compressed(mask_path, **active_masks)
+        metadata["active_mask_archive"] = str(mask_path)
+    record_path = diagnostics / f"iteration_{record['iteration']:04d}.json"
+    record_path.write_text(json.dumps(clean_json(metadata), indent=2, allow_nan=False))
+    return str(record_path), current_active
 
 
 def _revision():
@@ -46,7 +223,32 @@ def _revision():
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def run(case_path, output, grid, half_width_mm):
+def _scipy_openblas_thread_count():
+    library_paths = Path(scipy.__file__).resolve().parent.parent.glob(
+        "scipy.libs/*openblas*"
+    )
+    loader = getattr(ctypes, "WinDLL", ctypes.CDLL)
+    for path in library_paths:
+        try:
+            library = loader(str(path))
+        except OSError:
+            continue
+        getter = getattr(library, "scipy_openblas_get_num_threads", None)
+        if getter is not None:
+            getter.restype = ctypes.c_int
+            return int(getter())
+    return None
+
+
+def run(
+    case_path,
+    output,
+    grid,
+    half_width_mm,
+    *,
+    seed=None,
+    maximum_physical_nodes=None,
+):
     started = time.perf_counter()
     output = Path(output)
     if output.exists():
@@ -61,29 +263,75 @@ def run(case_path, output, grid, half_width_mm):
         nx=grid,
         domain_half_width_x_m=half_width_m,
         domain_half_width_y_m=half_width_m,
+        maximum_physical_nodes=(
+            base.maximum_physical_nodes
+            if maximum_physical_nodes is None
+            else maximum_physical_nodes
+        ),
+    )
+    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    initial_state, seed_provenance = (
+        _seed_state(seed, case, probe)
+        if seed is not None
+        else (None, {"kind": "Hertz initial guess; not a solution"})
     )
     output.mkdir(parents=True)
-    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    command = [
+        "python",
+        "examples/run_ciulli_donor_grid.py",
+        "--case",
+        str(case_path),
+        "--grid",
+        str(grid),
+        "--half-width-mm",
+        f"{half_width_mm:g}",
+        "--output",
+        str(output),
+    ]
+    if seed is not None:
+        command.extend(("--seed", str(seed)))
+    if maximum_physical_nodes is not None:
+        command.extend(("--maximum-physical-nodes", str(maximum_physical_nodes)))
     metadata = dict(
         status="running",
         case=asdict(case),
         transport_fraction=0.0,
         equation="donor-flux JFO/Elrod-Adams",
         coordinates="(ny,nx), x follows +entrainment; fields are SI",
-        command=f"python examples/run_ciulli_donor_grid.py --case {case_path} "
-        f"--grid {grid} --half-width-mm {half_width_mm:g} --output {output}",
+        command=" ".join(command),
         runtime=dict(
             python=sys.version,
             numpy=np.__version__,
             scipy=scipy.__version__,
             platform=platform.platform(),
             git_revision=_revision(),
+            cpu_count=os.cpu_count(),
+            thread_environment={
+                key: os.environ.get(key)
+                for key in (
+                    "OPENBLAS_NUM_THREADS",
+                    "OMP_NUM_THREADS",
+                    "MKL_NUM_THREADS",
+                    "BLIS_NUM_THREADS",
+                    "NUMEXPR_NUM_THREADS",
+                )
+            },
+            scipy_openblas_active_threads=_scipy_openblas_thread_count(),
+            linear_algebra_backend=(
+                "SciPy sparse GMRES with SuperLU factorization; NumPy/SciPy "
+                "build reports SciPy OpenBLAS. The iterative matvec/FFT and "
+                "SuperLU path are not configured as parallel solvers."
+            ),
         ),
         fluid=asdict(case.fluid()),
         maximum_corrections=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
         gmres_restart=60,
+        seed=seed_provenance,
+        history_directory="diagnostics",
+        checkpoint_directory="checkpoints",
+        termination_reason=None,
     )
     metadata["case_sha256"] = _digest(case_path)
     source_files = [
@@ -106,28 +354,54 @@ def run(case_path, output, grid, half_width_mm):
         latest["state"] = state.copy()
         metadata["latest_iteration"] = iteration
         metadata["latest_audit"] = audit
-        _save_state(output / "latest_state.npz", probe, state)
+        _save_state(output / "latest_state.npz", probe, state, case)
+        checkpoint = output / "checkpoints" / f"checkpoint_{iteration:04d}.npz"
+        checkpoint.parent.mkdir(exist_ok=True)
+        _save_state(checkpoint, probe, state, case)
+        metadata["latest_checkpoint"] = str(checkpoint)
+        write_summary()
+
+    previous_active = None
+    diagnostic_paths = []
+
+    def observe_diagnostics(iteration, record):
+        nonlocal previous_active
+        path, previous_active = _persist_solver_record(output, record, previous_active)
+        diagnostic_paths.append(path)
+        metadata["latest_diagnostic_record"] = path
+        metadata["diagnostic_record_count"] = len(diagnostic_paths)
         write_summary()
 
     try:
         root = solve_limited_load(
             case,
+            initial_state=initial_state,
             transport_fraction=0.0,
             state_observer=observe,
+            diagnostic_observer=observe_diagnostics,
         )
         audit = audit_limited_state(probe, root.state, direct=True)
         if not audit["numerically_accepted"]:
             raise RuntimeError("Independent direct endpoint audit rejected the donor root")
-        _save_state(output / "state.npz", probe, root.state)
+        _save_state(output / "state.npz", probe, root.state, case)
         metadata.update(
             status="accepted_numerical_root",
+            termination_reason="independent direct endpoint audit accepted",
             audit=audit,
             newton_corrections=len(root.history),
+            diagnostic_records=diagnostic_paths,
             elapsed_seconds=time.perf_counter() - started,
             history=[
                 {
                     "iteration": record["iteration"],
                     "merit": record["merit"],
+                    "nonlinear_residual_l2": record["nonlinear_residual_l2"],
+                    "nonlinear_residual_linf": record["nonlinear_residual_linf"],
+                    "force_residual": record["force_residual"],
+                    "mass_residual_linf": record["mass_residual_linf"],
+                    "complementarity_residual_linf": record[
+                        "complementarity_residual_linf"
+                    ],
                     "models": [
                         {
                             "recovery": model.get("recovery"),
@@ -135,6 +409,12 @@ def run(case_path, output, grid, half_width_mm):
                             "reason": model.get("reason"),
                             "linear_true_residual": model.get("linear_true_residual"),
                             "linear_iterations": model.get("linear_iterations"),
+                            "krylov_histories": model.get("krylov_histories"),
+                            "correction_norm_l2": (
+                                float(np.linalg.norm(model["direction"]))
+                                if isinstance(model.get("direction"), np.ndarray)
+                                else None
+                            ),
                             "accepted_step": next(
                                 (
                                     trial.get("alpha")
@@ -151,13 +431,23 @@ def run(case_path, output, grid, half_width_mm):
             ],
             state_sha256=_digest(output / "state.npz"),
         )
-    except (LimitedNewtonError, RuntimeError, ValueError) as exc:
+    except (LimitedNewtonError, LimitedObserverError, RuntimeError, ValueError) as exc:
         candidate = latest.get("state")
+        if isinstance(exc, LimitedNewtonError):
+            active = None
+            failure_records = []
+            for record in exc.history:
+                path, active = _persist_solver_record(output, record, active)
+                failure_records.append(path)
+            metadata["failure_history"] = failure_records
+            metadata["diagnostic_record_count"] = len(exc.history)
+            candidate = exc.state
         if candidate is not None:
-            _save_state(output / "candidate_unaccepted.npz", probe, candidate)
+            _save_state(output / "candidate_unaccepted.npz", probe, candidate, case)
         metadata.update(
             status="rejected",
             failure_reason=str(exc),
+            termination_reason=str(exc),
             elapsed_seconds=time.perf_counter() - started,
         )
         if isinstance(exc, LimitedNewtonError):
@@ -176,8 +466,17 @@ def main(argv=None):
     parser.add_argument("--grid", type=int, required=True)
     parser.add_argument("--half-width-mm", type=float, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--seed", type=Path)
+    parser.add_argument("--maximum-physical-nodes", type=int)
     args = parser.parse_args(argv)
-    report = run(args.case, args.output, args.grid, args.half_width_mm)
+    report = run(
+        args.case,
+        args.output,
+        args.grid,
+        args.half_width_mm,
+        seed=args.seed,
+        maximum_physical_nodes=args.maximum_physical_nodes,
+    )
     audit = report["audit"]
     print(
         f"{report['status']}: {args.grid}x{args.grid}, "

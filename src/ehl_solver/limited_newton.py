@@ -120,6 +120,7 @@ def solve_limited_load(
     active_recovery=True,
     preconditioner="local",
     state_observer=None,
+    diagnostic_observer=None,
     transport_fraction=1.0,
     reference_recovery=False,
     local_balance_tolerance=1e-10,
@@ -143,6 +144,7 @@ def solve_limited_load(
         or type(active_recovery) is not bool
         or preconditioner not in ("material", "local")
         or (state_observer is not None and not callable(state_observer))
+        or (diagnostic_observer is not None and not callable(diagnostic_observer))
     ):
         raise ValueError("Invalid bounded Newton/Krylov/recovery/observer options")
     probe = LimitedLoadProbe(case, transport_fraction=transport_fraction)
@@ -192,7 +194,19 @@ def solve_limited_load(
                 raise RuntimeError("Limited Newton correction budget exhausted")
             residual = probe.residual(state)
             merit = float(residual @ residual / (2 * probe.size))
-            record = dict(iteration=iteration, merit=merit, audit=audit, models=[])
+            record = dict(
+                iteration=iteration,
+                merit=merit,
+                nonlinear_residual_l2=float(np.linalg.norm(residual)),
+                nonlinear_residual_linf=float(np.max(abs(residual))),
+                mass_residual_linf=float(np.max(abs(residual[: probe.n]))),
+                complementarity_residual_linf=float(
+                    np.max(abs(residual[probe.n : 2 * probe.n]))
+                ),
+                force_residual=float(residual[-1]),
+                audit=audit,
+                models=[],
+            )
             history.append(record)
             full = (state[: probe.n] >= state[probe.n : 2 * probe.n]).copy()
             seen = set()
@@ -308,6 +322,13 @@ def solve_limited_load(
                         reference = candidate_reference
                     else:
                         reference_alpha = 0.0
+            if diagnostic_observer is not None:
+                try:
+                    diagnostic_observer(iteration, record)
+                except Exception as exc:
+                    raise LimitedObserverError(
+                        "Diagnostic observer failed; numerical solve not continued"
+                    ) from exc
             if best is None:
                 raise RuntimeError("All bounded limited/active recovery models exhausted")
             trial, entry, candidate = best

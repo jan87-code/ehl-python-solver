@@ -129,29 +129,43 @@ comparison:
 - More precise elastic constants and the unrounded Hertz contact dimensions,
   to reduce uncertainty in the inferred effective modulus.
 - Oil-specific pressure-density measurements, if moving beyond the initial
-  constant-density assumption.
+  assumed Dowson-Higginson relationship or testing a constant-density case.
 
-## Recommended first comparison
+## Initial comparison status
 
-Use the Ciulli steady point only: `S = 0`, `u_e = 0.2 m/s`, and `F = 15 N`.
-First document Level 1 load, Reynolds, mass, JFO and film-coupling closure.
-For Level 2, run at least three meshes at one fixed physical domain, then a
-separate domain-expansion study at approximately fixed grid spacing. Report
-central/minimum film and main pressure changes in common physical coordinates;
-keep domain and mesh effects separate. Only after these case-specific checks
-report a Level 3 comparison of the two digitized mid-plane profiles, alongside
-the stated digitization and optical-reference uncertainties. Do not tune fluid
-or material parameters to fit Figure 13. Keep constitutive-model uncertainty
-(including the current slope-matched Roelands/assumed Dowson-Higginson model
-versus any separately implemented Barus/constant-density model) separate from
-numerical and experimental uncertainty.
+The first donor-flux comparison is now complete for the steady point
+`S = 0`, `u_e = 0.2 m/s`, and `F = 15 N`. The 33x33, 65x65, and 129x129
+fixed-domain roots passed independent equation audits; the separate 65x65,
+81x81, and 97x97 fixed-spacing domain sequence shows low contact-region
+boundary sensitivity. Mesh convergence is not established, particularly for
+the pressure field and outlet spike. Reproduction instructions and measured
+results are in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+
+On the 129x129 field the longitudinal profile RMSE is 40.8 nm and the
+transverse profile RMSE is 37.4 nm. These exceed the digitization RMS
+estimates (24.2 and 24.7 nm), and only 5/21 and 4/21 points, respectively,
+are within the per-point digitization estimates. This quantifies a mismatch;
+it does not establish physical validation. Coordinates carry an estimated
+about +/-2 um digitization uncertainty, which has not yet been propagated
+through steep profile gradients.
+
+Do not tune fluid or material parameters to fit Figure 13. Keep the
+constitutive-model uncertainty (including slope-matched Roelands versus
+Barus and assumed Dowson-Higginson versus constant density) separate from
+numerical and experimental uncertainty. Controlled 65x65 and 129x129
+alternative-law solutions are now reported in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md): they show material changes but
+do not establish which model represents SN500. The pressure-density law and
+high-pressure SN500 viscosity curve are not supplied by the paper; a justified
+constitutive choice or uncertainty range is still needed before a
+physical-validation claim.
 
 Do not use the paper's 0.25/1 Hz transients or nonzero slide-to-roll ratios as
 steady-isothermal validation cases. Digitize Cameron-Gohar and Gohar's
 figures as useful trend/fringe checks later; their present records still lack
 directly comparable dimensional point data.
 
-The Ciulli profiles now provide a reproducible initial experimental
-reference. Cameron-Gohar and Gohar remain at benchmark-preparation/trend-check
-readiness. No solver-vs-experiment result has yet been evaluated or
-established.
+The Ciulli profiles provide a reproducible initial experimental reference,
+and their first quantitative donor-flux comparison has been evaluated.
+Physical validation is not established. Cameron-Gohar and Gohar remain at
+benchmark-preparation/trend-check readiness.

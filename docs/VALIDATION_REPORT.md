@@ -4242,6 +4242,11 @@ claimed.
 
 ### Ciulli Figure 13: initial donor-discretization closure and convergence status
 
+**Historical status note:** the field-availability and “comparison deferred”
+statements in this section and its retained-pressure-field subsection were
+accurate when written, but are superseded by the completed reanalysis at the
+end of this report. The failed 193x193 iterate remains rejected.
+
 The initial CPU studies use the Figure 13 steady pure-rolling operating point:
 15 N, `u_e = 0.2 m/s`, `S = 0`, `T = 12 deg C`, `eta_0 = 0.497 Pa s`,
 `rho_0 = 892 kg/m^3`, `alpha_p = 2.87e-8 Pa^-1`, and the reported 10.319 mm
@@ -4417,3 +4422,269 @@ matrix-free operator and independent true-residual checks, demonstrate a
 feasible Armijo step, and pass all unchanged endpoint audits before it can be
 considered. No pressure-spike or experimental-validation conclusion follows
 from this diagnostic.
+
+## Ciulli Figure 13 donor-flux reanalysis (2026-11-11)
+
+This reanalysis uses only independently accepted donor-flux
+(`transport_fraction = 0`) roots. It supersedes the older statements above that higher-grid fields
+were unavailable and that no Figure 13 comparison had been made. It does not
+change the equations, physical model, or any acceptance criterion. Donor-flux
+results are not results for the limited-capacity (`transport_fraction = 1`)
+endpoint.
+
+### Reproduction and retained fields
+
+The SI case is
+[`cases/ciulli_15n_donor.json`](../cases/ciulli_15n_donor.json). The runner
+[`examples/run_ciulli_donor_grid.py`](../examples/run_ciulli_donor_grid.py)
+solves and independently audits a requested grid, then archives the full
+dimensionless state, pressure, film, content, coordinates, exact input,
+constitutive coefficients, solver budgets, package/runtime metadata, source
+and field checksums, and convergence history. It refuses to overwrite an
+existing output directory. Set BLAS/OpenMP to one thread for reproducibility:
+
+```powershell
+$env:OPENBLAS_NUM_THREADS = "1"
+$env:OMP_NUM_THREADS = "1"
+$env:PYTHONPATH = "src"
+python examples/run_ciulli_donor_grid.py --grid 33 --half-width-mm 0.4 --output results\ciulli_33
+```
+
+The five distinct root configurations are `(33, 0.4 mm)`, `(65, 0.4 mm)`,
+`(129, 0.4 mm)`, `(81, 0.5 mm)`, and `(97, 0.6 mm)`; the 65x65 root is shared
+between mesh and domain studies. Analyze retained roots without rerunning them:
+
+```powershell
+python examples/analyze_ciulli_donor_grid.py `
+  --mesh results\ciulli_33 results\ciulli_65 results\ciulli_129 `
+  --domain results\ciulli_65 results\ciulli_81 results\ciulli_97 `
+  --output results\ciulli_analysis.json
+```
+
+The result archives and analysis JSON remain in ignored `results/`; large
+simulation output is not committed. All five accepted archives are available
+locally and can be recreated from the tracked case, runner and solver commit.
+The exact run summaries record inputs and hashes; the verified 33x33 runner
+execution took about 1.5 seconds on this machine.
+
+### Level 1: equation closure
+
+| Grid and half-width | Spacing [um] | h_min / h_c [nm] | p_max [MPa] and (x,y) [um] | Relative local / global mass residual |
+|---|---:|---:|---|---:|
+| 33x33, +/-0.4 mm | 25.000 | 216.706 / 456.136 | 760.606 at (50,-25) | 2.93e-15 / 5.91e-17 |
+| 65x65, +/-0.4 mm | 12.500 | 282.747 / 492.246 | 746.301 at (0,0) | 6.25e-15 / 3.83e-17 |
+| 129x129, +/-0.4 mm | 6.250 | 285.231 / 485.267 | 741.270 at (0,0) | 1.79e-14 / 7.58e-17 |
+| 81x81, +/-0.5 mm | 12.500 | 283.483 / 493.981 | 746.063 at (0,0) | 9.65e-15 / 3.79e-17 |
+| 97x97, +/-0.6 mm | 12.500 | 283.809 / 494.698 | 745.813 at (0,0) | 6.41e-15 / 8.59e-17 |
+
+Every listed root passed the independent force, local and global SI mass,
+JFO complementarity, film-reconstruction, and direct-elasticity audits.
+Integrated force is 15 N to reported precision. These checks establish
+equation closure for the declared donor discretization and case; they do not
+establish mesh convergence or physical accuracy.
+
+### Level 2: mesh and domain studies
+
+The fixed-domain mesh study and fixed-spacing domain study are independent.
+Fields were interpolated to common physical coordinates, with no comparison
+by grid index. The declared two-dimensional main-contact comparison window
+is `x=[-100,60] um`, `y=[-75,75] um`; the separate midplane comparison uses
+`[-100,100] um`.
+
+| Fixed-domain comparison | Main-region pressure relative L2 / RMS / Linf | Main-region film relative L2 / RMS / Linf |
+|---|---|---|
+| 33 -> 65 | 7.74% / 42.69 / 236.02 MPa | 10.15% / 44.58 / 109.64 nm |
+| 65 -> 129 | 5.71% / 31.64 / 233.23 MPa | 2.00% / 9.58 / 40.92 nm |
+
+On the `y=0` longitudinal and `x=0` transverse midplanes, 65 -> 129 gives
+pressure relative L2 about 0.674%, RMS 5.03 MPa, and film relative L2 about
+1.418%, RMS 6.98 nm. The 33 -> 65 midplane film RMS is 36.11 nm. The main
+contact 2D Linf pressure changes remain large, and the minimum/central-film
+sequence is nonmonotone (`h_min`: +30.5%, then +0.88%; `h_c`: +7.92%, then
+-1.42%). Three meshes do not establish an asymptotic order or a reliable
+Richardson/GCI estimate. The two finer meshes show reduced film sensitivity
+but do not prove full-field convergence.
+
+| Fixed-spacing domain expansion | Main-region pressure relative L2 / RMS / Linf | Main-region film relative L2 / RMS / Linf |
+|---|---|---|
+| 65 +/-0.4 -> 81 +/-0.5 mm | 0.299% / 1.656 / 9.504 MPa | 0.329% / 1.572 / 3.202 nm |
+| 81 +/-0.5 -> 97 +/-0.6 mm | 0.177% / 0.980 / 5.339 MPa | 0.143% / 0.688 / 1.679 nm |
+
+The domain sequence holds spacing at about 12.5 um. Its contact-region
+scalar changes are also small: 65 -> 97 changes minimum/central film by
+0.38%/0.50% and maximum pressure by -0.07%. The centerline pressure-release
+start is at `x=125 um` for these three domain roots. This supports low
+artificial-boundary sensitivity in the stated contact region at this
+resolution; it is not a claim that the full pressure-release region or
+outlet feature is domain-independent.
+
+### Outlet spike and pressure release
+
+The pressure regions are treated separately: main contact as above, outlet
+spike in `x=[75,175] um`, and downstream pressure release/cavitation thereafter.
+At 33x33 and 65x65 no interior local peak is identified in the outlet window.
+At 129x129 the diagnostic identifies a peak at `x=81.25 um`,
+`617.834 MPa`; the adjacent sampled pressures are `599.135 MPa` before and
+`205.708 MPa` after the peak. The linearly interpolated half-prominence width
+is `3.593 um`, only `0.575` of a 6.25 um grid cell. This peak is
+under-resolved; neither its height nor width is a converged physical
+quantity. Its changing shape and coarse-grid absence are not pass/fail
+comparisons to a smooth Hertz pressure curve. The centerline first
+cavitated node (`p <= 1 kPa`, `theta < 1-1e-10`) is 125 um on 33/65 and
+118.75 um on 129.
+
+The failed 193x193 attempt remains a failed iterate, not a fourth mesh root.
+The recorded 30-correction limit, 15 N integrated force, relative local/global
+mass residuals `8.589e-1`/`3.273e-4`, maximum complementarity `1.047e-3`,
+and maximum SI divergence `97.08 kg/(m^2 s)` establish nonlinear
+nonconvergence. Its iteration, line-search, active-set and Krylov histories
+were not retained. The available evidence cannot identify a specific
+linear-solve or correction mechanism, and the distinct limited-capacity
+endpoint diagnosis must not be used to attribute this donor-run failure.
+Do not use the final iterate as a solution or increase iteration limits
+without a diagnostic plan.
+
+### Level 3: comparison with Figure 13
+
+The finest accepted field was sampled on the two digitized midplanes. For 21
+points in each profile:
+
+| Profile | Bias [nm] | RMSE [nm] | Maximum absolute error [nm] | NRMSE / mean; range | Within pointwise digitization estimate |
+|---|---:|---:|---:|---:|---:|
+| Longitudinal | +19.22 | 40.75 | 129.60 | 8.71%; 21.45% | 5/21 |
+| Transverse | +32.98 | 37.37 | 70.73 | 9.59%; 17.79% | 4/21 |
+
+Digitization RMS estimates are 24.20 nm longitudinally and 24.69 nm
+transversely. The paper's method uncertainty is about 10 nm and the authors
+estimate an additional optical effect of about the same order; treating all
+three as independent RMS errors would give only an illustrative combined
+scale near 28-29 nm, not a formal confidence interval. The estimated
+coordinate read-off uncertainty is +/-2 um and has not been propagated at
+steep gradients. The measured profiles were not corrected for
+pressure-dependent refractive index. The maximum discrepancies and the
+transverse bias exceed the quoted plot-digitization scale. Thus these results
+are a quantitative comparison, not agreement within the known experimental
+uncertainty and not a physical-validation pass.
+
+### Model/input uncertainty and evidence classification
+
+The case uses the paper's `eta_0=0.497 Pa s`, `rho_0=892 kg/m^3`,
+`alpha_p=2.87e-8 Pa^-1`, 12 deg C, 15 N, and 0.2 m/s. The effective modulus
+is inferred from the paper's rounded Hertz radius. Roelands `z=0.626999` is
+matched to the zero-pressure viscosity slope only. The solver's assumed
+Dowson-Higginson coefficients are `a=0.6e-9/Pa`, `b=1.7e-9/Pa`; they are not
+reported by Ciulli. At the computed 129x129 peak pressure of 741.27 MPa this
+law gives density about 1067.5 kg/m^3 (19.7% above reference). At the same
+pressure, slope-matched Barus and Roelands formulas evaluate to roughly
+`8.62e8` and `1.56e6 Pa s`, respectively. This illustrates potentially
+material constitutive-model difference, not an uncertainty bound or evidence
+that Barus is the correct high-pressure law. Controlled solution sensitivities
+are reported below. No fluid parameters were tuned.
+
+The paper reports the nominal load, entrainment speed, temperature and ball
+diameter used here but does not provide uncertainty ranges for these inputs or
+for the rounded Hertz-radius-based modulus inference. Those uncertainties
+were not perturbed; assigning arbitrary ranges would not produce a defensible
+input-uncertainty estimate.
+
+A controlled fixed-domain sensitivity was solved on both 65x65 and 129x129
+grids. It compared four combinations of the reported zero-pressure viscosity
+slope and two density assumptions. Each alternative root used the same
+bounded Newton/Krylov budgets and passed the unchanged independent force,
+mass, JFO, film and elasticity audits:
+
+| 65x65 model | h_min / h_c [nm] | p_max [MPa] | Figure 13 longitudinal / transverse RMSE [nm] |
+|---|---:|---:|---:|
+| Roelands + Dowson-Higginson (baseline) | 282.75 / 492.25 | 746.30 | 42.70 / 39.82 |
+| Roelands + constant density | 294.59 / 574.78 | 848.79 | 100.53 / 94.47 |
+| Barus + Dowson-Higginson | 292.49 / 507.07 | 747.56 | 52.11 / 51.33 |
+| Barus + constant density | 305.86 / 594.44 | 867.72 | 117.54 / 110.41 |
+
+| 129x129 model | h_min / h_c [nm] | p_max [MPa] | Figure 13 longitudinal / transverse RMSE [nm] |
+|---|---:|---:|---:|
+| Roelands + Dowson-Higginson (baseline) | 285.23 / 485.27 | 741.27 | 40.75 / 37.37 |
+| Roelands + constant density | 299.58 / 567.39 | 969.64 | 96.29 / 91.57 |
+| Barus + Dowson-Higginson | 294.90 / 500.36 | 742.81 | 50.02 / 49.23 |
+| Barus + constant density | 311.13 / 586.95 | 1015.31 | 113.41 / 107.95 |
+
+Relative to each grid's baseline, at 65x65 constant density with Roelands
+changes central film by 16.77%, p_max by 13.73%, pressure relative L2 by
+11.88%, and film-field RMS by 37.61 nm. Barus with Dowson-Higginson changes
+central film by 3.01%, p_max by 0.17%, pressure relative L2 by 1.16%, and
+film RMS by 11.49 nm. Barus with constant density changes central film by
+20.76%, p_max by 16.27%, pressure relative L2 by 13.29%, and film RMS by
+51.30 nm.
+
+At 129x129, constant density with Roelands changes central film by 16.92%,
+p_max by 30.81%, pressure relative L2 by 17.85%, and film-field RMS by
+37.96 nm. Barus with Dowson-Higginson changes central film by 3.11%,
+p_max by 0.21%, pressure relative L2 by 1.24%, and film RMS by 11.80 nm.
+Barus with constant density changes central film by 20.95%, p_max by
+36.97%, pressure relative L2 by 19.77%, and film RMS by 52.05 nm. The
+corresponding film-field Linf differences are 82.13, 17.93, and 101.68 nm.
+Profile RMSE increases for each alternative at both resolutions.
+
+These are controlled model-form sensitivities, not a probability
+distribution or error bar. The alternatives are not fitted to SN500 and do
+not identify which law is physically correct. They show that the unresolved
+pressure-density and viscosity-pressure laws materially affect the
+comparison; a defensible physical-validation claim needs a justified
+constitutive choice or uncertainty range. Similar percentage changes at the
+two grids are sensitivity evidence, not proof of convergence for each model.
+
+The study is reproducible with
+[`examples/run_ciulli_constitutive_sensitivity.py`](../examples/run_ciulli_constitutive_sensitivity.py),
+using the accepted 65x65 or 129x129 root as `--baseline`. It stores every
+alternative full field, independent audits, source and input hashes, and
+runtime/solver controls under ignored `results/`. Each four-case run took
+about 6 seconds at 65x65 and 181 seconds at 129x129 on this machine.
+
+```powershell
+python examples\run_ciulli_constitutive_sensitivity.py `
+  --baseline results\ciulli_20261111_donor_129_fixed `
+  --output results\ciulli_sensitivity_129
+```
+
+| Review area | Status | Evidence and minimum remaining work |
+|---|---|---|
+| Reproducibility | PARTIAL | Tracked input, run/analyze scripts, checksums and regression exist; archives are local/ignored. Recreate them from the committed inputs/scripts when needed. |
+| Equation/implementation verification | DONE | Five donor roots pass independent load, mass, JFO, film and elasticity checks; component tests cover Hertz/Reynolds/cavitation. This does not substitute for mesh convergence. |
+| Formulation target | DONE | Donor-flux is the declared initial target. Exact `tau=1` limited-capacity remains a separate unfinished formulation and is not a donor blocker. |
+| Mesh convergence | PARTIAL | Fixed-domain common-coordinate metrics are measured, but fine-grid changes and spike resolution prevent an asymptotic/full-field convergence claim. |
+| Domain independence | DONE | Contact-region sensitivity is small over +/-0.4 to +/-0.6 mm at about 12.5 um spacing; release/spike and other domains are outside this conclusion. |
+| Outlet pressure spike | PARTIAL | Detected only at 129x129 and resolved by less than one cell. A finer accepted field is needed before reporting stable peak/width. |
+| Frozen numerical reference | PARTIAL | Case, formulation, solver controls and grids are specified; no numerically converged mesh or uncertainty bound is frozen yet. |
+| Ciulli physical validation | PARTIAL | Quantitative comparison is complete, but mismatch exceeds estimated reference uncertainty and numerical/model uncertainty is not closed. |
+| Model/input uncertainty | PARTIAL | Controlled 65x65 and 129x129 alternative-law roots show material effects; a justified high-pressure SN500 law or credible model/input range remains missing. |
+| Regression testing | DONE | A deterministic 33x33 donor solve checks independent audits and h_min, h_c, p_max regression values; analysis metrics have unit tests. |
+
+### Shortest defensible next steps
+
+**Blocking for a physical-validation claim:** (1) quantify the measured-profile
+mesh error with an additional accepted refinement or other independently
+verified convergence evidence; assess the steep constriction/outlet samples
+separately rather than requiring 193x193 by default; (2) use applicable SN500
+high-pressure properties or establish a defensible range around the already
+measured constitutive-model sensitivity; (3) propagate the stated +/-2 um
+coordinate uncertainty at steep profile gradients and keep it separate from
+model/numerical errors. Do not tune inputs to improve the fit.
+
+**Recommended:** resolve the outlet spike with a finer, well-conditioned
+accepted grid and assess peak location, shape and integral behavior; add a
+matched published numerical EHL reference (the NASA candidates remain
+unmatched). These strengthen numerical verification and any pressure-field
+claim but do not change what Figure 13 measures.
+
+**Optional/future:** original interferograms, calibration files and
+pressure-dependent refractive-index data may improve the optical reference,
+but are not prerequisites for this initial comparison. The exact limited-
+capacity endpoint, thermal behavior, nonzero slide-to-roll cases and other
+papers remain separate milestones.
+
+The 13 pre-existing untracked files were reviewed and left untouched: `.kilo/`
+agent/skill assets are local customization, `ehl-run.spec` is a generated
+machine-specific PyInstaller specification with absolute paths, and
+`cases/circular_50n_316.json` duplicates the tracked `cases/circular_50n_100k.json`.
+They are not inputs to these results and should not be committed. New
+validation deliverables are limited to the Ciulli case, runner, analysis,
+tests, and the directly related documentation; result arrays remain ignored.

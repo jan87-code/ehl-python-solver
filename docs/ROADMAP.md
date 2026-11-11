@@ -48,7 +48,12 @@ coefficients; neither choice is a measured full-pressure SN500 law. Barus and
 Roelands are alternative models, and constant-density and pressure-dependent
 density are separate assumptions. The shared slope-conversion helper
 preserves the existing Roelands model; it does not change the EHL equations.
-No solver-vs-experiment result exists yet.
+A quantitative comparison against both digitized Figure 13 profiles has now
+been made using an accepted 129x129 donor-flux root. The current RMSE is
+40.8 nm longitudinally and 37.4 nm transversely, compared with digitization
+RMS estimates near 24-25 nm; this is a comparison, not a physical-validation
+pass. See the current reanalysis at the end of
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 Cameron-Gohar (1966) dimensionless curves and Gohar (1971) fringe observations
 remain useful later trend checks without direct point datasets.
 
@@ -84,32 +89,50 @@ the case nor its correlation comparison is independent experimental validation.
 See sections 36-37 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for
 reproducible inputs, audits, assumptions and unresolved limitations.
 
-The first Ciulli Level 1 record is now available for the configured donor
-discretization: independently audited roots close at 33x33, 65x65, and
-129x129 on the fixed +/-0.4 mm domain, and preliminary fixed-spacing scalar
-checks cover 65x65, 81x81, and 97x97. These are closure and sensitivity
-results, not a resolved solution. Only the 33x33 pressure field is retained;
-its centerline has one contact peak and no separately identifiable outlet
-peak at 25 um spacing. The accepted 65x65, 129x129, 81x81 and 97x97 fields
-must be rerun and archived before pressure refinement/domain differences can
-be computed. A 193x193 fixed-domain attempt exhausted its Newton correction
-budget and failed the independent mass/complementarity audit; the iteration
-history needed to attribute a specific subsolver failure was not retained.
-Consequently Level 2 is still open, and the domain study does not establish
-domain independence. See the Ciulli evidence section in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+Five accepted donor-flux roots now have archived full fields and independent
+equation audits: 33x33, 65x65 and 129x129 on the fixed +/-0.4 mm domain, plus
+65x65, 81x81 and 97x97 across the fixed-spacing +/-0.4 to +/-0.6 mm domain
+(the 65x65 root is shared). Reproduction and reanalysis are defined by
+[`cases/ciulli_15n_donor.json`](../cases/ciulli_15n_donor.json),
+[`examples/run_ciulli_donor_grid.py`](../examples/run_ciulli_donor_grid.py)
+and
+[`examples/analyze_ciulli_donor_grid.py`](../examples/analyze_ciulli_donor_grid.py).
+The local result archives are intentionally not committed; the runner stores
+complete physical fields, checksums, solver settings, inputs and runtime
+metadata.
 
-Next, establish a reproducible accepted refinement sequence and compare film
-thickness and main pressure on common physical coordinates, while keeping
-fixed-domain mesh refinement separate from fixed-spacing domain expansion.
-Report load, Reynolds, local/global mass, JFO, boundary/domain and grid
-diagnostics separately from experimental and constitutive-model uncertainty.
-Analyze the outlet pressure spike independently using the regional protocol in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md); do not demand monotone peak or
-width changes or choose unsupported tolerances. Only after Level 2 is supported
-for the declared model should the Level 3 film-profile comparison be made.
-Keep original interferograms, calibration files and pressure-dependent optical
-properties optional improvements, not prerequisites.
+The fixed-domain changes from 65x65 to 129x129 are +0.88% in minimum film,
+-1.42% in central film and -0.67% in maximum pressure. Common-coordinate
+two-dimensional contact-region changes are 5.71% relative L2 for pressure
+(31.6 MPa RMS) and 2.00% for film (9.6 nm RMS); mesh convergence is therefore
+not yet demonstrated. In contrast, fixed-spacing domain expansion changes
+the contact-region pressure relative L2 by 0.30% then 0.18%, and film by
+0.33% then 0.14%; the measured contact region is insensitive to the tested
+boundary movement at about 12.5 um spacing.
+
+At 129x129 a separate outlet local peak is identified at x=81.25 um and
+617.8 MPa. Its interpolated half-prominence width is about 3.59 um, only
+0.575 of a 6.25 um cell; it is under-resolved. No peak is identified on
+33x33 or 65x65, which is not evidence that the physical spike is absent.
+The failed 193x193 attempt remains a failed nonlinear iterate: its available
+audit cannot attribute the failure specifically to Krylov, active-set or
+line-search behavior. Do not use its field or blindly increase iteration
+limits.
+
+The digitized-profile comparison and remaining priorities are documented in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md). Keep the donor-flux formulation
+as the declared initial validation target. The missing exact
+limited-capacity `transport_fraction=1` Ciulli root is not a blocker to a
+donor-specific claim and must not be conflated with donor results. The
+strongest current claim is equation closure plus demonstrated contact-region
+domain insensitivity; neither mesh convergence nor physical validation is
+complete. Controlled 65x65 and 129x129 input sensitivities now show material
+viscosity/density model effects; establish a defensible SN500 constitutive
+range and a convergence estimate on the measured film profiles. Resolve the
+outlet spike separately before making a pressure-field accuracy claim.
+Original interferograms, calibration files and pressure-dependent optical
+properties remain optional improvements, not prerequisites for this initial
+comparison.
 In parallel, reconcile the NASA source discrepancy and develop bounded
 higher-accuracy transport or multilevel methods to reduce mesh error, with
 unchanged conservation and acceptance gates; do not make a larger uniform

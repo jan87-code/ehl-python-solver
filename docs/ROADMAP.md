@@ -10,14 +10,18 @@ line contact, transient isothermal behavior, steady TEHL and combined transient
 TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
-Current priority is **benchmark-led physical validation**, not further
-outlet-spike or uniform-grid refinement. The exact 50 N endpoints through
-223x223 and the directional probes are useful sensitivity evidence, but they
-do not meet the provisional pressure-mesh gate or validate physical accuracy.
-The 105x105/209x209 outlet feature is morphologically consistent with an
-expected Petrusevich-type pressure spike; preserve it and defer additional
-spike-focused work. See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for the
-recorded measurements and caveats.
+The broad project priority remains **benchmark-led physical validation**,
+but the Ciulli 15 N donor case is not ready for a stronger physical claim:
+its accepted 513x513 refinement still shows a spatially shifting, sharply
+localized pressure maximum in the Hertz core. Main-field RMS differences
+contract on the last refinement, but pressure Linf and `p_max` do not
+stabilize, and film/scalar behavior is not uniformly asymptotic. Do not start
+another uniform refinement or redo the Figure 13 comparison automatically.
+First investigate the core pressure-ridge/grid treatment and select a
+targeted discretization or local-refinement diagnostic. The separate 50 N
+endpoints through 223x223 and their directional probes remain sensitivity
+evidence, not a pressure-mesh or physical-accuracy pass. See
+[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for those measurements and caveats.
 
 Use the strict three-level evidence hierarchy in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md): **Level 1, equation closure**
@@ -160,27 +164,44 @@ location moves on the finest grid and this does not establish field
 convergence. The analysis also corrected an earlier double unit conversion
 in the midplane comparison coordinates; corrected values are in the report.
 
-The outlet peak remains under-resolved at 257x257: its estimated width is
-3.96 um, about 1.27 cells, and the estimated integrated pressure in its
-grid-dependent local window changes from 0.11479 to 0.10245 N. A bounded
-513x513 resource preflight has now been completed for a diagnostic
-refinement. The exact target sparse matrix has 522,243 rows, 2.61 million
-nonzeros and 33.4 MB storage; its SuperLU factors occupy 639 MB. The measured
-preflight peak working set was 1.45 GiB and private bytes 2.51 GiB, while
-26.18 GiB RAM was available at preflight start. The 513x513 operator estimate
-is 0.283 GiB and the 60-vector GMRES basis is about 0.241 GiB. Reserving an
-8 GiB process budget leaves at least 16 GiB for the OS and other processes.
-The results volume had 103 GiB free; conservative uncompressed checkpoint
-and diagnostic storage is below 1 GiB. NumPy and SciPy OpenBLAS were
-independently queried at 4 threads with all BLAS/OpenMP/NumExpr environment
-limits set to 4. The explicit supported node budget is raised to 300,000 for
-this case only; its 263,169 nodes fit that bound. The 513x513 solve is the
-next diagnostic gate and must retain the existing equations and acceptance
-criteria. It is expected to provide only about 2.5 cells across the prior
-spike-width estimate, so it cannot establish spike convergence. Since the
-solver requires uniform axes, local/nonuniform refinement remains a future
-requirement for efficient spike resolution. The failed 193x193 iterate
-remains rejected and is not repeated.
+The 513x513 donor-flux run completed in 1,383.96 s with seven Newton
+corrections, seeded from the accepted 257x257 root. It used the same domain,
+equations, material model and acceptance gates; only the explicitly supported
+node budget increased to 300,000. The final state passed the independent
+force, local/global mass, JFO complementarity, film-reconstruction and
+direct-elasticity audits. Eight checkpoints and seven detailed diagnostic
+records, including active-set snapshots, and complete final fields are in
+the local ignored result archive. The solver source revision is
+`e067f9c3389a0de5a8c181f5ec1bd828fbf70a52`; the reanalysis command and
+findings are in [VALIDATION_REPORT.md](VALIDATION_REPORT.md). Four threads
+were reported by NumPy and SciPy OpenBLAS, but GMRES/SuperLU, FFT and
+matrix-free operations were not configured as parallel solvers. The monitor
+tracked the Python launcher rather than its spawned solver, so its process
+peak-memory value is unavailable; the observed system-available RAM minimum
+was 23.81 GiB and no storage or memory threshold was crossed.
+
+The four-grid sequence contracts in area-weighted pressure RMS differences
+(31.71, 24.83, 19.07 MPa), with descriptive difference-norm orders 0.35 and
+0.38, but main-contact pressure Linf grows (233.2, 275.1, 296.0 MPa) and the
+largest difference moves to `(48.5,-61) um`. The error energy is not
+exclusively an outlet issue: the main/outlet shares are 54.7/45.3%,
+48.1/51.9%, and 45.8/54.2%; more than 99.78% of each main-region error lies
+inside the dry-Hertz core. The 513-grid `p_max` rises to 812.88 MPa at
+`(51.56,59.375) um`, with `theta=1` in its neighborhood; it is an unresolved
+non-cavitating core feature, separate from the outlet peak.
+
+Film RMS differences are 9.59, 10.47 and 7.12 nm, so they are not monotone,
+although film Linf contracts. `h_c` decreases through 492.25, 485.27, 473.63
+and 465.65 nm, but its signed changes do not contract monotonically;
+`h_min` is nonmonotone. The sequence therefore does not justify full-field
+Richardson/GCI or a numerical-uncertainty estimate. The outlet peak reaches
+689.50 MPa at 85.94 um; its estimated width is 2.70 um, only 1.73 cells, and
+its grid-dependent local pressure integral changes from 0.11479 N at 129²
+through 0.10245 N at 257² to 0.06080 N at 513². It remains unresolved. Do
+not start 1025² automatically: diagnose the core ridge, grid-dependent
+pressure/flux and elastic-convolution treatment first, then decide whether a
+targeted or nonuniform refinement is needed. The failed 193² iterate remains
+rejected and is not repeated.
 
 The digitized-profile comparison and remaining priorities are documented in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md). Keep the donor-flux formulation

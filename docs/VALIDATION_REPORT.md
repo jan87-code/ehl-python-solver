@@ -4994,9 +4994,160 @@ budget accepted up to 100,000 nodes, so this specific run uses the explicit
 300,000-node limit for 263,169 nodes; equations, model, line-search,
 nonlinear, Krylov, and independent acceptance gates are unchanged.
 
-The resource preflight passes. The 513x513 donor run is the next diagnostic
-gate; its outcome and four-grid comparison will be reported before deciding
-whether any further refinement or discretization work is warranted. The
-estimated spike resolution is only about 2.5 cells across its previous
-width, so the run cannot by itself establish spike-height or width
-convergence.
+The resource preflight passed. The 513x513 diagnostic run and four-grid
+comparison are now complete; the evidence and decision are recorded below.
+
+### 513x513 donor-flux run and four-grid mesh assessment
+
+The accepted 513x513 donor-flux run was seeded by bilinear prolongation from
+the accepted 257x257 state. It retained the same +/-0.4 mm domain, governing
+equations, donor-flux formulation (`transport_fraction=0`), material model,
+boundary conditions and physical/nonlinear/audit acceptance gates. The only
+required setting change was the supported node budget, raised to 300,000 for
+263,169 physical nodes. It ran with Python 3.12.9, NumPy 2.5.4 and SciPy
+1.18.1. NumPy and SciPy OpenBLAS independently reported four threads under
+four-thread BLAS/OpenMP/MKL/BLIS/NumExpr environment limits. This does not
+mean the full solve ran in parallel: the sparse GMRES/SuperLU, FFT and
+Python matrix-free paths were not configured as multithreaded solvers.
+
+The run completed in 1,383.96 s with seven Newton corrections and was
+accepted by the independent endpoint audit. The 15 N force error was
+2.22e-16 relative; relative local and global mass balances were 8.29e-14 and
+7.52e-17; maximum SI mass divergence was 3.69e-11 kg/(m^2 s);
+complementarity was 3.98e-27; film reconstruction error was 5.38e-20 m; and
+direct elasticity was checked. The local ignored archive
+`results/ciulli_20261111_donor_513_fixed` contains the complete final fields,
+restart state, eight checkpoints, seven nonlinear diagnostic records and
+active-set snapshots. Its state checksum is
+`4d6376f51c0056f0414a8bed3cab8916c88f27db8f738d8ab77f060ffcf0ce06` as
+recorded in `summary.json`. Compact committed run and seed provenance is
+provided in [cases/ciulli_513_donor_run_metadata.json](../cases/ciulli_513_donor_run_metadata.json).
+The 4-grid reanalysis is
+`results/ciulli_20261111_mesh_convergence_65_129_257_513.json`; these large
+result artifacts remain local and are not committed.
+
+The resource-monitor wrapper captured the Python launcher rather than its
+spawned solver interpreter. Consequently it did not measure solver peak
+working-set/private memory; its launcher values are not solver-memory
+measurements. It did observe available system RAM fall no lower than
+23.81 GiB from 26.15 GiB initially, with no configured RAM threshold
+crossed. The instrumented preflight's direct solver-process measurements,
+not the wrapper's launcher sample, remain the valid process-memory evidence.
+
+The 65x65, 129x129, 257x257 and 513x513 roots were compared on the common
+physical region `x=[-100,60] um`, `y=[-75,75] um` for the main contact and
+the documented full-contact/outlet/release regions. Pressure norms use the
+union of samples with pressure above 1 kPa; film norms use the full sampled
+region. The pairwise maps/norms use a 0.5 um common grid, and the line
+profiles use common physical coordinates from -100 to 100 um. The analysis
+is reproducible with `examples/analyze_ciulli_donor_grid.py --mesh
+results/ciulli_20261111_donor_65_fixed
+results/ciulli_20261111_donor_129_fixed
+results/ciulli_20261111_donor_257_fixed
+results/ciulli_20261111_donor_513_fixed --mesh-only --output
+results/ciulli_20261111_mesh_convergence_65_129_257_513.json
+--regional-fields
+results/ciulli_20261111_mesh_differences_65_129_257_513.npz`. The compressed
+pairwise coordinate and difference maps are local in that ignored NPZ archive.
+
+#### Main pressure field and spatial error
+
+| Grid pair | Main pressure relative L2 | RMS (MPa) | Linf (MPa) | Linf location (um) | Hertz-core error share |
+|---|---:|---:|---:|---|---:|
+| 65 -> 129 | 5.711% | 31.712 | 233.225 | (50,-56.5) | 99.787% |
+| 129 -> 257 | 4.481% | 24.825 | 275.093 | (59.5,53) | 99.977% |
+| 257 -> 513 | 3.451% | 19.075 | 296.020 | (48.5,-61) | 99.998% |
+
+Across the full contact rectangle, main/outlet shares of squared pressure
+difference are respectively 54.70/45.30%, 48.12/51.88%, and 45.78/54.22%.
+The pressure RMS-difference norms contract by factors 1.277 and 1.301,
+corresponding to descriptive orders of the *difference norm* of 0.353 and
+0.380 for ratio-two refinements. These are not observed orders of the
+unknown solution error. The main-contact RMS trend is encouraging but slow;
+the increasing Linf and migrating maximum-error location show that the
+localized field has not stabilized. Almost all main-region error energy is
+inside the dry-Hertz footprint, not in the outer transition or exclusively
+at the outlet.
+
+The sampled pressure ridge maximum over `x=[0,60] um` moves at `y=-60 um`
+from 12.5 to 31 to 46.5 to 48.5 um, and at `y=-56.5 um` from 12.5 to 44 to
+53 to 56 um across the four grids. At `y=-50 um`, the sampled ridge maximum
+moves 50 -> 56 -> 60 -> 5 um, indicating a switch in the maximizing ridge
+branch rather than a stable ridge profile. The 513-grid global pressure
+maximum jumps from 739.669 MPa at `(53.125,56.25) um` on 257x257 to
+812.881 MPa at `(51.5625,59.375) um`. Its local 5x5 pressure patch is sharply
+peaked and varies strongly across neighboring cells; pressure remains
+positive and `theta=1` throughout that patch. This maximum is an interior,
+non-cavitating core feature, not the downstream outlet spike. Existing
+evidence identifies its spatial/grid sensitivity but does not yet identify
+the responsible discretization mechanism.
+
+#### Film, profiles and scalar quantities
+
+| Grid pair | Main-film relative L2 | RMS (nm) | Linf (nm) | Longitudinal pressure RMS / Linf (MPa) | Transverse pressure RMS / Linf (MPa) | Longitudinal film RMS / Linf (nm) | Transverse film RMS / Linf (nm) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 65 -> 129 | 2.005% | 9.588 | 40.918 | 33.787 / 204.361 | 28.947 / 112.428 | 10.842 / 41.269 | 8.243 / 22.411 |
+| 129 -> 257 | 2.207% | 10.469 | 22.630 | 25.763 / 216.378 | 18.496 / 90.642 | 11.285 / 19.163 | 9.202 / 11.638 |
+| 257 -> 513 | 1.532% | 7.124 | 13.330 | 20.321 / 237.867 | 10.825 / 71.699 | 7.703 / 10.997 | 6.415 / 7.981 |
+
+Main-film RMS first increases and then decreases, so the three differences
+are not monotone; the last-pair reduction does not establish an asymptotic
+rate. The film Linf and the longitudinal/transverse film-profile errors
+decrease, but they remain direct intergrid differences rather than estimated
+errors to an exact solution.
+
+| Quantity | 65x65 | 129x129 | 257x257 | 513x513 |
+|---|---:|---:|---:|---:|
+| Central film `h_c` (nm) | 492.246 | 485.267 | 473.629 | 465.649 |
+| Minimum film `h_min` (nm) | 282.747 | 285.231 | 281.997 | 278.512 |
+| Maximum pressure `p_max` (MPa) | 746.301 | 741.270 | 739.669 | 812.881 |
+| Integrated load (N) | 15.000 | 15.000 | 15.000 | 15.000 |
+| `p_max` location (um) | (0,0) | (0,0) | (53.125,56.25) | (51.5625,59.375) |
+
+`h_c` changes by -6.979, -11.638 and -7.981 nm; the signed changes are not
+monotone contracting. `h_min` is nonmonotonic and its location shifts along
+the contact edge. The 513x513 `h_c` and `h_min` differ from the 257x257
+values by 1.69% and 1.24%, respectively, but these last-grid changes are not
+convergence uncertainty estimates. The `p_max` increase and location change
+rule out a scalar convergence claim. Load closure is excellent but is an
+equation audit, not a discretization-accuracy measure.
+
+No Richardson extrapolation or GCI is justified for the full fields or
+important scalars: pressure Linf grows, the pressure maximizing ridge changes
+branches, `h_c` changes do not contract monotonically over all intervals,
+`h_min` is nonmonotone, and `p_max` jumps. The descriptive pressure
+difference-norm order near 0.37 must not be used as solution-error order.
+The available numerical uncertainty is therefore bounded only by direct
+successive-grid changes; no defensible asymptotic discretization uncertainty
+has been quantified.
+
+#### Outlet spike and next decision
+
+| Grid | Outlet peak (MPa) | Peak x (um) | Half-prominence width (um) | Cells across width | Variable-window pressure integral (N) | Fixed `x=[75,100] um`, `|y|<=a_H` pressure integral (N) |
+|---|---:|---:|---:|---:|---:|---:|
+| 65x65 | Not identified | -- | -- | -- | -- | 0.39334 |
+| 129x129 | 617.834 | 81.250 | 3.593 | 0.575 | 0.11479 | 0.44166 |
+| 257x257 | 635.175 | 84.375 | 3.960 | 1.267 | 0.10245 | 0.48035 |
+| 513x513 | 689.502 | 85.938 | 2.704 | 1.730 | 0.06080 | 0.49746 |
+
+The fixed-corridor integral includes background pressure and is supplied as a
+common-region comparison, not as the spike's isolated load. The local
+half-prominence integral uses a different, grid-dependent width on each
+mesh and is not a convergence quantity. At 513x513 the peak has 624.89 MPa
+at the left adjacent sample and 315.78 MPa at the right. The spike height,
+width and shape remain unresolved; the finer grid does not provide enough
+cells to claim spike convergence.
+
+**Decision:** the 513x513 root is an accepted donor-flux equation-closure
+solution and the latest main-contact pressure/film RMS differences contract.
+However, full main-field convergence, scalar/profile stabilization and
+outlet-spike resolution are not established. Do not launch 1025x1025
+automatically. First inspect the core ridge pressure-gradient/flux
+discretization, elastic-convolution grid treatment and quadrature, and
+symmetry/grid alignment; then design a targeted or local/nonuniform
+refinement that resolves both the ridge and outlet feature without loosening
+acceptance gates. The 513-grid result does not redo or supersede the existing
+Figure 13 comparison and does not establish physical validation. The
+strongest supported claim remains independently audited equation closure
+plus a pressure/film L2 contraction trend, not numerical mesh convergence
+or physical accuracy.

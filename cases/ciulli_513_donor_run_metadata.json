@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "case": {
+    "configuration": "ciulli_15n_donor.json",
+    "sha256": "b1a6c09be54035882834cef18850be2edcba0561c31380aa8ebc3f982dc8152f",
+    "equation": "donor-flux JFO/Elrod-Adams",
+    "transport_fraction": 0.0,
+    "load_n": 15.0,
+    "grid_ny_nx": [513, 513],
+    "domain_half_width_x_y_m": [0.0004, 0.0004],
+    "maximum_physical_nodes": 300000
+  },
+  "run": {
+    "status": "accepted_numerical_root",
+    "termination_reason": "independent direct endpoint audit accepted",
+    "elapsed_seconds": 1383.9550981000066,
+    "newton_corrections": 7,
+    "solver_revision": "e067f9c3389a0de5a8c181f5ec1bd828fbf70a52",
+    "command": "python examples/run_ciulli_donor_grid.py --case cases/ciulli_15n_donor.json --grid 513 --half-width-mm 0.4 --output results/ciulli_20261111_donor_513_fixed --seed results/ciulli_20261111_donor_257_fixed --maximum-physical-nodes 300000",
+    "seed": {
+      "grid_ny_nx": [257, 257],
+      "state_sha256": "9c3e870e9d2aa7ec8950556ff522559f5a41ecda739b3bc5c0df1337c1b3137a",
+      "interpolation": "bilinear pressure/content; physical offset preserved"
+    },
+    "source_sha256": {
+      "examples/run_ciulli_donor_grid.py": "f5c2d14ff3b539cfa90e7620dbc66e6e5f5b1f54d13f4472ac0941f979f9fe54",
+      "src/ehl_solver/limited_newton.py": "abb06224c5461ff84f99fdf44f8404aaf0198937ceefff24ab79dc5e5f3ed4f7",
+      "src/ehl_solver/limited_system.py": "50d51b811cef7b2d74eefe83fccf4d70942642110b60415716502eb019e21d7d",
+      "src/ehl_solver/limited_audit.py": "996d06a5ae9f166a24277dafe4a1f6f6e203bbd725a327104223c2cd855fe9d0"
+    },
+    "runtime": {
+      "python": "3.12.9",
+      "numpy": "2.5.4",
+      "scipy": "1.18.1",
+      "platform": "Windows 11",
+      "openblas_active_threads_numpy_scipy": 4,
+      "thread_environment_limit": 4,
+      "parallel_solver_note": "GMRES/SuperLU, NumPy FFT and Python matrix-free operations were not configured as parallel solvers."
+    },
+    "independent_audit": {
+      "force_n": 15.000000000000004,
+      "force_relative_error": 2.220446049250313e-16,
+      "relative_local_mass_balance": 8.292604434385951e-14,
+      "relative_global_mass_balance": 7.52382031279066e-17,
+      "maximum_si_mass_divergence_kg_m2_s": 3.6914915568786455e-11,
+      "maximum_complementarity": 3.976191127985186e-27,
+      "film_reconstruction_error_m": 5.378659215064807e-20,
+      "direct_elasticity_checked": true
+    },
+    "result_archive": {
+      "path": "results/ciulli_20261111_donor_513_fixed",
+      "committed": false,
+      "state_sha256": "4d6376f51c0056f0414a8bed3cab8916c88f27db8f738d8ab77f060ffcf0ce06",
+      "field_keys": [
+        "pressure_pa",
+        "film_m",
+        "deformation_m",
+        "density_kg_m3",
+        "viscosity_pa_s",
+        "theta"
+      ],
+      "checkpoints": 8,
+      "diagnostic_records": 7,
+      "resource_monitor_caveat": "The wrapper measured the Python launcher, not the spawned solver; solver peak memory is unavailable. Minimum observed system-available RAM was 23.81 GiB."
+    }
+  },
+  "analysis": {
+    "script": "examples/analyze_ciulli_donor_grid.py",
+    "script_sha256": "11f47c72253424c36b6af1e9333c93290ee8fa45535ee7987b84e0f0852a9eea",
+    "comparison_grids": [65, 129, 257, 513],
+    "common_field_spacing_um": 0.5,
+    "metrics_path_local": "results/ciulli_20261111_mesh_convergence_65_129_257_513.json",
+    "difference_maps_path_local": "results/ciulli_20261111_mesh_differences_65_129_257_513.npz",
+    "convergence_claim": "No full-field Richardson/GCI; core pressure ridge and outlet spike remain unresolved."
+  }
+}

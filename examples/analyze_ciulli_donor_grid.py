@@ -19,6 +19,7 @@ from ehl_solver.pressure_analysis import (
 MAIN_X_M = (-100e-6, 60e-6)
 MAIN_Y_M = (-75e-6, 75e-6)
 OUTLET_WINDOW_M = (75e-6, 175e-6)
+FIXED_SPIKE_WINDOW_M = (75e-6, 100e-6)
 PROFILE_WINDOW_M = (-100e-6, 100e-6)
 REGIONAL_WINDOW_M = (-100e-6, 175e-6, -75e-6, 75e-6)
 REGION_BOUNDS_UM = {
@@ -475,7 +476,10 @@ def main_contact_structure_comparison(coarse, fine, *, spacing_um=0.5):
                  40.0, 45.0, 50.0, 56.5, 60.0, 65.0, 70.0):
         y_value = y_um * 1e-6
         entries = {"y_um": y_um}
-        for label, run in (("65", coarse), ("129", fine)):
+        for label, run in (
+            (str(coarse["case"]["nx"]), coarse),
+            (str(fine["case"]["nx"]), fine),
+        ):
             profile = _sample_2d(
                 run,
                 run["pressure_pa"],
@@ -502,45 +506,65 @@ def main_contact_structure_comparison(coarse, fine, *, spacing_um=0.5):
     }
 
 
-def _scalar_refinement(values):
-    q65, q129, q257 = map(float, values)
-    coarse_change, fine_change = q129 - q65, q257 - q129
+def _scalar_refinement(values, grids=None):
+    values = list(map(float, values))
+    if len(values) not in (3, 4):
+        raise ValueError("Scalar refinement requires three or four nested-grid values")
+    grids = grids or (65, 129, 257, 513)[: len(values)]
+    if len(grids) != len(values):
+        raise ValueError("Grid labels must match scalar values")
+    changes = np.diff(values).tolist()
+    contractions = [
+        float(abs(previous / current))
+        if current
+        else None
+        for previous, current in zip(changes, changes[1:], strict=False)
+    ]
+    same_direction = bool(
+        changes and all(change * changes[0] > 0 for change in changes[1:])
+    )
+    monotone_contraction = bool(
+        same_direction
+        and all(
+            abs(later) < abs(earlier)
+            for earlier, later in zip(changes, changes[1:], strict=False)
+        )
+    )
+    orders = [
+        float(np.log(abs(previous / current)) / np.log(2.0))
+        for previous, current in zip(changes, changes[1:], strict=False)
+        if previous * current > 0 and abs(previous) > abs(current) > 0
+    ]
+    coarse_change, fine_change = changes[-2:]
+    q_coarse, q_fine = values[-2:]
     result = {
-        "values_65_129_257": [q65, q129, q257],
-        "change_65_to_129": coarse_change,
-        "change_129_to_257": fine_change,
-        "fine_to_coarse_change_ratio": (
-            abs(fine_change / coarse_change) if coarse_change else None
-        ),
-        "monotone_contraction": bool(
-            coarse_change * fine_change > 0
-            and abs(fine_change) < abs(coarse_change)
-        ),
+        f"values_{'_'.join(map(str, grids))}": values,
+        "grid_values": list(grids),
+        "signed_changes_by_pair": {
+            f"{left}_to_{right}": change
+            for left, right, change in zip(grids[:-1], grids[1:], changes, strict=True)
+        },
+        "contraction_factors_between_successive_changes": contractions,
+        "same_direction_changes": same_direction,
+        "monotone_contraction": monotone_contraction,
+        "observed_orders_between_successive_changes": orders,
         "observed_order": None,
         "richardson_extrapolated_value": None,
         "fine_grid_gci_percent_fs_1_25": None,
         "coarse_grid_gci_percent_fs_1_25": None,
         "asymptotic_gci_ratio": None,
     }
-    if result["monotone_contraction"]:
-        order = float(np.log(abs(coarse_change / fine_change)) / np.log(2.0))
+    if monotone_contraction and orders:
+        order = orders[-1]
         denominator = 2**order - 1
-        coarse_gci = (
-            1.25 * abs(coarse_change / q129) / denominator * 100 if q129 else None
-        )
-        fine_gci = (
-            1.25 * abs(fine_change / q257) / denominator * 100 if q257 else None
-        )
+        coarse_gci = 1.25 * abs(coarse_change / q_coarse) / denominator * 100
+        fine_gci = 1.25 * abs(fine_change / q_fine) / denominator * 100
         result.update(
             observed_order=order,
-            richardson_extrapolated_value=float(q257 + fine_change / denominator),
+            richardson_extrapolated_value=float(q_fine + fine_change / denominator),
             coarse_grid_gci_percent_fs_1_25=coarse_gci,
             fine_grid_gci_percent_fs_1_25=fine_gci,
-            asymptotic_gci_ratio=(
-                float(fine_gci / (coarse_gci / 2**order))
-                if coarse_gci and fine_gci
-                else None
-            ),
+            asymptotic_gci_ratio=float(fine_gci / (coarse_gci / 2**order)),
         )
     return result
 
@@ -598,11 +622,38 @@ def _outlet_integrated_pressure(run, spike):
     }
 
 
+def _fixed_spike_region_pressure(run):
+    a_h = circular_point_contact(
+        run["case"]["load_n"],
+        run["case"]["radius_m"],
+        run["case"]["contact_modulus_pa"],
+    ).radius_m
+    spacing = 0.25e-6
+    x_sample = np.linspace(
+        *FIXED_SPIKE_WINDOW_M,
+        int(np.ceil(np.diff(FIXED_SPIKE_WINDOW_M)[0] / spacing)) + 1,
+    )
+    y_sample = np.linspace(-a_h, a_h, int(np.ceil(2 * a_h / spacing)) + 1)
+    xx, yy = np.meshgrid(x_sample, y_sample)
+    pressure = _sample_2d(run, run["pressure_pa"], xx, yy)
+    return {
+        "pressure_integral_n": _integral(pressure, x_sample, y_sample),
+        "x_window_um": [value * 1e6 for value in FIXED_SPIKE_WINDOW_M],
+        "y_window_um": [-a_h * 1e6, a_h * 1e6],
+        "interpolation_spacing_um": spacing * 1e6,
+        "interpretation": (
+            "Absolute pressure integral over a fixed physical outlet corridor; "
+            "includes the local background pressure as well as the spike."
+        ),
+    }
+
+
 def three_grid_convergence(mesh_runs):
-    """Assess 65/129/257 nested-grid behavior without forcing extrapolation."""
+    """Assess nested 65/129/257[/513] roots without forcing extrapolation."""
     runs = sorted(mesh_runs, key=lambda run: run["case"]["nx"])
-    if len(runs) != 3 or [run["case"]["nx"] for run in runs] != [65, 129, 257]:
-        raise ValueError("Exactly the accepted 65x65, 129x129 and 257x257 roots are required")
+    grids = [run["case"]["nx"] for run in runs]
+    if grids not in ([65, 129, 257], [65, 129, 257, 513]):
+        raise ValueError("Accepted nested 65x65, 129x129, 257x257[/513x513] roots required")
     if any(
         run["case"]["ny"] != run["case"]["nx"]
         or run["case"]["transport"] != "donor"
@@ -610,9 +661,12 @@ def three_grid_convergence(mesh_runs):
         or run["case"]["domain_half_width_y_m"] != runs[0]["case"]["domain_half_width_y_m"]
         for run in runs
     ):
-        raise ValueError("The three runs must be square donor grids on one physical domain")
+        raise ValueError("Runs must be square donor grids on one physical domain")
     intervals = [run["case"]["nx"] - 1 for run in runs]
-    if intervals[1] / intervals[0] != 2 or intervals[2] / intervals[1] != 2:
+    if any(
+        right / left != 2
+        for left, right in zip(intervals[:-1], intervals[1:], strict=True)
+    ):
         raise ValueError("The nested grid refinement ratio must be two")
     values = {}
     for key, getter in (
@@ -625,7 +679,7 @@ def three_grid_convergence(mesh_runs):
         ("p_max_mpa", lambda run: np.max(run["pressure_pa"]) / 1e6),
         ("integrated_load_n", lambda run: run["audit"]["force_n"]),
     ):
-        values[key] = _scalar_refinement([getter(run) for run in runs])
+        values[key] = _scalar_refinement([getter(run) for run in runs], grids)
     root_audits = []
     scalar_locations = []
     for run in runs:
@@ -674,24 +728,43 @@ def three_grid_convergence(mesh_runs):
             {
                 "comparison": f"{coarse['case']['nx']} -> {fine['case']['nx']}",
                 "regions": fields["regions"],
+                "contact_pressure_error_energy_share": fields[
+                    "contact_pressure_error_energy_share"
+                ],
                 "hertz_core_partition": structure["regions"],
+                "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate": structure[
+                    "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate"
+                ],
                 "main_contact_profile_differences": _midplane_comparison(coarse, fine),
                 "hotspot_and_cavitation": structure["hotspot_and_cavitation"],
             }
         )
     field_orders = {}
-    for region_key in ("main_contact_excluding_spike", "outlet_spike", "full_contact"):
+    for region_key in (
+        "main_contact_excluding_spike",
+        "outlet_spike",
+        "full_contact",
+    ):
         for field_key in ("pressure_rms_mpa_over_positive_support", "film_rms_nm"):
-            first = pairwise[0]["regions"][region_key][field_key]
-            second = pairwise[1]["regions"][region_key][field_key]
+            norms = [pair["regions"][region_key][field_key] for pair in pairwise]
+            comparisons = [
+                f"{grids[index]}_to_{grids[index + 1]}"
+                for index in range(len(grids) - 1)
+            ]
+            contraction = [
+                float(previous / current) if current else None
+                for previous, current in zip(norms, norms[1:], strict=False)
+            ]
             field_orders[f"{region_key}_{field_key}"] = {
-                "difference_norms_65_to_129_and_129_to_257": [first, second],
-                "contraction_ratio": float(first / second) if second else None,
-                "observed_order_of_difference_norm": (
-                    float(np.log(first / second) / np.log(2.0))
-                    if first > second > 0
+                "grid_pairs": comparisons,
+                "difference_norms_by_grid_pair": norms,
+                "contraction_factors": contraction,
+                "observed_orders_of_difference_norm": [
+                    float(np.log(previous / current) / np.log(2.0))
+                    if previous > current > 0
                     else None
-                ),
+                    for previous, current in zip(norms, norms[1:], strict=False)
+                ],
                 "field_richardson_gci_not_reported": True,
             }
     spikes = {}
@@ -701,6 +774,7 @@ def three_grid_convergence(mesh_runs):
         spikes[f"{run['case']['nx']}x{run['case']['ny']}"] = {
             **diag,
             "integrated_pressure": _outlet_integrated_pressure(run, diag),
+            "fixed_spike_region_pressure_integral": _fixed_spike_region_pressure(run),
         }
     return {
         "grid_intervals": intervals,
@@ -718,6 +792,17 @@ def three_grid_convergence(mesh_runs):
             "orders are contraction diagnostics, not field extrapolations."
         ),
     }
+
+
+def _pairwise_field_archive(runs):
+    fields = {}
+    for coarse, fine in zip(runs, runs[1:], strict=False):
+        comparison = regional_mesh_comparison(coarse, fine)
+        prefix = f"{coarse['case']['nx']}_to_{fine['case']['nx']}_"
+        fields.update(
+            {prefix + key: value for key, value in comparison["fields"].items()}
+        )
+    return fields
 
 
 def analyze(mesh_directories, domain_directories, profile_csv):
@@ -798,16 +883,32 @@ def analyze(mesh_directories, domain_directories, profile_csv):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mesh", nargs=3, type=Path, required=True)
-    parser.add_argument("--domain", nargs=3, type=Path, required=True)
+    parser.add_argument("--mesh", nargs="+", type=Path, required=True)
+    parser.add_argument("--domain", nargs=3, type=Path)
     parser.add_argument(
         "--profiles", type=Path, default=Path("cases/ciulli_2008_figure13_s0_profiles.csv")
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--regional-fields", type=Path)
+    parser.add_argument(
+        "--mesh-only",
+        action="store_true",
+        help="Write nested-grid numerical analysis without comparing Figure 13 profiles",
+    )
     args = parser.parse_args(argv)
-    result = analyze(args.mesh, args.domain, args.profiles)
-    if args.regional_fields is not None:
+    if args.mesh_only:
+        result = three_grid_convergence([_load_run(path) for path in args.mesh])
+    else:
+        if len(args.mesh) != 3 or args.domain is None:
+            parser.error("standard analysis requires three --mesh roots and three --domain roots")
+        result = analyze(args.mesh, args.domain, args.profiles)
+    if args.regional_fields is not None and args.mesh_only:
+        mesh_runs = sorted(
+            (_load_run(path) for path in args.mesh), key=lambda r: r["case"]["nx"]
+        )
+        with args.regional_fields.open("wb") as stream:
+            np.savez_compressed(stream, **_pairwise_field_archive(mesh_runs))
+    elif args.regional_fields is not None:
         mesh_runs = sorted(
             (_load_run(path) for path in args.mesh), key=lambda r: r["case"]["nx"]
         )

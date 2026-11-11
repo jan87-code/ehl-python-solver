@@ -4,13 +4,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from ehl_solver.hertz import circular_point_contact
 from ehl_solver.limited_audit import audit_limited_state
 from ehl_solver.limited_newton import solve_limited_load
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase, hertz_guess
 from examples.analyze_ciulli_donor_grid import (
+    _fixed_spike_region_pressure,
     _midplane_comparison,
     _outlet_integrated_pressure,
+    _pairwise_field_archive,
     _scalar_refinement,
     main_contact_structure_comparison,
     profile_error_metrics,
@@ -132,11 +135,19 @@ def test_regional_comparison_separates_main_contact_and_outlet_error():
     assert result["fields"]["pressure_difference_pa"].shape == (151, 276)
     structure = main_contact_structure_comparison(coarse, fine, spacing_um=1.0)
     assert structure["hertz_contact_radius_um"] == pytest.approx(100.0)
+    assert "x_peak_5_um" in structure[
+        "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate"
+    ][0]
+    assert "x_peak_41_um" in structure[
+        "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate"
+    ][0]
     assert sum(
         structure["regions"][key]["pressure_error_energy_share_of_main_percent"]
         for key in ("hertz_core", "transition")
     ) == pytest.approx(100.0)
     assert structure["hotspot_and_cavitation"]["cavitation_state_mismatch_percent_in_main"] == 0
+    pairwise_fields = _pairwise_field_archive([coarse, fine])
+    assert pairwise_fields["5_to_41_pressure_difference_pa"].shape == (301, 551)
 
 
 def test_scalar_refinement_reports_order_only_for_monotone_contraction():
@@ -149,6 +160,22 @@ def test_scalar_refinement_reports_order_only_for_monotone_contraction():
     assert not oscillatory["monotone_contraction"]
     assert oscillatory["observed_order"] is None
     assert oscillatory["richardson_extrapolated_value"] is None
+
+    four_grid = _scalar_refinement(
+        [8.0, 4.0, 3.0, 2.75], [65, 129, 257, 513]
+    )
+    assert four_grid["observed_orders_between_successive_changes"] == pytest.approx(
+        [2.0, 2.0]
+    )
+    assert four_grid["observed_order"] == pytest.approx(2.0)
+    assert four_grid["richardson_extrapolated_value"] == pytest.approx(8 / 3)
+    assert four_grid["fine_grid_gci_percent_fs_1_25"] > 0
+
+    four_grid_oscillatory = _scalar_refinement(
+        [1.0, 1.2, 1.1, 1.05], [65, 129, 257, 513]
+    )
+    assert not four_grid_oscillatory["monotone_contraction"]
+    assert four_grid_oscillatory["observed_order"] is None
 
 
 def test_outlet_integral_reports_absolute_and_baseline_subtracted_pressure():
@@ -176,6 +203,26 @@ def test_outlet_integral_reports_absolute_and_baseline_subtracted_pressure():
     assert result["pressure_integral_n"] > 0
     assert result["centerline_pressure_integral_pa_m"] > 0
     assert result["centerline_excess_above_local_linear_baseline_pa_m"] > 0
+
+
+def test_fixed_spike_region_integral_uses_common_physical_window():
+    axis = np.linspace(-400e-6, 400e-6, 41)
+    case = json.loads(
+        (Path(__file__).parents[1] / "cases/ciulli_15n_donor.json").read_text()
+    )
+    run = {
+        "case": case,
+        "x_m": axis,
+        "y_m": axis,
+        "pressure_pa": np.full((41, 41), 100e6),
+    }
+    result = _fixed_spike_region_pressure(run)
+    hertz_radius = circular_point_contact(
+        case["load_n"], case["radius_m"], case["contact_modulus_pa"]
+    ).radius_m
+    expected = 100e6 * 25e-6 * 2 * hertz_radius
+    assert result["pressure_integral_n"] == pytest.approx(expected, rel=1e-12)
+    assert result["x_window_um"] == pytest.approx([75.0, 100.0])
 
 
 def test_barus_sensitivity_fluid_matches_reported_zero_pressure_slope():

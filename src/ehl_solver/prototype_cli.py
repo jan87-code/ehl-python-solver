@@ -284,9 +284,13 @@ def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plo
         newton_corrections=len(history),
         backend="CPU (NumPy/SciPy)",
         runtime_seconds=time.perf_counter() - started,
+        field_archive_path=directory / "solution.npz",
     )
     report["run_summary_figure"] = summary_figure.name
     report["run_summary_profiles"] = profile_data.name
+    report["run_summary_metadata"] = (
+        summary_figure.with_name(f"{summary_figure.stem}_metadata.json").name
+    )
     write()
     write_markdown(directory, report)
     if plots:

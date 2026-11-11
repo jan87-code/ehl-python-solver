@@ -2707,3 +2707,41 @@ independent endpoint audits. See [VALIDATION_REPORT.md](VALIDATION_REPORT.md)
 for the measured diagnostics. Equation closure, numerical convergence, and
 experimental validation remain separate; this investigation adds no evidence
 for the latter two.
+
+### Standard run figures and CPU throughput (2026-11-12)
+
+The shared 2x2 run-summary writer presents full pressure and film fields, raw
+centerline pressure and film profiles, extrema/outlet markers, clipping
+metadata, separate profile CSVs, and an archive pointer. The centerline-film
+panel uses a clearly labelled contact-range viewport so the outlet constriction
+remains visible while numerical profile exports stay unmodified. The accepted
+513x513 figure was regenerated from its saved state, not by rerunning the
+solver. Current CPU/CUDA comparison helpers produce separate summaries from
+their actual backend fields; donor/JFO has no CUDA implementation, and the
+optional signed-full-film CUDA solver remains a mathematical verification
+tool rather than physical EHL validation.
+
+The controlled 257x257 donor-flux CPU run accepted with one, two, and four
+OpenBLAS threads produced equivalent fields (relative pressure L2 differences
+below `4.1e-15`) and seven Newton corrections. Solver times were 99.490,
+97.505, and 96.707 s; monitored process-tree CPU use remained about 0.94
+effective cores for every setting. Do not claim useful four-core scaling or
+increase thread counts as a performance fix. The cProfile trace is preserved
+locally, but its instrumented Matplotlib text-layout overhead makes its total
+time unsuitable for runtime comparisons; use its filtered solver-side profile
+only to target future profiling.
+
+**Next decision:** keep 1025x1025 gated. Prioritize a controlled
+pressure/flux-discretization or local-resolution study of the unresolved
+full-film core ridge, and profile candidate hot paths without rendering
+instrumentation. Preserve the accepted grids, output archives, and all
+nonlinear/audit tolerances. The figures and CPU equivalence checks establish
+neither mesh convergence nor physical validation.
+
+Verification for the figure/CPU-throughput increment: focused plot tests
+**6 passed**; the full CPU suite excluding the Windows-incompatible
+`tests/test_joint_refinement.py` passed **824 tests, 1 skipped**. The complete
+`pytest -q` is blocked at collection by that file's POSIX-only `resource`
+import. Ruff passes on changed Python files; repository-wide Ruff is blocked
+by an E501 in the pre-existing untracked `.kilo/` notebook helper.
+`git diff --check` passes.

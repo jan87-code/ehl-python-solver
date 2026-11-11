@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import math
+import os
 import re
 import textwrap
 from pathlib import Path
@@ -14,6 +17,7 @@ from matplotlib.figure import Figure
 from numpy.typing import ArrayLike, NDArray
 from scipy.integrate import trapezoid
 from scipy.interpolate import RegularGridInterpolator
+from scipy.signal import find_peaks
 
 if TYPE_CHECKING:
     from ehl_solver.coupled import CoupledReynoldsSolution, CoupledSnapshot
@@ -102,6 +106,51 @@ def _final_field_numpy(field: ArrayLike) -> NDArray[np.float64]:
     return np.asarray(field, dtype=np.float64)
 
 
+def _contact_film_display_range(
+    pressure_pa: NDArray[np.float64],
+    film_m: NDArray[np.float64],
+    requested_range_nm: tuple[float, float] | None,
+) -> tuple[tuple[float, float], float | None]:
+    film_nm = film_m * 1e9
+    if requested_range_nm is not None:
+        display_range = tuple(float(value) for value in requested_range_nm)
+        cap = display_range[1] if np.max(film_nm) > display_range[1] else None
+        return display_range, cap
+
+    lower = math.floor(float(np.min(film_nm)) / 5.0) * 5.0
+    maximum_pressure = float(np.max(pressure_pa))
+    support = (
+        film_nm[pressure_pa >= 0.05 * maximum_pressure]
+        if maximum_pressure > 0.0
+        else film_nm
+    )
+    contact_upper = float(np.max(support))
+    cap = max(
+        lower + 5.0,
+        math.ceil(1.15 * contact_upper / 100.0) * 100.0,
+    )
+    upper = min(cap, float(np.max(film_nm)))
+    if upper <= lower:
+        upper = lower + max(5.0, abs(lower) * 0.05)
+    return (lower, upper), cap if np.max(film_nm) > cap else None
+
+
+def _extremum_locations(
+    field: NDArray[np.float64],
+    x_m: NDArray[np.float64],
+    y_m: NDArray[np.float64],
+    *,
+    maximum: bool,
+) -> tuple[float, list[tuple[float, float]]]:
+    value = float(np.max(field) if maximum else np.min(field))
+    tolerance = max(abs(value), 1.0) * 1e-14
+    rows, columns = np.where(np.isclose(field, value, rtol=0.0, atol=tolerance))
+    return value, [
+        (float(x_m[column]), float(y_m[row]))
+        for row, column in zip(rows, columns, strict=True)
+    ]
+
+
 def plot_run_summary(
     x_m: ArrayLike,
     y_m: ArrayLike,
@@ -116,8 +165,13 @@ def plot_run_summary(
     backend: str = "CPU",
     runtime_seconds: float | None = None,
     film_display_range_nm: tuple[float, float] | None = None,
-) -> tuple[Figure, dict[str, NDArray[np.float64]], dict[str, float | tuple[float, float]]]:
-    """Create the standard 2x2 physical summary and raw y=0 profiles."""
+) -> tuple[Figure, dict[str, NDArray[np.float64]], dict[str, Any]]:
+    """Create the standard 2x2 summary and raw y=0 profiles.
+
+    The outlet marker is the rightmost positive-x centerline local maximum
+    after the centerline maximum, with prominence of at least 5% of field
+    p_max; it is a locator, not a resolution test.
+    """
     x, y, pressure, film = _validated_plot_fields(
         x_m, y_m, _final_field_numpy(pressure_pa), _final_field_numpy(film_thickness_m)
     )
@@ -147,10 +201,41 @@ def plot_run_summary(
         x, y, film, axis="x", coordinate_m=0.0
     )
     central_film = float(np.interp(0.0, x, center_film))
-    minimum_j, minimum_i = np.unravel_index(np.argmin(film), film.shape)
-    minimum_film = float(film[minimum_j, minimum_i])
-    minimum_xy = (float(x[minimum_i]), float(y[minimum_j]))
-    maximum_pressure = float(np.max(pressure))
+    minimum_film, minimum_locations = _extremum_locations(
+        film, x, y, maximum=False
+    )
+    maximum_pressure, maximum_locations = _extremum_locations(
+        pressure, x, y, maximum=True
+    )
+    minimum_xy = minimum_locations[0]
+    center_minimum_i = int(np.argmin(center_film))
+    centerline_minimum = float(center_film[center_minimum_i])
+    centerline_minimum_x = float(center_y[center_minimum_i])
+    centerline_prominence = max(
+        abs(maximum_pressure) * 0.05, np.finfo(float).tiny
+    )
+    centerline_global_i = int(np.argmax(center_pressure))
+    centerline_peaks, _ = find_peaks(
+        center_pressure, prominence=centerline_prominence
+    )
+    downstream_peaks = centerline_peaks[centerline_peaks > centerline_global_i]
+    centerline_spike_i = (
+        int(downstream_peaks[-1]) if downstream_peaks.size else None
+    )
+    centerline_spike = (
+        {
+            "pressure_pa": float(center_pressure[centerline_spike_i]),
+            "x_m": float(center_y[centerline_spike_i]),
+        }
+        if centerline_spike_i is not None
+        else None
+    )
+    film_range, film_cap = _contact_film_display_range(
+        pressure, film, film_display_range_nm
+    )
+    film_values_nm = film * 1e9
+    film_clipped_below = bool(np.min(film_values_nm) < film_range[0])
+    film_clipped_above = bool(np.max(film_values_nm) > film_range[1])
 
     audit_text = "force audit n/a"
     if force_audit:
@@ -178,15 +263,26 @@ def plot_run_summary(
     accepted = status in ("accepted", "accepted_numerical_root", "ACCEPTED")
     status_label = "ACCEPTED" if accepted else "FAILED / NOT AN ACCEPTED SOLUTION"
     title = f"{load_n:g} N, {y.size}x{x.size}, {formulation}, {status_label}"
+    centerline_spike_text = (
+        f"centerline outlet peak={centerline_spike['pressure_pa'] * 1e-9:.4g} GPa "
+        f"at x={centerline_spike['x_m'] * 1e3:.4g} mm"
+        if centerline_spike is not None
+        else "centerline outlet peak=n/a"
+    )
     metadata = [
         f"h_c={central_film * 1e9:.4g} nm",
         f"h_min={minimum_film * 1e9:.4g} nm at "
         f"({minimum_xy[0] * 1e3:.4g}, {minimum_xy[1] * 1e3:.4g}) mm",
+        f"centerline minimum={centerline_minimum * 1e9:.4g} nm at "
+        f"x={centerline_minimum_x * 1e3:.4g} mm",
         f"p_max={maximum_pressure * 1e-9:.4g} GPa",
         audit_text,
         f"Newton corrections={newton_corrections if newton_corrections is not None else 'n/a'}",
-        f"{backend}",
-        f"runtime={runtime_seconds:.4g} s" if runtime_seconds is not None else "runtime=n/a",
+        backend,
+        f"runtime={runtime_seconds:.4g} s"
+        if runtime_seconds is not None
+        else "runtime=n/a",
+        centerline_spike_text,
     ]
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -194,7 +290,7 @@ def plot_run_summary(
     fig.text(
         0.5,
         0.95,
-        textwrap.fill(" | ".join(metadata), width=145),
+        textwrap.fill(" | ".join(metadata), width=165),
         ha="center",
         va="top",
         fontsize=8,
@@ -230,11 +326,6 @@ def plot_run_summary(
         bbox={"facecolor": "black", "alpha": 0.45, "edgecolor": "none", "pad": 2},
     )
 
-    film_range = (
-        tuple(float(value) for value in film_display_range_nm)
-        if film_display_range_nm is not None
-        else (float(np.min(film) * 1e9), float(np.max(film) * 1e9))
-    )
     film_image = axes[0, 1].imshow(
         film * 1e9,
         extent=(x_mm[0], x_mm[-1], y_mm[0], y_mm[-1]),
@@ -249,24 +340,43 @@ def plot_run_summary(
         film_image,
         ax=axes[0, 1],
         label="Film thickness [nm]",
-        extend="both" if film_display_range_nm is not None else "neither",
-    )
-    pmax_rows, pmax_columns = np.where(
-        np.isclose(pressure, maximum_pressure, rtol=0, atol=abs(maximum_pressure) * 1e-14)
+        extend=(
+            "both"
+            if film_clipped_below and film_clipped_above
+            else "min"
+            if film_clipped_below
+            else "max"
+            if film_clipped_above
+            else "neither"
+        ),
     )
     axes[0, 0].scatter(
-        x_mm[pmax_columns],
-        y_mm[pmax_rows],
+        [location[0] * 1e3 for location in maximum_locations],
+        [location[1] * 1e3 for location in maximum_locations],
         marker="x",
         color="cyan",
         s=42,
         linewidths=1.5,
-        label="p_max",
+        label=f"Global p_max ({len(maximum_locations)} tied node(s))",
     )
+    if centerline_spike is not None:
+        axes[0, 0].scatter(
+            [centerline_spike["x_m"] * 1e3],
+            [0.0],
+            marker="*",
+            color="lime",
+            edgecolors="black",
+            s=75,
+            label="Centerline outlet peak",
+        )
     axes[0, 0].legend(loc="best", fontsize=8)
     axes[0, 1].scatter(
-        [minimum_xy[0] * 1e3], [minimum_xy[1] * 1e3],
-        marker="x", color="red", s=45, label="Global minimum",
+        [location[0] * 1e3 for location in minimum_locations],
+        [location[1] * 1e3 for location in minimum_locations],
+        marker="x",
+        color="red",
+        s=45,
+        label="Global minimum",
     )
     axes[0, 1].set(
         xlabel="x [mm]",
@@ -286,14 +396,28 @@ def plot_run_summary(
         label=f"h_c={central_film * 1e9:.4g} nm at (0,0)",
     )
     axes[0, 1].legend(loc="best", fontsize=8)
-    if film_display_range_nm is not None:
-        axes[0, 1].set_title(
-            "Film-thickness field; display clipped to "
+    if film_clipped_below or film_clipped_above:
+        clipping_label = (
             f"{film_range[0]:g}-{film_range[1]:g} nm"
+            if film_display_range_nm is not None
+            else f"{film_range[1]:g} nm"
+        )
+        axes[0, 1].set_title(
+            f"Film-thickness field; display clipped to {clipping_label}"
         )
 
     centerline_x_mm = center_y * 1e3
     axes[1, 0].plot(centerline_x_mm, center_pressure * 1e-9, linewidth=1.0)
+    if centerline_spike is not None:
+        axes[1, 0].scatter(
+            [centerline_spike["x_m"] * 1e3],
+            [centerline_spike["pressure_pa"] * 1e-9],
+            marker="*",
+            s=55,
+            zorder=3,
+            label="Outlet local peak",
+        )
+        axes[1, 0].legend(loc="best", fontsize=8)
     axes[1, 0].set(
         xlabel="x [mm]",
         ylabel="Pressure [GPa]",
@@ -305,14 +429,13 @@ def plot_run_summary(
         [0.0], [central_film * 1e9], marker="o", s=28, zorder=3,
         label=f"h_c={central_film * 1e9:.4g} nm at x=0",
     )
-    center_minimum_i = int(np.argmin(center_film))
     axes[1, 1].scatter(
-        [centerline_x_mm[center_minimum_i]],
-        [center_film[center_minimum_i] * 1e9],
+        [centerline_minimum_x * 1e3],
+        [centerline_minimum * 1e9],
         marker="v",
         s=30,
         zorder=3,
-        label=f"Centerline min={center_film[center_minimum_i] * 1e9:.4g} nm",
+        label=f"Centerline min={centerline_minimum * 1e9:.4g} nm",
     )
     axes[1, 1].text(
         0.02,
@@ -329,6 +452,18 @@ def plot_run_summary(
         title="Centerline film thickness, y=0",
         xlim=(x_mm[0], x_mm[-1]),
     )
+    centerline_film_clipped_below = bool(
+        np.min(center_film * 1e9) < film_range[0]
+    )
+    centerline_film_clipped_above = bool(
+        np.max(center_film * 1e9) > film_range[1]
+    )
+    if centerline_film_clipped_below or centerline_film_clipped_above:
+        axes[1, 1].set_ylim(*film_range)
+        axes[1, 1].set_title(
+            "Centerline film thickness, y=0; "
+            f"display clipped to {film_range[0]:g}-{film_range[1]:g} nm"
+        )
     axes[1, 1].legend(loc="best", fontsize=7)
     fig.tight_layout(rect=(0.01, 0.01, 0.99, 0.86))
     profiles = {
@@ -336,11 +471,22 @@ def plot_run_summary(
         "pressure_centerline_pa": center_pressure,
         "film_centerline_m": center_film,
     }
-    metrics: dict[str, float | tuple[float, float]] = {
+    metrics: dict[str, Any] = {
         "central_film_m": central_film,
         "minimum_film_m": minimum_film,
         "minimum_film_xy_m": minimum_xy,
+        "minimum_film_locations_m": minimum_locations,
+        "centerline_minimum_film_m": centerline_minimum,
+        "centerline_minimum_x_m": centerline_minimum_x,
         "maximum_pressure_pa": maximum_pressure,
+        "maximum_pressure_locations_m": maximum_locations,
+        "centerline_outlet_peak": centerline_spike,
+        "film_display_range_nm": film_range,
+        "film_display_cap_nm": film_cap,
+        "film_clipped_below_range": film_clipped_below,
+        "film_clipped_above_range": film_clipped_above,
+        "centerline_film_clipped_below_range": centerline_film_clipped_below,
+        "centerline_film_clipped_above_range": centerline_film_clipped_above,
     }
     return fig, profiles, metrics
 
@@ -361,8 +507,9 @@ def write_run_summary(
     backend: str = "CPU",
     runtime_seconds: float | None = None,
     film_display_range_nm: tuple[float, float] | None = None,
+    field_archive_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
-    """Save a standardized high-resolution PNG and its raw centerline CSV."""
+    """Save a standardized figure, raw centerline profiles, and run metadata."""
     case = re.sub(r"[^A-Za-z0-9_.-]+", "_", case_name).strip("._")
     formula = re.sub(r"[^A-Za-z0-9_.-]+", "-", formulation).strip("-.")
     if not case or not formula:
@@ -378,7 +525,10 @@ def write_run_summary(
     output.mkdir(parents=True, exist_ok=True)
     figure_path = output / f"{stem}.png"
     profile_path = output / f"{stem}_profiles.csv"
-    figure, profiles, _ = plot_run_summary(
+    pressure_profile_path = output / f"{stem}_pressure_profile.csv"
+    film_profile_path = output / f"{stem}_film_profile.csv"
+    metadata_path = output / f"{stem}_metadata.json"
+    figure, profiles, metrics = plot_run_summary(
         x_m,
         y_m,
         pressure_pa,
@@ -415,6 +565,82 @@ def write_run_summary(
             "film_centerline_m,film_centerline_nm"
         ),
         comments="",
+    )
+    np.savetxt(
+        pressure_profile_path,
+        np.column_stack(
+            (
+                profiles["x_m"],
+                profiles["x_m"] * 1e3,
+                profiles["pressure_centerline_pa"],
+                profiles["pressure_centerline_pa"] * 1e-9,
+            )
+        ),
+        delimiter=",",
+        header="x_m,x_mm,pressure_pa,pressure_gpa",
+        comments="",
+    )
+    np.savetxt(
+        film_profile_path,
+        np.column_stack(
+            (
+                profiles["x_m"],
+                profiles["x_m"] * 1e3,
+                profiles["film_centerline_m"],
+                profiles["film_centerline_m"] * 1e9,
+            )
+        ),
+        delimiter=",",
+        header="x_m,x_mm,film_thickness_m,film_thickness_nm",
+        comments="",
+    )
+    audit_metadata: dict[str, float] = {}
+    if force_audit:
+        for output_key, input_keys in (
+            ("relative_force_error", ("force_relative_error", "relative_force_error")),
+            ("force_residual_n", ("force_residual_n", "load_residual_n")),
+        ):
+            for input_key in input_keys:
+                if input_key in force_audit:
+                    audit_metadata[output_key] = float(force_audit[input_key])
+                    break
+    archive_reference = None
+    if field_archive_path is not None:
+        archive = Path(field_archive_path)
+        try:
+            archive_reference = os.path.relpath(archive, output.resolve())
+        except ValueError:
+            archive_reference = str(archive)
+    metadata_json = {
+        "schema_version": 1,
+        "case_name": case,
+        "load_n": float(load_n),
+        "grid_ny_nx": [int(grid[0]), int(grid[1])],
+        "formulation": formulation,
+        "status": status,
+        "status_label": "ACCEPTED" if accepted else "FAILED / NOT AN ACCEPTED SOLUTION",
+        "backend": backend,
+        "runtime_seconds": runtime_seconds,
+        "newton_corrections": newton_corrections,
+        "force_audit": audit_metadata,
+        "metrics": metrics,
+        "pressure_display_range_gpa": [
+            float(np.min(_final_field_numpy(pressure_pa)) * 1e-9),
+            float(np.max(_final_field_numpy(pressure_pa)) * 1e-9),
+        ],
+        "film_display_range_nm": list(metrics["film_display_range_nm"]),
+        "film_display_cap_nm": metrics["film_display_cap_nm"],
+        "full_field_archive": archive_reference,
+        "outputs": {
+            "summary_png": figure_path.name,
+            "combined_profiles_csv": profile_path.name,
+            "pressure_profile_csv": pressure_profile_path.name,
+            "film_profile_csv": film_profile_path.name,
+        },
+    }
+    metadata_path.write_text(
+        json.dumps(metadata_json, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
     )
     return figure_path, profile_path
 

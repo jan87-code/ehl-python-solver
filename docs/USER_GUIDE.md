@@ -97,6 +97,9 @@ my_case_run_001/
   fields.png
   point_contact_..._summary.png
   point_contact_..._summary_profiles.csv
+  point_contact_..._summary_pressure_profile.csv
+  point_contact_..._summary_film_profile.csv
+  point_contact_..._summary_metadata.json
   interactive_3d.html
   summary.json
   solution.npz
@@ -110,7 +113,9 @@ For a normal completed run:
 | --- | --- |
 | `report.md` in Markdown preview | Run status, film values, HD differences, force/mass checks and limits |
 | `*_summary.png` in an image viewer | Standard 2x2 pressure/film maps and raw centreline pressure/film profiles |
-| `*_summary_profiles.csv` | Raw SI and display-unit data used for both centreline panels |
+| `*_summary_pressure_profile.csv`, `*_summary_film_profile.csv` | Separate raw SI and display-unit data used for the centreline panels |
+| `*_summary_profiles.csv` | Combined compatibility export of both centreline profiles |
+| `*_summary_metadata.json` | Plot status, field extrema, display ranges, backend/runtime and full-field archive pointer |
 | `fields.png` in an image viewer | Compatibility copy of the standard 2x2 summary |
 | `interactive_3d.html` in a browser | Offline, rotatable pressure and film surfaces with hover values |
 | `summary.json` | Full inputs, audits, trial/failure diagnostics, units, source hashes and runtime |
@@ -126,11 +131,21 @@ that physical validation is incomplete.
 
 The standard summary displays the full unfiltered pressure field in GPa,
 coordinates in mm and film in nm; it annotates the +x entrainment direction,
-film extrema, central film, load audit, backend, and runtime when available.
-The lower panels show unsmoothed profiles at y=0, interpolated linearly when
-needed. The pressure and film ranges are not clipped. The CSV contains both
-SI and display-unit profile columns. Solver convergence histories remain
-separate diagnostic outputs and are not substituted for a physical profile.
+global and centreline film minima, central film, tied pressure maxima, a
+downstream centreline pressure peak when present (the rightmost local maximum
+after the centreline maximum with at least 5% of global `p_max` prominence;
+this locator is not a resolution test), load audit, backend, and runtime when
+available. The lower panels show unsmoothed profiles at y=0, interpolated
+linearly when needed. The pressure field is never clipped. The
+film map uses a display-only, contact-sensitive colour range when far-field
+values would obscure contact structure; the subplot title states the range.
+The centreline film panel uses the same range as a viewport and labels it when
+profile values fall outside it. Neither the saved field nor the raw profile
+data are altered; the separate profile CSVs retain their full SI values and
+display-unit values. The
+metadata JSON points to the uncapped full-field archive where the run provides
+one. Solver convergence histories remain separate diagnostic outputs and are
+not substituted for a physical profile.
 `--no-plots` skips the optional interactive 3D plot; it does not suppress the
 standard summary.
 

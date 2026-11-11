@@ -5465,3 +5465,114 @@ seed sensitivity between the two tested 513-grid initializations. Smooth
 standalone operators converge at their expected orders, but the coupled
 ridge remains under-resolved and grid-sensitive. Neither mesh convergence,
 outlet-spike resolution nor physical EHL validation is established.
+
+### Standardized run summary and outlet-feature relationship
+
+The shared
+[`plot_run_summary`](../src/ehl_solver/visualization.py) output now retains the
+unfiltered pressure range, identifies tied global pressure maxima and the
+secondary centerline outlet peak, and marks global, centerline-minimum and
+central-film locations. Its film map uses a display-only contact-sensitive
+colour range when far-field film values dominate; the exact range is printed
+in the subplot title. The centerline film panel uses the same range as a
+viewport and labels any clipping; underlying field/profile arrays remain
+unchanged. Separate raw centerline pressure/film CSVs and compact metadata
+accompany the compatibility combined-profile CSV. Available full-field
+archives are linked from the metadata. Failure-state figures remain
+explicitly labelled as not accepted solutions.
+
+The accepted 513x513 `513_from129` result was re-plotted from its saved
+`state.npz`; no solver was run and no constitutive or acceptance setting was
+changed. The high-resolution summary is saved under the local
+`results/ciulli_20261111_donor_513_from129/summary_v2/` directory. It reports
+`h_c=465.649 nm`, global `h_min=278.512 nm` at the symmetric pair
+`(23.4375,+/-82.8125) um`, centerline minimum `398.828 nm` at `x=93.75 um`,
+and `p_max=812.881 MPa` at `(51.5625,+/-59.375) um`. The centerline outlet
+peak is `689.502 MPa` at `x=85.938 um`. The film colour cap is `1000 nm`;
+the full far-field values and CSV profiles remain uncapped.
+
+The existing cut-wise outlet analysis identifies a connected sequence of
+local pressure maxima over 77 transverse rows from `y=-59.375` to `+59.375
+um`, with maximum adjacent x displacement `3.125 um`. This describes one
+sampled curved downstream ridge linking the centerline outlet peak to the two
+off-axis global maxima. It does not establish a continuous physical ridge:
+the measured half-prominence width is only `1.34` cells at `y=0` and `2.06`
+cells at `y=+/-59.375 um`. The transverse film-minimum locus lies downstream
+of the pressure-max locus by `7.8125 um` at the centerline and `14.0625 um`
+at `y=+/-59.375 um` (the row-wise separation is `7.8125-14.0625 um` over
+these 77 rows). The two are related features in the same outlet region, but
+are not coincident sampled loci and neither spike width nor physical
+pressure/film feature alignment is resolved. Preserve separate pressure-peak
+and film-constriction diagnostics.
+
+The exact figure and numerical profile paths are recorded in the accompanying
+`*_summary_metadata.json`. The plot is a visualization correction, not new
+evidence for mesh convergence or physical validation.
+
+### Standard run summaries and CPU thread scaling (2026-11-12)
+
+The centerline-film viewport was refined after visual inspection showed that
+the full far-field parabola (about 14,000 nm at the domain edge) obscured the
+contact minimum on a linear y-axis. The lower-right panel now uses the same
+contact-sensitive display range as the film map, states the displayed range
+in its title when values lie outside it, and leaves both plotted source arrays
+and exported profile CSVs unmodified. The accepted 513x513 `513_from129`
+figure and the thread-benchmark figures were regenerated from their saved
+accepted fields with this version of the writer; no solver was rerun for
+figure generation. The 513x513 figure now visibly shows the centerline
+constriction and marks the 398.828 nm centerline minimum separately from the
+278.512 nm off-axis global minimum.
+
+A controlled 257x257 CPU thread series used the same 15 N donor-flux case,
+0.4 mm half-width, 129x129 accepted seed, solver source, and seven accepted
+Newton corrections. All three endpoints passed the numerical-root
+acceptance gate and their saved full fields agree to roundoff:
+
+| OpenBLAS threads (NumPy/SciPy) | Solver elapsed [s] | Monitored wall [s] | Mean process-tree CPU [cores] | Peak process-tree working set [GiB] |
+| ---: | ---: | ---: | ---: | ---: |
+| 1/1 | 99.490 | 105.3 | 0.93 | 0.37 |
+| 2/2 | 97.505 | 105.2 | 0.94 | 0.36 |
+| 4/4 | 96.707 | 104.9 | 0.94 | 0.37 |
+
+Relative field L2 differences versus the one-thread endpoint were
+`3.626e-15` / `4.025e-15` for pressure, `2.145e-17` / `1.062e-16` for film,
+`5.783e-16` / `2.522e-15` for deformation, `6.286e-17` / `6.864e-17` for
+density, `4.438e-14` / `4.720e-14` for viscosity, and `6.674e-17` /
+`8.149e-17` for theta (2-thread / 4-thread). Thus the endpoints are
+numerically equivalent, but the measured speedups are only 1.020x and 1.029x.
+NumPy and SciPy both reported the requested 1/2/4 OpenBLAS limits; OMP, MKL,
+BLIS, NumExpr and VECLIB were each capped at one to avoid nested
+oversubscription. Process-tree sampling found about 0.94 effective CPU cores
+for every setting, so the four-thread configuration was available to the
+backend but this workload did not use four cores concurrently. Raising the
+thread cap is not a useful performance recommendation for this solver path.
+
+A one-thread cProfile rerun from the same seed accepted in seven corrections;
+its solver-reported elapsed time was 94.396 s. The local profile and reports
+are in
+`results/ciulli_20261112_cpu_thread_benchmark_v3/` (including
+`profiled_1thread.prof`, the full cumulative report, a Matplotlib-filtered
+solver-function report, and compact manifest). The profiler's instrumented
+total was 194.045 s, dominated by excessive Matplotlib text-layout
+instrumentation, and must not be interpreted as runtime or scaling evidence.
+In the filtered table, the Newton/GMRES matrix-free correction and its
+Jacobian-vector products are the largest solver-side costs; the independent
+audit also includes two direct `convolve2d` calls. This is diagnostic evidence
+for a later targeted performance study, not a solver-physics change.
+
+The generated figures, field archives, resource monitors and cProfile files
+remain local under `results/`. Donor/JFO CUDA parity is still unavailable:
+the repository's optional CUDA signed-full-film path is a distinct
+mathematical verification solver, not a donor/JFO implementation. No
+1025x1025 calculation was run or authorized. These visualization and
+throughput results do not establish mesh convergence, outlet-spike
+resolution, or physical EHL validation.
+
+Verification: the focused run-summary tests pass (**6 passed**) and linting
+the changed Python files passes. The full Windows `pytest -q` collection
+remains blocked by the existing POSIX-only `resource` import in
+`tests/test_joint_refinement.py`; excluding that one module, **824 passed,
+1 skipped**. `git diff --check` passes. Repository-wide `ruff check .` is
+blocked by an E501 in the pre-existing untracked
+`.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; the changed Python
+files pass Ruff. No unrelated file was changed to hide either limitation.

@@ -568,9 +568,13 @@ def run(
                 ),
                 backend="CPU (NumPy/SciPy)",
                 runtime_seconds=metadata.get("elapsed_seconds"),
+                field_archive_path=figure_state,
             )
         metadata["run_summary_figure"] = figure_path.name
         metadata["run_summary_profiles"] = profiles_path.name
+        metadata["run_summary_metadata"] = (
+            figure_path.with_name(f"{figure_path.stem}_metadata.json").name
+        )
     else:
         metadata["run_summary_unavailable_reason"] = (
             "No valid or checkpointed field was available for plotting."

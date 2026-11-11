@@ -120,9 +120,13 @@ def main(case_path, seed, output, maximum_iterations):
             force_audit=report.get("separate_final_audit", report.get("audit")),
             newton_corrections=len(report.get("history", ())),
             backend="CPU (NumPy/SciPy)",
+            field_archive_path=output / "solution.npz",
         )
     report["run_summary_figure"] = figure_path.name
     report["run_summary_profiles"] = profiles_path.name
+    report["run_summary_metadata"] = (
+        figure_path.with_name(f"{figure_path.stem}_metadata.json").name
+    )
     write()
     print(
         json.dumps(

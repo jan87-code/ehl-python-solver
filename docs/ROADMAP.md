@@ -2745,3 +2745,39 @@ Verification for the figure/CPU-throughput increment: focused plot tests
 import. Ruff passes on changed Python files; repository-wide Ruff is blocked
 by an E501 in the pre-existing untracked `.kilo/` notebook helper.
 `git diff --check` passes.
+
+### Outlet geometry and GPU operator milestone (2026-11-12)
+
+The saved 513x513 root shows a sampled continuous curved downstream
+pressure-maximum locus linking the centerline outlet spike and both off-axis
+global maxima. It is not justified to call these a distinct core ridge and
+outlet spike. The peak width is only 1.34 cells at the centerline and 2.06
+cells at the off-axis maximum, so the continuum feature and its amplitude
+remain unresolved. The new film-map contact inset uses display-only
+275--1000 nm scaling; exported fields and profiles are uncapped. No solve
+was rerun for these plots.
+
+The resident PyTorch CUDA elasticity and new donor face-flux/JVP kernels agree
+with NumPy at near-roundoff on saved 257x257 and 513x513 fields. These are
+**operator-only** results, not a GPU JFO result or whole-solver speedup.
+The existing device nonlinear solver is signed full-film only; complementarity,
+load row, preconditioning, globalization and independent JFO audits are not
+implemented for a device-resident donor solve. Do not mix CPU/GPU fields
+inside iterations as a substitute.
+
+**Next gate:** independently verify a full device-resident donor residual and
+bordered JVP, including active-set boundary behavior; then implement and test
+device Krylov/preconditioning, nonlinear feasibility/globalization and
+reproducible checkpoint/audits before comparing an accepted 257x257 CUDA
+solution against CPU. Review the CPU donor-zero limiter overhead as a separate
+equivalence-preserving optimization. Investigate resolution and the physical
+outlet-feature shape using independently verified operators and controlled
+local-resolution studies. A 1025x1025 run is not justified by these operator
+benchmarks alone. Full details, timings, and profiling limitations are in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+
+Verification: focused operator/plot/tracking tests **54 passed**, including
+CUDA operator parity. The Windows-compatible suite passed **828, 1 skipped**;
+the complete suite still fails collection on the existing POSIX-only
+`resource` import. Changed-file Ruff and `git diff --check` pass; repository
+Ruff remains blocked by the pre-existing untracked `.kilo/` E501.

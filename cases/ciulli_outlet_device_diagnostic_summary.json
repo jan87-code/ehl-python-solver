@@ -1,0 +1,34 @@
+{
+  "scope": "Archived CPU roots and operator-only CUDA checks; no CUDA JFO solve",
+  "state_sha256_257": "ecac5724a26374879a9e028e43631d043f6b16ebf5e00f8f001fc8dea038010b",
+  "state_sha256_513": "dc1faecef8ec8a5c5fe29929b1c384fcc1654c52d5aa8217dccfb3d73579b30f",
+  "outlet_513": {
+    "classification": "connected sampled downstream pressure-maximum locus",
+    "rows_between_symmetric_global_maxima": 77,
+    "maximum_adjacent_x_step_um": 3.125,
+    "centerline_peak_mpa": 689.502,
+    "centerline_x_um": 85.9375,
+    "centerline_width_um": 2.0943,
+    "off_axis_peak_mpa": 812.881,
+    "off_axis_x_um": 51.5625,
+    "off_axis_abs_y_um": 59.375,
+    "off_axis_width_um": 3.2246,
+    "resolution_note": "Half-prominence widths span only 1.34 and 2.06 cells; physical resolution is not established."
+  },
+  "device": {
+    "gpu": "NVIDIA RTX A2000 Laptop GPU",
+    "torch": "2.11.0+cu128",
+    "repetitions": 10,
+    "cpu_openblas_threads": 1,
+    "elasticity_257_speedup": 8.83,
+    "elasticity_513_speedup": 10.85,
+    "donor_flux_257_speedup": 1.79,
+    "donor_flux_513_speedup": 13.96,
+    "donor_jvp_257_speedup": 1.87,
+    "donor_jvp_513_speedup": 14.43,
+    "elasticity_max_relative_l2": 3.33e-16,
+    "donor_flux_max_relative_l2": 4.34e-17,
+    "donor_jvp_max_relative_l2": 9.38e-17,
+    "timing_note": "Warm resident operator timings exclude setup and transfers; not a whole-solver speedup."
+  }
+}

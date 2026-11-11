@@ -5576,3 +5576,122 @@ remains blocked by the existing POSIX-only `resource` import in
 blocked by an E501 in the pre-existing untracked
 `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; the changed Python
 files pass Ruff. No unrelated file was changed to hide either limitation.
+
+## Outlet geometry, profiling and device operators (2026-11-12)
+
+The checksum-verified saved 513x513 donor state (SHA-256
+`dc1faecef8ec8a5c5fe29929b1c384fcc1654c52d5aa8217dccfb3d73579b30f`)
+was analyzed without rerunning the solver. Its summary figure now includes a
+contact-detail inset and a film heatmap capped only for display to
+275--1000 nm; saved arrays and profile CSV remain unmodified. Output figures,
+the full transverse-locus CSV, and JSON are local under
+`results/ciulli_20261111_outlet_tracked_v2/`.
+
+The tracker starts at the rightmost centerline downstream local pressure
+maximum with prominence at least 1 MPa in `20 <= x <= 120` micrometres and
+follows the nearest candidate in each direction, stopping at a missing peak
+or an adjacent x jump above 6.25 micrometres. It similarly tracks the first
+film minimum downstream of the centerline peak. The pressure maximum locus
+connects the centerline to both global maxima across 77 transverse rows; its
+largest adjacent jump is 3.125 micrometres. The centerline peak is 689.502 MPa
+at x=85.9375 micrometres; the two off-axis maxima are 812.881 MPa at
+(51.5625, +/-59.375) micrometres. Their half-prominence widths are 2.0943 and
+3.2246 micrometres (1.34 and 2.06 cells), respectively. Integrating pressure
+over +/-5 micrometres around each tracked x gives 4410.309 N/m at the
+centerline and 5764.355 N/m at the off-axis maxima. The film constriction
+is 7.8125 and 14.0625 micrometres downstream, respectively; global film
+minima are 278.512 nm at (23.4375, +/-82.8125) micrometres.
+
+These are connected **sampled cut maxima**, not proof of a smooth or singular
+continuous feature. The tiny sampled widths preclude a resolution claim.
+The nominal Hertz circle in the overlay is geometric context, not a
+discretization-error reference. The earlier bulk RMS contraction, symmetry,
+operator, and seed checks remain as reported above; separation from the
+localized structure does not prove full-field convergence. Pointwise p_max is
+not a reliable convergence observable at this resolution.
+
+### Measured 257x257 profile
+
+The following are selected cProfile costs from the archived accepted
+one-thread run, in seconds and call counts. Percentages use the instrumented
+194.045 s **whole profile**, including ~94.9 s distorted Matplotlib text
+layout; they are not ordinary wall fractions or acceleration predictions.
+Cumulative rows overlap and must not be added. Solver-reported elapsed was
+94.396 s; the separate unprofiled run was 99.490 s.
+
+| Component (calls) | Self s / % | Cumulative s / % | Suitability / opportunity |
+| --- | ---: | ---: | --- |
+| Newton coordination (1) | 0.165 / 0.09 | 80.067 / 41.26 | orchestration; optimize inner operations |
+| Cavitating corrections (12) | 0.062 / 0.03 | 56.618 / 29.18 | active-set and linear solves |
+| GMRES (24) | 3.018 / 1.56 | 42.848 / 22.08 | device Krylov requires true-residual checks |
+| Complete JVP (803) | 0.790 / 0.41 | 30.377 / 15.65 | elasticity and donor kernels |
+| Independent audits (10) | 0.009 / 0.00 | 28.141 / 14.50 | preserves separate acceptance evidence |
+| Direct audit convolution (2) | 27.752 / 14.30 | 27.752 / 14.30 | independent audit, not iterative GPU physics |
+| Elastic operator (1032) | 1.621 / 0.84 | 19.934 / 10.27 | GPU FFT is promising |
+| Raw FFT (4156) | 17.908 / 9.23 | 17.912 / 9.23 | GPU cuFFT through PyTorch |
+| SuperLU solves (755) | 11.745 / 6.05 | 11.745 / 6.05 | device preconditioner still needed |
+| Sparse LU factorization (12) | 5.758 / 2.97 | 5.758 / 2.97 | CPU direct sparse factorization |
+| Donor JVP flux (1630) | 4.760 / 2.45 | 9.478 / 4.88 | tested resident GPU kernel |
+| Fluid ratios (1834) | 3.811 / 1.96 | 4.108 / 2.12 | vectorized GPU candidate |
+| Field reconstruction (169) | 0.043 / 0.02 | 3.428 / 1.77 | overlap with elasticity |
+| Line searches (12) | 0.018 / 0.01 | 1.298 / 0.67 | nonlinear control and residual |
+| Donor face flux (86) | 0.124 / 0.06 | 0.312 / 0.16 | tested resident GPU kernel |
+| JFO residual (24) | 0.023 / 0.01 | 0.865 / 0.45 | full device residual still needed |
+
+State arrays contain 66,049 nodes and use float64; the 513 grid has 263,169.
+The archived profile records 695 total GMRES iterations in 24 Krylov histories
+across 12 attempted correction models. Each 257-grid scalar field is 528,392
+bytes; each 513-grid scalar field is 2,105,352 bytes, excluding workspaces.
+The 257-grid elastic FFT padding is 770x770, versus 1540x1540 at 513.
+Save-state calls occurred 17 times with 2.736 s cumulative; profile timing of
+plotting is distorted and is not a useful performance estimate. No new 513
+nonlinear profiling run was launched: the accepted root was instead used
+for bounded component measurements below. Their changed cost ratios show
+that a whole-solver 513 distribution cannot safely be extrapolated.
+The donor-zero path also constructs some limited-flux/limiter machinery before
+multiplying its correction by zero. This is a plausible CPU optimization,
+not a demonstrated equation defect; it needs full residual, JVP, correction,
+active-set, line-search and audited-root equivalence before adoption.
+
+### Device capability and component measurements
+
+The CPU path uses NumPy/SciPy, NumPy pocketfft, sparse GMRES and SuperLU;
+OpenBLAS threads do not parallelize the whole solve. MKL, CuPy and Numba CUDA
+were not installed; no HIP/ROCm runtime was available in this environment.
+PyTorch CUDA uses its device FFT facilities and provides CUDA linear-algebra
+libraries, but no cuBLAS/cuSPARSE-specific donor/JFO implementation or
+performance was independently established. The existing GPU GMRES, Jacobi
+and DST preconditioners and nonlinear infrastructure target the separate
+signed full-film formulation. PyTorch's CUDA interface may target ROCm in a
+ROCm build, which was not tested here.
+
+On an RTX A2000 Laptop GPU (4 GiB, PyTorch 2.11.0+cu128), ten warmed,
+synchronized applications of the saved 257/513 fields gave:
+
+| Resident operator | 257 CPU / GPU ms | 257 speedup | 513 CPU / GPU ms | 513 speedup | Max relative L2 difference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Elasticity | 18.076 / 2.047 | 8.83x | 91.569 / 8.436 | 10.85x | 3.33e-16 |
+| Donor face flux | 3.941 / 2.203 | 1.79x | 41.255 / 2.955 | 13.96x | 4.34e-17 |
+| Donor smooth JVP | 4.995 / 2.671 | 1.87x | 62.559 / 4.335 | 14.43x | 9.38e-17 |
+
+These component-only timings exclude setup and field transfers; scalar
+validation in the donor kernel synchronizes, but fields remain on device.
+They do not measure solver acceleration. The elasticity operator peak GPU
+allocation was 33.8 MB / 135.0 MB (257 / 513); full solver and Krylov memory
+would be additional. The donor operator uses the actual prototype's Roelands
+viscosity and pressure-dependent density, not a new physical model. Its JVP
+uses deterministic synthetic directions around the accepted field. It does
+not yet implement complementarity, load closure, boundary residuals, Krylov,
+preconditioning or acceptance checks. No CUDA JFO root, CPU/GPU full-solver
+equivalence, or 1025x1025 run is claimed.
+
+Reproduction commands and next gates are in [USER_GUIDE.md](USER_GUIDE.md) and
+[ROADMAP.md](ROADMAP.md); compact checksums and results are in
+`cases/ciulli_outlet_device_diagnostic_summary.json`.
+
+Verification: **54 focused tests passed**, including CPU and CUDA donor
+operator parity; **828 passed, 1 skipped** with the Windows-incompatible
+joint-refinement module excluded. Complete `pytest -q` remains blocked during
+collection by its existing POSIX-only `resource` import. Changed-file Ruff and
+`git diff --check` pass; `ruff check .` reports the existing E501 in the
+untracked `.kilo/` notebook helper.

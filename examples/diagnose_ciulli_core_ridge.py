@@ -595,24 +595,62 @@ def _ridge_geometry(run):
     }
 
 
-def _outlet_feature_locus(run, *, half_window_m=5e-6):
-    """Track the downstream local pressure maximum and outlet film minimum by y."""
+def _outlet_feature_locus(run, *, half_window_m=5e-6, maximum_step_m=6.25e-6):
+    """Track cut-local extrema outward from y=0, stopping rather than jumping."""
     x, y = run["x_m"], run["y_m"]
     pressure, film = run["pressure_pa"], run["film_m"]
+    if not np.any(np.isclose(y, 0.0, atol=1e-14, rtol=0.0)):
+        raise ValueError("outlet tracking requires a y=0 grid row")
+    if not np.isfinite(half_window_m) or not np.isfinite(maximum_step_m):
+        raise ValueError("window and maximum step must be finite")
+    if half_window_m <= 0 or maximum_step_m <= 0:
+        raise ValueError("window and maximum step must be positive")
+    center = int(np.argmin(np.abs(y)))
+    pressure_candidates = []
+    film_candidates = []
+    prominences = []
+    for j in range(len(y)):
+        indices, properties = find_peaks(pressure[j], prominence=1e6)
+        mask = (x[indices] >= 20e-6) & (x[indices] <= 120e-6)
+        pressure_candidates.append(indices[mask])
+        prominences.append(dict(zip(indices[mask], properties["prominences"][mask], strict=True)))
+        indices, _ = find_peaks(-film[j])
+        film_candidates.append(indices[(x[indices] >= 0) & (x[indices] <= 120e-6)])
+
+    def track(candidates, start):
+        chosen = [None] * len(y)
+        if start is None:
+            return chosen
+        chosen[center] = start
+        for direction in (-1, 1):
+            previous = start
+            for j in range(center + direction, len(y) if direction > 0 else -1, direction):
+                choices = candidates[j]
+                if not len(choices):
+                    break
+                nearest = int(choices[np.argmin(np.abs(x[choices] - x[previous]))])
+                if abs(x[nearest] - x[previous]) > maximum_step_m + 1e-15:
+                    break
+                chosen[j] = nearest
+                previous = nearest
+        return chosen
+
+    center_peaks = pressure_candidates[center]
+    center_peak = int(center_peaks[-1]) if len(center_peaks) else None
+    peak_indices = track(pressure_candidates, center_peak)
+    center_minima = film_candidates[center]
+    downstream_minima = (
+        center_minima[x[center_minima] > x[center_peak]]
+        if center_peak is not None
+        else np.array([], dtype=int)
+    )
+    center_minimum = int(downstream_minima[0]) if len(downstream_minima) else None
+    film_indices = track(film_candidates, center_minimum)
     rows = []
     for j, y_value in enumerate(y):
-        candidates, properties = find_peaks(
-            pressure[j], prominence=1e6, plateau_size=1
-        )
-        candidates = [
-            (int(index), float(prominence))
-            for index, prominence in zip(
-                candidates, properties["prominences"], strict=True
-            )
-            if 20e-6 <= x[index] <= 120e-6
-        ]
-        if candidates:
-            peak_index, prominence = max(candidates, key=lambda item: item[1])
+        peak_index = peak_indices[j]
+        if peak_index is not None:
+            prominence = prominences[j][peak_index]
             width = _local_half_prominence_width(
                 x, pressure[j], peak_index, (20e-6, 120e-6)
             )
@@ -637,7 +675,6 @@ def _outlet_feature_locus(run, *, half_window_m=5e-6):
                 ],
             }
         else:
-            peak_index = None
             peak_data = {
                 "spike_x_um": None,
                 "spike_pressure_mpa": None,
@@ -649,15 +686,15 @@ def _outlet_feature_locus(run, *, half_window_m=5e-6):
                 "fixed_window_bounds_um": None,
             }
 
-        outlet_mask = (x >= 0.0) & (x <= 120e-6)
-        outlet_indices = np.flatnonzero(outlet_mask)
-        film_index = int(outlet_indices[np.argmin(film[j, outlet_mask])])
+        film_index = film_indices[j]
         rows.append(
             {
                 "y_um": float(y_value * 1e6),
                 **peak_data,
-                "film_minimum_x_um": float(x[film_index] * 1e6),
-                "film_minimum_nm": float(film[j, film_index] * 1e9),
+                "film_minimum_x_um": None if film_index is None else float(x[film_index] * 1e6),
+                "film_minimum_nm": (
+                    None if film_index is None else float(film[j, film_index] * 1e9)
+                ),
                 "theta_at_pressure_peak": (
                     float(run["theta"][j, peak_index])
                     if peak_index is not None
@@ -677,24 +714,31 @@ def _outlet_feature_locus(run, *, half_window_m=5e-6):
     ]
     peak_y = max((abs(point[1]) for point in global_xy_um), default=0.0)
     connected_rows = [row for row in rows if abs(row["y_um"]) <= peak_y + 1e-9]
-    has_continuous_cut_peak = bool(connected_rows) and all(
-        row["pressure_peak_found"] for row in connected_rows
+    has_continuous_cut_peak = (
+        bool(len(global_points))
+        and all(row["pressure_peak_found"] for row in connected_rows)
+        and all(peak_indices[j] == i for j, i in global_points)
     )
     positive = [row for row in connected_rows if row["y_um"] >= 0]
-    x_steps = np.diff([row["spike_x_um"] for row in positive])
+    x_steps = np.diff(
+        [row["spike_x_um"] for row in positive if row["spike_x_um"] is not None]
+    )
     return {
         "pressure_maximum_locus": rows,
         "global_pmax_locations_xy_um": global_xy_um,
         "tracking_definition": (
-            "For every y row, select the most prominent local maximum with "
-            "20<=x<=120 um and prominence>=1 MPa. Width is the 1-D half-"
+            "Start at the rightmost centerline local maximum with 20<=x<=120 um "
+            "and prominence>=1 MPa. In each direction in y, follow the nearest "
+            f"eligible peak if it moves at most {maximum_step_m * 1e6:g} um; "
+            "stop on a missing peak or larger jump. Width is the 1-D half-"
             "prominence width relative to the higher of the left/right "
             "minimum over that same fixed x-band. Integrals use a fixed "
-            "+/-5 um x-window, reported per unit transverse length."
+            f"+/-{half_window_m * 1e6:g} um x-window, reported per unit transverse length."
         ),
         "film_constriction_definition": (
-            "For each y, take min(h) over 0<=x<=120 um; this is a transverse "
-            "locus of outlet constrictions, not a global-minimum locator."
+            "Start at the first centerline film local minimum downstream of the "
+            "pressure peak, with 0<=x<=120 um; follow nearest local minima with "
+            "the same maximum row-to-row step, stopping on missing candidates."
         ),
         "continuity_from_centerline_to_global_off_axis_peak": {
             "continuous_cut_maxima_present": has_continuous_cut_peak,
@@ -703,7 +747,7 @@ def _outlet_feature_locus(run, *, half_window_m=5e-6):
                 float(np.max(np.abs(x_steps))) if x_steps.size else None
             ),
             "classification": (
-                "one continuous curved downstream pressure-maximum ridge"
+                "one sampled connected curved downstream pressure-maximum locus"
                 if has_continuous_cut_peak
                 else "inconclusive at the available transverse cut sampling"
             ),
@@ -782,8 +826,9 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
     pressure_rows = [row for row in rows if row["pressure_peak_found"]]
     pressure_x = np.asarray([row["spike_x_um"] for row in pressure_rows])
     pressure_y = np.asarray([row["y_um"] for row in pressure_rows])
-    film_x = np.asarray([row["film_minimum_x_um"] for row in rows])
-    film_y = np.asarray([row["y_um"] for row in rows])
+    film_rows = [row for row in rows if row["film_minimum_x_um"] is not None]
+    film_x = np.asarray([row["film_minimum_x_um"] for row in film_rows])
+    film_y = np.asarray([row["y_um"] for row in film_rows])
     pmax_xy = np.asarray(locus["global_pmax_locations_xy_um"])
     feature_json = output / "outlet_feature_locus.json"
     feature_csv = output / "outlet_feature_locus.csv"
@@ -833,6 +878,7 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
         backend="CPU (NumPy/SciPy)",
         runtime_seconds=run["summary"].get("elapsed_seconds"),
         film_display_range_nm=film_range_nm,
+        field_archive_path=Path(run["directory"]) / "state.npz",
     )
 
     xx, yy = np.meshgrid(x * 1e3, y * 1e3)
@@ -860,6 +906,14 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
         linewidth=1.5,
         label="Downstream local-maximum locus",
     )
+    axes[0].plot(
+        film_x_mm, film_y_mm, color="magenta", linewidth=1.5,
+        label="Film-constriction locus",
+    )
+    axes[0].contour(
+        xx, yy, p * 1e-9, levels=[0.1, 0.3, 0.5, 0.7],
+        colors="lightgray", linewidths=0.5, alpha=0.7,
+    )
     axes[0].axhline(0, color="white", linestyle=":", linewidth=0.9, label="y=0")
     if pmax_xy.size:
         axes[0].scatter(
@@ -870,6 +924,11 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
             s=45,
             label="Global p_max",
         )
+    min_j, min_i = np.unravel_index(np.argmin(run["film_m"]), run["film_m"].shape)
+    axes[0].scatter(
+        [x[min_i] * 1e3], [y[min_j] * 1e3],
+        marker="v", color="magenta", s=38, label="Global h_min",
+    )
     theta_level = 1.0 - 1e-10
     if np.min(run["theta"]) < theta_level < np.max(run["theta"]):
         axes[0].contour(
@@ -943,7 +1002,6 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
             s=45,
             label="Global p_max",
         )
-    min_j, min_i = np.unravel_index(np.argmin(run["film_m"]), run["film_m"].shape)
     axes[1].scatter(
         [x[min_i] * 1e3],
         [y[min_j] * 1e3],

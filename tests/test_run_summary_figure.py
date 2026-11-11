@@ -126,6 +126,27 @@ def test_automatic_film_cap_uses_contact_region_without_clipping_source_data():
         plt.close(figure)
 
 
+def test_run_summary_contact_inset_shows_film_without_modifying_it():
+    x = np.linspace(-0.4e-3, 0.4e-3, 33)
+    y = x.copy()
+    xx, yy = np.meshgrid(x, y)
+    pressure = 1e9 * np.exp(-((xx / 0.05e-3) ** 2 + (yy / 0.05e-3) ** 2))
+    film = 300e-9 + 1e-6 * ((xx / 0.2e-3) ** 2 + (yy / 0.2e-3) ** 2)
+    original = film.copy()
+    figure, _, metrics = plot_run_summary(
+        x, y, pressure, film, load_n=15, formulation="donor-flux", status="accepted"
+    )
+    try:
+        inset = figure.axes[1].child_axes[0]
+        assert inset.get_title() == "Contact detail [mm]"
+        assert inset.images[0].get_clim() == metrics["film_display_range_nm"]
+        np.testing.assert_array_equal(film, original)
+    finally:
+        import matplotlib.pyplot as plt
+
+        plt.close(figure)
+
+
 def test_run_summary_marks_symmetric_global_max_and_centerline_downstream_peak():
     x = np.linspace(-2e-3, 2e-3, 9)
     y = np.linspace(-2e-3, 2e-3, 9)

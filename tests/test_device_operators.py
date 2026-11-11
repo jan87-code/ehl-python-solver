@@ -8,11 +8,14 @@ import pytest
 from scipy.signal import convolve2d
 
 from ehl_solver.backend import as_float64, make_backend
+from ehl_solver.constitutive import IsothermalFluid
 from ehl_solver.device import DeviceFullFilmEvaluator
+from ehl_solver.device_donor import DeviceDonorFlux
 from ehl_solver.elasticity import ElasticityOperator, cell_integrated_kernel, elastic_deformation
 from ehl_solver.hertz import circular_point_contact
 from ehl_solver.monolithic import BorderedReynoldsElasticityProblem
 from ehl_solver.reynolds import parabolic_point_contact_film, reynolds_residual
+from ehl_solver.transport_candidate import donor_flux_direction, donor_fluxes
 
 
 @pytest.fixture(params=["numpy", "cpu", "cuda"])
@@ -64,6 +67,47 @@ def test_memory_and_parameter_guards():
             ElasticityOperator(shape, 1e-6, 1e-6, 1e11)
     with pytest.raises(ValueError):
         ElasticityOperator((3, 3), 0, 1e-6, 1e11)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_device_donor_flux_and_jvp_match_numpy_on_nonuniform_grid(device, monkeypatch):
+    torch = pytest.importorskip("torch")
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("No CUDA/ROCm device")
+    backend = make_backend("torch", device)
+    x = np.array([-3.0, -1.0, 0.0, 2.0, 5.0]) * 1e-5
+    y = np.array([-2.0, 0.0, 3.0, 7.0]) * 1e-5
+    rng = np.random.default_rng(2026)
+    shape = (y.size, x.size)
+    h = rng.uniform(2e-7, 9e-7, shape)
+    p = rng.uniform(-1e3, 8e8, shape)
+    theta = rng.uniform(0.3, 1.0, shape)
+    dh = rng.normal(0.0, 1e-8, shape)
+    dp = rng.normal(0.0, 1e6, shape)
+    dt = rng.normal(0.0, 0.02, shape)
+    fluid = IsothermalFluid(0.497, 892.0)
+    speed = 0.2
+    operator = DeviceDonorFlux(x, y, fluid, speed, backend)
+    args = [as_float64(a, backend) for a in (h, p, theta, dh, dp, dt)]
+    expected_flux = donor_fluxes(x, y, h, p, theta, fluid, speed)
+    expected_jvp = donor_flux_direction(x, y, h, p, theta, dh, dp, dt, fluid, speed)
+    for actual, expected in zip(operator.fluxes(*args[:3]), expected_flux, strict=True):
+        assert actual.device == args[0].device
+        np.testing.assert_allclose(actual.cpu().numpy(), expected, rtol=2e-13, atol=1e-18)
+    for actual, expected in zip(operator.direction(*args), expected_jvp, strict=True):
+        np.testing.assert_allclose(actual.cpu().numpy(), expected, rtol=2e-13, atol=1e-18)
+    with pytest.raises(ValueError, match="film must be positive"):
+        operator.fluxes(-args[0], args[1], args[2])
+    with pytest.raises(ValueError, match="pressure domain"):
+        operator.fluxes(args[0], torch.full_like(args[1], -1e8), args[2])
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("donor calculation attempted a host field export")
+
+    monkeypatch.setattr(torch.Tensor, "cpu", forbidden)
+    monkeypatch.setattr(torch.Tensor, "numpy", forbidden)
+    assert operator.fluxes(*args[:3])[0].shape == (y.size, x.size - 1)
+    assert operator.direction(*args)[1].shape == (y.size - 1, x.size)
 
 
 def test_cached_hertz_center_displacement_refines(backend):

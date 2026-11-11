@@ -172,7 +172,7 @@ def test_outlet_locus_connects_centerline_peak_to_symmetric_off_axis_peaks():
     continuity = result["continuity_from_centerline_to_global_off_axis_peak"]
     assert continuity["continuous_cut_maxima_present"]
     assert continuity["classification"] == (
-        "one continuous curved downstream pressure-maximum ridge"
+        "one sampled connected curved downstream pressure-maximum locus"
     )
     rows = result["pressure_maximum_locus"]
     center = min(rows, key=lambda row: abs(row["y_um"]))
@@ -186,3 +186,32 @@ def test_outlet_locus_connects_centerline_peak_to_symmetric_off_axis_peaks():
     assert off_axis["fixed_window_pressure_integral_n_per_m"] > 0
     assert off_axis["film_minimum_x_um"] > off_axis["spike_x_um"]
     assert len(result["global_pmax_locations_xy_um"]) == 2
+
+
+def test_outlet_tracking_does_not_jump_to_a_more_prominent_unrelated_peak():
+    x = np.linspace(-20e-6, 140e-6, 321)
+    y = np.linspace(-30e-6, 30e-6, 25)
+    xx, yy = np.meshgrid(x, y)
+    ridge_x = 86e-6 - 0.4 * np.abs(yy)
+    pressure = 100e6 * np.exp(-((xx - ridge_x) / 2e-6) ** 2)
+    pressure += (yy > 5e-6) * 200e6 * np.exp(-((xx - 115e-6) / 2e-6) ** 2)
+    film = 500e-9 - 200e-9 * np.exp(-((xx - ridge_x - 8e-6) / 4e-6) ** 2)
+    pressure[np.argmin(abs(y - 20e-6))] = 0.0
+    result = _outlet_feature_locus(
+        {"x_m": x, "y_m": y, "pressure_pa": pressure, "film_m": film,
+         "theta": np.ones_like(pressure)}
+    )
+    rows = result["pressure_maximum_locus"]
+    before_gap = min(rows, key=lambda row: abs(row["y_um"] - 15.0))
+    after_gap = min(rows, key=lambda row: abs(row["y_um"] - 25.0))
+    assert before_gap["spike_x_um"] == pytest.approx(80.0, abs=1.0)
+    assert after_gap["spike_x_um"] is None
+    assert not result["continuity_from_centerline_to_global_off_axis_peak"][
+        "continuous_cut_maxima_present"
+    ]
+    other_window = _outlet_feature_locus(
+        {"x_m": x, "y_m": y, "pressure_pa": pressure, "film_m": film,
+         "theta": np.ones_like(pressure)},
+        half_window_m=3e-6,
+    )
+    assert "+/-3 um" in other_window["tracking_definition"]

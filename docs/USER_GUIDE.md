@@ -221,3 +221,32 @@ pressure/film and validation status, compare runs, and export a reproducible
 report/data bundle. The GUI will call the same solver as the command-line
 interface. A version-specific walkthrough with screenshots and a worked case
 will be part of release acceptance; see [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md).
+
+## Reproduce the Ciulli saved-field diagnostics
+
+With the accepted local 513x513 archive available, create a **new** output
+directory without running the solver (PowerShell example):
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:OPENBLAS_NUM_THREADS = "1"
+@'
+from examples.diagnose_ciulli_core_ridge import _read_root, _write_outlet_locus_outputs
+run = _read_root(r"results\ciulli_20261111_donor_513_from129")
+_write_outlet_locus_outputs(run, r"results\my_new_outlet_diagnostic", film_range_nm=(275, 1000))
+'@ | .\.venv\Scripts\python.exe -
+```
+
+The local CSV contains cut-wise coordinates, widths and integrals. The film
+color cap affects only rendering. To benchmark the existing CUDA elasticity
+and the new donor flux/JVP kernels against NumPy, use new output names:
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.benchmark_ciulli_elasticity_device --root results\ciulli_20261111_donor_513_from129 --output results\my_elasticity_operator.json
+.\.venv\Scripts\python.exe -m examples.benchmark_ciulli_donor_device --root results\ciulli_20261111_donor_513_from129 --output results\my_donor_operator.json
+```
+
+Both require the saved accepted archive and a working PyTorch CUDA/ROCm device.
+These are resident component comparisons, not a GPU JFO solver or proof of
+mesh convergence. See [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for the
+measured scope, limitations, and checksums.

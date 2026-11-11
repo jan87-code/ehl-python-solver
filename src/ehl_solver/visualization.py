@@ -376,7 +376,8 @@ def plot_run_summary(
         marker="x",
         color="red",
         s=45,
-        label="Global minimum",
+        label=f"Global h_min at ({minimum_xy[0] * 1e3:.4g}, "
+        f"{minimum_xy[1] * 1e3:.4g}) mm",
     )
     axes[0, 1].set(
         xlabel="x [mm]",
@@ -395,7 +396,51 @@ def plot_run_summary(
         linewidths=1.5,
         label=f"h_c={central_film * 1e9:.4g} nm at (0,0)",
     )
-    axes[0, 1].legend(loc="best", fontsize=8)
+    axes[0, 1].legend(loc="lower right", fontsize=8)
+    axes[0, 1].annotate(
+        "+x entrainment",
+        xy=(0.98, 0.94),
+        xytext=(0.80, 0.94),
+        xycoords="axes fraction",
+        textcoords="axes fraction",
+        color="black",
+        fontsize=8,
+        arrowprops={"arrowstyle": "->", "color": "black", "lw": 1.4},
+    )
+    if min(pressure.shape) >= 16 and maximum_pressure > 0:
+        rows, columns = np.nonzero(pressure >= 0.05 * maximum_pressure)
+        if rows.size:
+            xmin, xmax = x_mm[columns.min()], x_mm[columns.max()]
+            ymin, ymax = y_mm[rows.min()], y_mm[rows.max()]
+            xmargin = max(0.2 * (xmax - xmin), x_mm[1] - x_mm[0])
+            ymargin = max(0.2 * (ymax - ymin), y_mm[1] - y_mm[0])
+            xbounds = (max(x_mm[0], xmin - xmargin), min(x_mm[-1], xmax + xmargin))
+            ybounds = (max(y_mm[0], ymin - ymargin), min(y_mm[-1], ymax + ymargin))
+            if (
+                xbounds[1] - xbounds[0] < 0.6 * (x_mm[-1] - x_mm[0])
+                and ybounds[1] - ybounds[0] < 0.6 * (y_mm[-1] - y_mm[0])
+            ):
+                inset = axes[0, 1].inset_axes([0.03, 0.53, 0.40, 0.40])
+                inset.imshow(
+                    film_values_nm,
+                    extent=(x_mm[0], x_mm[-1], y_mm[0], y_mm[-1]),
+                    origin="lower",
+                    interpolation="nearest",
+                    aspect="equal",
+                    cmap="viridis",
+                    vmin=film_range[0],
+                    vmax=film_range[1],
+                )
+                inset.scatter(
+                    [location[0] * 1e3 for location in minimum_locations],
+                    [location[1] * 1e3 for location in minimum_locations],
+                    marker="x", color="red", s=18,
+                )
+                inset.scatter([0], [0], marker="o", facecolors="none",
+                              edgecolors="white", s=18)
+                inset.set(xlim=xbounds, ylim=ybounds, title="Contact detail [mm]")
+                inset.tick_params(labelsize=6, pad=1)
+                inset.title.set_fontsize(7)
     if film_clipped_below or film_clipped_above:
         clipping_label = (
             f"{film_range[0]:g}-{film_range[1]:g} nm"

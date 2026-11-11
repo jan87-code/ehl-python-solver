@@ -5341,6 +5341,99 @@ Thus the final ridge is amplified/moved during nonlinear correction rather
 than simply being copied unchanged from the prolonged seed. This history
 alone does not establish seed independence.
 
+### Controlled same-grid seed sensitivity
+
+A resource-preflighted 513x513 solve was then run on the same `+/-0.4 mm`
+domain with the same donor-flux JFO equations, material model, boundary
+conditions, nonlinear limits, tolerances and independent acceptance audits.
+It was initialized by direct bilinear pressure/content prolongation of the
+accepted 129x129 root, rather than the accepted 257x257 root. No solver
+physics or acceptance gate was changed. The new state is independently
+accepted with seven Newton corrections. It is reproducible from the archived
+run at `results/ciulli_20261111_donor_513_from129`; the complete pressure,
+film, deformation, density, viscosity and theta arrays, all eight periodic
+checkpoints, seven diagnostic records and generated standardized summary
+figure remain local with the run.
+
+The paired accepted 513x513 roots have identical coordinates and case inputs.
+Direct nodal comparison gives pressure relative-L2 `6.36e-15` (RMS
+`7.17e-7 Pa`, Linf `7.00e-5 Pa`); the largest pressure difference is at
+`(29.6875,71.875) um`. Film relative-L2 is `9.47e-17` (Linf
+`3.39e-21 m`), deformation relative-L2 `1.82e-15`, theta relative-L2
+`1.00e-16`, density relative-L2 `1.29e-16`, and viscosity relative-L2
+`8.39e-14`. On the same fixed upper neighborhood
+`x=[45,60] um`, `y=[50,65] um`, both roots have mean pressure `485.099 MPa`
+and nodal-sum pressure integral `0.118432 N`; their mirrored lower
+neighborhoods agree to roundoff as well. Both yield `p_max=812.880981 MPa`
+at the symmetric pair `(51.5625,+/-59.375) um`, `h_c=465.648691 nm`,
+`h_min=278.512053 nm` at `(23.4375,+/-82.8125) um`, and integrated load
+`15 N`. The two roots therefore agree to numerical roundoff, not just in a
+single peak metric.
+
+The prolonged 129-grid seed starts with its global maximum at
+`(0,0) um`, `741.270 MPa`, and already has a fixed-window off-axis ridge
+maximum of `705.395 MPa` at `(56.25,+/-50) um`. After the first Newton
+correction, the off-axis ridge becomes the global maximum at
+`(37.5,+/-65.625) um`, `820.849 MPa`; over the remaining six corrections it
+moves to `(51.5625,+/-59.375) um` and settles at `812.881 MPa`. By contrast,
+the original 257-grid seed began at the core ridge maximum and its first
+correction moved the peak to a neighboring location before reaching the same
+endpoint. This indicates that the final ridge is not simply inherited
+unchanged from one particular seed; in both runs it develops through the
+nonlinear correction path.
+
+The 129-seeded trajectory changed the checkpointed `theta < 1-1e-10`
+cavitation classification by 905 nodes on the first correction, then by
+20, 0, 6, 0, 0 and 0 nodes. The accepted full-film active mask changes
+recorded in subsequent correction models were 20, 0, 6, 0, 0 and 0 nodes.
+The first correction required six Newton recovery models and rejected several
+infeasible or non-Armijo trials before accepting a full step; correction 2
+accepted `alpha=0.21497`; other accepted corrections used full steps.
+GMRES used 60-67 iterations per model with independently recomputed true
+residuals from `9.0e-11` to `6.24e-10`. The final independently audited
+local/global relative mass balances are `1.50e-13`/`1.50e-16`; force error
+is zero, film reconstruction error is `5.51e-20 m`, and maximum JFO
+complementarity is `5.12e-25`.
+
+The preflight budget was 8 GiB peak working set and a 16 GiB minimum free-RAM
+guard; no competing solver was present. During the run the external monitor
+measured a maximum process working set of `1.32 GB` and minimum available RAM
+of `40.0 GB` (about `37.3 GiB`). The complete local run directory, including
+eight approximately 11.4 MB checkpoints and all diagnostics, occupies
+`108.96 MiB`. The reported solver runtime is `1021.4 s`. All configured
+OpenBLAS/OpenMP/MKL/BLIS/NumExpr thread variables were set to four, and
+NumPy and SciPy independently reported four active OpenBLAS threads. The
+linear backend is SciPy sparse GMRES/SuperLU; NumPy FFT and Python
+matrix-free operations are not parallel solver paths, so the four-thread
+setting is an upper bound on supported backend parallelism, not evidence that
+the whole solve used four CPU cores. The run generated and visually checked
+`ciulli_15n_donor_15N_513x513_donor-flux_ACCEPTED_summary.png` and its
+machine-readable centerline profile CSV.
+
+The compact comparison, state hashes, fixed-region metrics and checkpoint /
+Newton histories are stored in
+[`cases/ciulli_513_seed_sensitivity_summary.json`](../cases/ciulli_513_seed_sensitivity_summary.json).
+The reproducible post-processing command is:
+
+```powershell
+$env:PYTHONPATH='src'
+$env:OPENBLAS_NUM_THREADS='4'
+$env:OMP_NUM_THREADS='4'
+$env:MKL_NUM_THREADS='4'
+$env:BLIS_NUM_THREADS='4'
+$env:NUMEXPR_NUM_THREADS='4'
+python examples\diagnose_ciulli_core_ridge.py --roots `
+  results\ciulli_20261111_donor_65_fixed `
+  results\ciulli_20261111_donor_129_fixed `
+  results\ciulli_20261111_donor_257_fixed `
+  results\ciulli_20261111_donor_513_fixed `
+  --seed-comparison `
+  results\ciulli_20261111_donor_513_fixed `
+  results\ciulli_20261111_donor_513_from129 `
+  --seed-comparison-output results\ciulli_20261111_seed_sensitivity.json `
+  --output results\ciulli_20261111_core_ridge_seed_comparison.json
+```
+
 **Mechanism assessment:** common-grid sampling contributes to the reported
 point maximum, but cannot explain the rising aligned-grid peak and fixed-
 neighborhood means/integrals (A is not the whole cause). The evidence supports
@@ -5351,25 +5444,24 @@ an expected discretization property and may contribute to slow convergence;
 no donor, cavitation, coefficient-switching or clipping defect was found (C
 is not established as a bug). The standalone elasticity operator passes the
 smooth reference tests (D is less likely, not excluded in the coupled
-system). Because the ridge is seeded, amplified early and later changes
-lateral branch under a symmetric problem, nonlinear branch dependence remains
-plausible but unproven (E).
+system). The controlled 129-to-513 seed study reaches the same accepted nodal
+root as the 257-to-513 path, making seed/branch dependence less likely for
+these two prolongated starts (E is not demonstrated, though other branches
+cannot be excluded).
 
 **Decision:** do not launch 1025x1025 and do not change solver physics based
-on this evidence. After the operator regression is retained, the minimum
-discriminating follow-up is one same-513-grid solve seeded by independent
-direct prolongation of the accepted 129x129 root (not the accepted 257x257
-root), with the same model, boundaries, tolerances and audits. If it reaches
-a different independently accepted 513-grid field/ridge, seed or nonlinear
-branch sensitivity is demonstrated. If it reaches the same field and
-fixed-neighborhood measures, seed sensitivity becomes less likely and local
-resolution/discretization is the next focus. This is a proposed test only;
-no run was launched here. Keep the 65/129/257/513 accepted fields, the
-outlet-spike analysis separate, and all existing acceptance gates.
+on this evidence. The seed-path discriminator is complete and does not
+justify another full solve. Prioritize a controlled pressure/flux
+discretization or local-resolution study of the unresolved full-film ridge,
+keeping the fixed-region metrics, operator benchmarks and outlet-spike
+analysis separate. A 1025x1025 run remains gated on a specific diagnostic
+question that uniform refinement can answer, and on resource/backend checks.
+Keep all existing acceptance gates.
 
-The strongest supported statement after this phase is: the four accepted
-roots preserve transverse symmetry and pass their prior equation-closure
-audits; both main-field pressure differences and independent smooth-operator
-errors decrease under refinement, but the ridge remains under-resolved,
-grid-sensitive and potentially seed-sensitive. Neither mesh convergence,
+The strongest supported statement after this phase is: five accepted donor
+roots (65/129/257/513 from 257 and 513 from 129) pass their independent
+equation-closure audits, preserve transverse symmetry and show no measurable
+seed sensitivity between the two tested 513-grid initializations. Smooth
+standalone operators converge at their expected orders, but the coupled
+ridge remains under-resolved and grid-sensitive. Neither mesh convergence,
 outlet-spike resolution nor physical EHL validation is established.

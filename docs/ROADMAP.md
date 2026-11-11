@@ -24,19 +24,25 @@ fixed-neighborhood pressure averages/integrals and the peak on a nested
 first-order donor-advection and second-order pressure-diffusion behavior; an
 independent smooth elasticity test converges at nearly second order. Neither
 test identifies a discrete defect or establishes a continuous physical ridge.
-The 513-grid Newton history shows the ridge is amplified/moved from an already
-present seed feature. The next discriminator is a controlled same-grid
-initialization study, not 1025x1025: prolong the accepted 129x129 root directly
-to 513x513 and compare independently audited converged fields, ridge
-neighborhoods and donor/active states with the accepted 257-to-513 result.
-Different accepted roots would support branch sensitivity; convergence to the
-same root would shift priority toward under-resolution/discretization.
-Do not launch that study without confirming its resource budget and preserving
-the existing root. See the diagnostic evidence and limitations in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md). The separate 50 N endpoints
-through 223x223 and their directional probes remain sensitivity evidence, not
-a pressure-mesh or physical-accuracy pass. See
-[LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for those measurements and caveats.
+Two accepted 513x513 solves, seeded by direct prolongation from the accepted
+129x129 and 257x257 roots, now converge to the same nodal fields within
+floating-point roundoff. Their pressure relative-L2 difference is
+`6.36e-15`; their pressure maxima, fixed-neighborhood means/integrals, film
+scalars and active/cavitation endpoint states agree. The ridge forms and moves
+during Newton correction in both paths, so the 129-to-513 result makes seed
+dependence less likely for these initializations, not impossible in general.
+This closes the planned seed-path discriminator; it does not demonstrate mesh
+convergence or resolve the ridge. Do not start 1025x1025. Prioritize a
+targeted pressure/flux discretization study in the full-film core and
+resolution-aware analysis of the ridge; retain the elastic-operator audit as
+supporting evidence rather than treating it as proof against a coupled
+elasticity effect. See the run and its compact comparison metadata in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md) and
+[`cases/ciulli_513_seed_sensitivity_summary.json`](../cases/ciulli_513_seed_sensitivity_summary.json).
+The separate 50 N endpoints through 223x223 and their directional probes
+remain sensitivity evidence, not a pressure-mesh or physical-accuracy pass.
+See [LIMITED_ENDPOINT.md](LIMITED_ENDPOINT.md) for those measurements and
+caveats.
 
 Use the strict three-level evidence hierarchy in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md): **Level 1, equation closure**

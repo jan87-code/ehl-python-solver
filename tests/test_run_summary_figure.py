@@ -51,6 +51,40 @@ def test_run_summary_uses_full_range_and_interpolated_centerline():
         plt.close(figure)
 
 
+def test_film_display_cap_is_explicit_and_does_not_change_profile_or_field():
+    x, y, pressure, film = _fields()
+    film[1, 0] = 150e-9
+    film[1, 2] = 1200e-9
+    original_film = film.copy()
+    figure, profiles, _ = plot_run_summary(
+        x,
+        y,
+        pressure,
+        film,
+        load_n=15,
+        formulation="donor-flux",
+        status="accepted_numerical_root",
+        film_display_range_nm=(300.0, 996.0),
+    )
+    try:
+        image = figure.axes[1].images[0]
+        assert image.get_clim() == (300.0, 996.0)
+        assert np.min(image.get_array()) == np.min(film) * 1e9
+        assert np.max(image.get_array()) == np.max(film) * 1e9
+        assert "300-996 nm" in figure.axes[1].get_title()
+        np.testing.assert_array_equal(film, original_film)
+        expected_profile = np.array(
+            [np.interp(0.0, y, film[:, i]) for i in range(x.size)]
+        )
+        np.testing.assert_allclose(
+            profiles["film_centerline_m"], expected_profile, rtol=2e-16, atol=0.0
+        )
+    finally:
+        import matplotlib.pyplot as plt
+
+        plt.close(figure)
+
+
 def test_run_summary_writes_deterministic_png_and_raw_profile_csv(tmp_path):
     x, y, pressure, film = _fields()
     figure_path, profile_path = write_run_summary(

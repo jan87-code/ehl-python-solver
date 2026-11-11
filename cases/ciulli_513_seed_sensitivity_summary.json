@@ -1,0 +1,1359 @@
+{
+  "comparison_method": "Direct nodal comparison; both accepted 513x513 roots have identical physical coordinates and case inputs. Fixed-region pressure integrals use nodal sums times dx*dy.",
+  "reference": {
+    "directory": "results\\ciulli_20261111_donor_513_fixed",
+    "state_sha256": "4d6376f51c0056f0414a8bed3cab8916c88f27db8f738d8ab77f060ffcf0ce06",
+    "seed": {
+      "path": "results\\ciulli_20261111_donor_257_fixed",
+      "kind": "accepted donor root",
+      "state_sha256": "9c3e870e9d2aa7ec8950556ff522559f5a41ecda739b3bc5c0df1337c1b3137a",
+      "interpolation": "bilinear pressure/content; physical offset preserved",
+      "source_grid_ny_nx": [
+        257,
+        257
+      ],
+      "target_grid_ny_nx": [
+        513,
+        513
+      ],
+      "accepted_as_solution": false
+    },
+    "run_metadata": {
+      "status": "accepted_numerical_root",
+      "termination_reason": "independent direct endpoint audit accepted",
+      "case": {
+        "load_n": 15.0,
+        "radius_m": 0.0051595,
+        "contact_modulus_pa": 58044375000.0,
+        "viscosity_pa_s": 0.497,
+        "density_kg_m3": 892.0,
+        "entrainment_m_s": 0.2,
+        "alpha_per_pa": 2.87e-08,
+        "roelands_pressure_pa": 196000000.0,
+        "viscosity_reference_pa_s": 6.31e-05,
+        "ny": 513,
+        "nx": 513,
+        "domain_half_width_x_m": 0.0004,
+        "domain_half_width_y_m": 0.0004,
+        "transport": "donor",
+        "maximum_physical_nodes": 300000
+      },
+      "equation": "donor-flux JFO/Elrod-Adams",
+      "transport_fraction": 0.0,
+      "elapsed_seconds": 1383.9550981000066,
+      "audit": {
+        "numerically_accepted": true,
+        "mass": {
+          "mass_maximum": 4.733309084873322e-13,
+          "maximum_si_mass_divergence_kg_m2_s": 3.6914915568786455e-11,
+          "relative_local_balance": 8.292604434385951e-14,
+          "relative_global_balance": 7.52382031279066e-17,
+          "outward_mass_flow_kg_s": [
+            -1.407252087437425e-06,
+            6.565416012274445e-07,
+            3.7535524310499015e-07,
+            3.7535524310499015e-07
+          ],
+          "net_mass_flow_kg_s": -2.117582368135751e-22,
+          "summed_cell_mass_defect_kg_s": -1.214890681523155e-23,
+          "maximum_complementarity": 3.976191127985186e-27
+        },
+        "force_n": 15.000000000000004,
+        "force_relative_error": 2.220446049250313e-16,
+        "minimum_film_m": 2.785120528148974e-07,
+        "central_film_m": 4.6564869145583857e-07,
+        "film_reconstruction_error_m": 5.378659215064807e-20,
+        "direct_elasticity_checked": true,
+        "transport_fraction": 0.0,
+        "full_limited_equations": false
+      },
+      "runtime": {
+        "python": "3.12.9 (tags/v3.12.9:fdb8142, Feb  4 2025, 15:27:58) [MSC v.1942 64 bit (AMD64)]",
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "platform": "Windows-11-10.0.26100-SP0",
+        "git_revision": "e067f9c3389a0de5a8c181f5ec1bd828fbf70a52",
+        "cpu_count": 16,
+        "thread_environment": {
+          "OPENBLAS_NUM_THREADS": "4",
+          "OMP_NUM_THREADS": "4",
+          "MKL_NUM_THREADS": "4",
+          "BLIS_NUM_THREADS": "4",
+          "NUMEXPR_NUM_THREADS": "4"
+        },
+        "numpy_openblas_active_threads": 4,
+        "scipy_openblas_active_threads": 4,
+        "linear_algebra_backend": "SciPy sparse GMRES/SuperLU; NumPy and SciPy OpenBLAS thread counts queried independently. NumPy FFT and Python matrix-free operations are not configured as parallel solvers."
+      },
+      "source_sha256": {
+        "run_ciulli_donor_grid.py": "f5c2d14ff3b539cfa90e7620dbc66e6e5f5b1f54d13f4472ac0941f979f9fe54",
+        "limited_newton.py": "abb06224c5461ff84f99fdf44f8404aaf0198937ceefff24ab79dc5e5f3ed4f7",
+        "limited_system.py": "50d51b811cef7b2d74eefe83fccf4d70942642110b60415716502eb019e21d7d",
+        "limited_audit.py": "996d06a5ae9f166a24277dafe4a1f6f6e203bbd725a327104223c2cd855fe9d0"
+      },
+      "resource_monitor": {
+        "schema": "legacy per-sample monitor; process-memory maximum omitted",
+        "initial_available_ram_gib": 26.15,
+        "minimum_available_ram_gib": 23.81,
+        "initial_free_disk_gib": 102.59,
+        "sample_count": 259
+      },
+      "run_summary_figure": null,
+      "run_summary_profiles": null
+    }
+  },
+  "comparison": {
+    "directory": "results\\ciulli_20261111_donor_513_from129",
+    "state_sha256": "dc1faecef8ec8a5c5fe29929b1c384fcc1654c52d5aa8217dccfb3d73579b30f",
+    "seed": {
+      "path": "results\\ciulli_20261111_donor_129_fixed",
+      "kind": "accepted donor root",
+      "state_sha256": "162c271ea11dcba892cefb798b846d78d43a95949721e093e21865c7740dda56",
+      "interpolation": "bilinear pressure/content; physical offset preserved",
+      "source_grid_ny_nx": [
+        129,
+        129
+      ],
+      "target_grid_ny_nx": [
+        513,
+        513
+      ],
+      "accepted_as_solution": false
+    },
+    "run_metadata": {
+      "status": "accepted_numerical_root",
+      "termination_reason": "independent direct endpoint audit accepted",
+      "case": {
+        "load_n": 15.0,
+        "radius_m": 0.0051595,
+        "contact_modulus_pa": 58044375000.0,
+        "viscosity_pa_s": 0.497,
+        "density_kg_m3": 892.0,
+        "entrainment_m_s": 0.2,
+        "alpha_per_pa": 2.87e-08,
+        "roelands_pressure_pa": 196000000.0,
+        "viscosity_reference_pa_s": 6.31e-05,
+        "ny": 513,
+        "nx": 513,
+        "domain_half_width_x_m": 0.0004,
+        "domain_half_width_y_m": 0.0004,
+        "transport": "donor",
+        "maximum_physical_nodes": 300000
+      },
+      "equation": "donor-flux JFO/Elrod-Adams",
+      "transport_fraction": 0.0,
+      "elapsed_seconds": 1021.4327234999998,
+      "audit": {
+        "numerically_accepted": true,
+        "mass": {
+          "mass_maximum": 4.1840459338033906e-13,
+          "maximum_si_mass_divergence_kg_m2_s": 3.263123105057275e-11,
+          "relative_local_balance": 1.5019859069256916e-13,
+          "relative_global_balance": 1.504764062558132e-16,
+          "outward_mass_flow_kg_s": [
+            -1.407252087437425e-06,
+            6.565416012274442e-07,
+            3.7535524310499015e-07,
+            3.7535524310499015e-07
+          ],
+          "net_mass_flow_kg_s": -4.235164736271502e-22,
+          "summed_cell_mass_defect_kg_s": -2.7111570124210857e-23,
+          "maximum_complementarity": 5.120965637853774e-25
+        },
+        "force_n": 15.0,
+        "force_relative_error": 0.0,
+        "minimum_film_m": 2.7851205281489784e-07,
+        "central_film_m": 4.6564869145583815e-07,
+        "film_reconstruction_error_m": 5.505714157152952e-20,
+        "direct_elasticity_checked": true,
+        "transport_fraction": 0.0,
+        "full_limited_equations": false
+      },
+      "runtime": {
+        "python": "3.12.9 (tags/v3.12.9:fdb8142, Feb  4 2025, 15:27:58) [MSC v.1942 64 bit (AMD64)]",
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "platform": "Windows-11-10.0.26100-SP0",
+        "git_revision": "adc8fb1964b2231ca0ec880a4747e5615f16e9aa",
+        "cpu_count": 16,
+        "thread_environment": {
+          "OPENBLAS_NUM_THREADS": "4",
+          "OMP_NUM_THREADS": "4",
+          "MKL_NUM_THREADS": "4",
+          "BLIS_NUM_THREADS": "4",
+          "NUMEXPR_NUM_THREADS": "4"
+        },
+        "numpy_openblas_active_threads": 4,
+        "scipy_openblas_active_threads": 4,
+        "linear_algebra_backend": "SciPy sparse GMRES/SuperLU; NumPy and SciPy OpenBLAS thread counts queried independently. NumPy FFT and Python matrix-free operations are not configured as parallel solvers."
+      },
+      "source_sha256": {
+        "run_ciulli_donor_grid.py": "218ce57064c813d501342a38c9f9fc48bd69d916e8aed1ef2dc138c837346503",
+        "limited_newton.py": "abb06224c5461ff84f99fdf44f8404aaf0198937ceefff24ab79dc5e5f3ed4f7",
+        "limited_system.py": "50d51b811cef7b2d74eefe83fccf4d70942642110b60415716502eb019e21d7d",
+        "limited_audit.py": "996d06a5ae9f166a24277dafe4a1f6f6e203bbd725a327104223c2cd855fe9d0"
+      },
+      "resource_monitor": {
+        "elapsed_seconds": 995.423,
+        "peak_working_set_bytes": 1323540480,
+        "available_ram_min_bytes": 40012709888,
+        "samples": 96,
+        "guard_working_set_bytes": 8589934592,
+        "guard_min_available_bytes": 17179869184
+      },
+      "run_summary_figure": "ciulli_15n_donor_15N_513x513_donor-flux_ACCEPTED_summary.png",
+      "run_summary_profiles": "ciulli_15n_donor_15N_513x513_donor-flux_ACCEPTED_summary_profiles.csv"
+    }
+  },
+  "same_grid_and_case": true,
+  "field_differences": {
+    "pressure_pa": {
+      "relative_l2": 6.363912038467312e-15,
+      "rms": 7.170189990327832e-07,
+      "linf": 7.000565528869629e-05,
+      "largest_difference_xy_um": [
+        29.687499999999982,
+        71.875
+      ]
+    },
+    "film_m": {
+      "relative_l2": 9.473384369041179e-17,
+      "rms": 1.0647196829865488e-21,
+      "linf": 3.3881317890172014e-21,
+      "largest_difference_xy_um": [
+        -112.50000000000003,
+        -400.0
+      ]
+    },
+    "deformation_m": {
+      "relative_l2": 1.817820268854017e-15,
+      "rms": 8.370892871637102e-22,
+      "linf": 6.776263578034403e-21,
+      "largest_difference_xy_um": [
+        398.4375,
+        396.87500000000006
+      ]
+    },
+    "theta": {
+      "relative_l2": 9.998170703122552e-17,
+      "rms": 8.391149741762846e-17,
+      "linf": 1.4432899320127035e-15,
+      "largest_difference_xy_um": [
+        50.00000000000002,
+        -95.31250000000001
+      ]
+    },
+    "density_kg_m3": {
+      "relative_l2": 1.2860653724152912e-16,
+      "rms": 1.156507724664122e-13,
+      "linf": 2.2737367544323206e-11,
+      "largest_difference_xy_um": [
+        29.687499999999982,
+        -71.875
+      ]
+    },
+    "viscosity_pa_s": {
+      "relative_l2": 8.388990465931837e-14,
+      "rms": 8.52862568690582e-09,
+      "linf": 1.9350554794073105e-06,
+      "largest_difference_xy_um": [
+        29.687499999999982,
+        68.75000000000001
+      ]
+    }
+  },
+  "fixed_regions": {
+    "main_contact": {
+      "bounds_definition": "fixed physical coordinates; inclusive nodes",
+      "pressure_difference_rms_mpa": 3.567317754276781e-12,
+      "reference_mean_pressure_mpa": 508.49624999340176,
+      "comparison_mean_pressure_mpa": 508.4962499934017,
+      "reference_integrated_pressure_n": 12.403286215048865,
+      "comparison_integrated_pressure_n": 12.403286215048865
+    },
+    "fixed_core_ridge": {
+      "bounds_definition": "fixed physical coordinates; inclusive nodes",
+      "pressure_difference_rms_mpa": 2.647085154042345e-12,
+      "reference_mean_pressure_mpa": 387.3824608153579,
+      "comparison_mean_pressure_mpa": 387.3824608153579,
+      "reference_integrated_pressure_n": 0.6052850950239893,
+      "comparison_integrated_pressure_n": 0.6052850950239893
+    },
+    "fixed_upper_neighborhood": {
+      "bounds_definition": "fixed physical coordinates; inclusive nodes",
+      "pressure_difference_rms_mpa": 2.240657289897887e-12,
+      "reference_mean_pressure_mpa": 485.0992267134081,
+      "comparison_mean_pressure_mpa": 485.099226713408,
+      "reference_integrated_pressure_n": 0.11843242839682672,
+      "comparison_integrated_pressure_n": 0.1184324283968267
+    },
+    "fixed_lower_neighborhood": {
+      "bounds_definition": "fixed physical coordinates; inclusive nodes",
+      "pressure_difference_rms_mpa": 2.370603460693051e-12,
+      "reference_mean_pressure_mpa": 485.0992267134081,
+      "comparison_mean_pressure_mpa": 485.09922671340786,
+      "reference_integrated_pressure_n": 0.11843242839682672,
+      "comparison_integrated_pressure_n": 0.11843242839682667
+    }
+  },
+  "scalars": {
+    "reference": {
+      "p_max_mpa": 812.8809814694235,
+      "p_max_locations_xy_um": [
+        [
+          51.562500000000014,
+          -59.37500000000002
+        ],
+        [
+          51.562500000000014,
+          59.37500000000002
+        ]
+      ],
+      "h_c_nm": 465.64869145585084,
+      "h_min_nm": 278.5120528149078,
+      "h_min_locations_xy_um": [
+        [
+          23.43750000000002,
+          -82.81249999999999
+        ],
+        [
+          23.43750000000002,
+          82.81249999999999
+        ]
+      ],
+      "integrated_load_n": 14.999999999999819
+    },
+    "comparison": {
+      "p_max_mpa": 812.8809814694212,
+      "p_max_locations_xy_um": [
+        [
+          51.562500000000014,
+          -59.37500000000002
+        ],
+        [
+          51.562500000000014,
+          59.37500000000002
+        ]
+      ],
+      "h_c_nm": 465.64869145585084,
+      "h_min_nm": 278.51205281490803,
+      "h_min_locations_xy_um": [
+        [
+          23.43750000000002,
+          -82.81249999999999
+        ],
+        [
+          23.43750000000002,
+          82.81249999999999
+        ]
+      ],
+      "integrated_load_n": 14.999999999999813
+    }
+  },
+  "nonlinear_history": {
+    "reference": {
+      "checkpoint_fields": [
+        {
+          "iteration": 0,
+          "pmax_mpa": 739.6692895555867,
+          "pmax_xy_um": [
+            53.12500000000001,
+            56.249999999999986
+          ],
+          "theta_min": 0.026184110885316914,
+          "theta_less_than_one_cells": 110260,
+          "upper_ridge_peak_mpa": 739.6692895555867,
+          "upper_ridge_peak_xy_um": [
+            53.12500000000001,
+            56.249999999999986
+          ],
+          "lower_ridge_peak_mpa": 739.6692895555822,
+          "lower_ridge_peak_xy_um": [
+            53.12500000000001,
+            -56.249999999999986
+          ]
+        },
+        {
+          "iteration": 1,
+          "pmax_mpa": 811.0238481783913,
+          "pmax_xy_um": [
+            60.937500000000014,
+            -53.12500000000001
+          ],
+          "theta_min": 0.025454087938907022,
+          "theta_less_than_one_cells": 110061,
+          "cavitation_state_changed_nodes": 309,
+          "upper_ridge_peak_mpa": 809.3524649200225,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 809.3524649205656,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 6.641017621060518,
+          "pressure_correction_linf_mpa": 314.1585128763119
+        },
+        {
+          "iteration": 2,
+          "pmax_mpa": 810.6629018603209,
+          "pmax_xy_um": [
+            60.937500000000014,
+            -53.12500000000001
+          ],
+          "theta_min": 0.02546163659037881,
+          "theta_less_than_one_cells": 110061,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 809.987501394552,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 809.9875013950332,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.09048220377017847,
+          "pressure_correction_linf_mpa": 6.5896662369052175
+        },
+        {
+          "iteration": 3,
+          "pmax_mpa": 813.8304617284613,
+          "pmax_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "theta_min": 0.025487439663140043,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 6,
+          "upper_ridge_peak_mpa": 813.830461728397,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 813.8304617284613,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.5817225308378772,
+          "pressure_correction_linf_mpa": 39.584991968335274
+        },
+        {
+          "iteration": 4,
+          "pmax_mpa": 812.8934939465777,
+          "pmax_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "theta_min": 0.025493309211480297,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8934939465777,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8934939465753,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.1355351508935781,
+          "pressure_correction_linf_mpa": 15.775169251390457
+        },
+        {
+          "iteration": 5,
+          "pmax_mpa": 812.8810377344109,
+          "pmax_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "theta_min": 0.02549360991756522,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8810377344109,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8810377344065,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.008550385088400218,
+          "pressure_correction_linf_mpa": 1.6767985987080931
+        },
+        {
+          "iteration": 6,
+          "pmax_mpa": 812.8809814669457,
+          "pmax_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "theta_min": 0.025493611582412035,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8809814669457,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8809814669429,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 6.958346852224218e-05,
+          "pressure_correction_linf_mpa": 0.01735981128871441
+        },
+        {
+          "iteration": 7,
+          "pmax_mpa": 812.8809814694235,
+          "pmax_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "theta_min": 0.025493611582522502,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8809814694235,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8809814694197,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 7.226511278977938e-09,
+          "pressure_correction_linf_mpa": 2.01867014169693e-06
+        }
+      ],
+      "newton_records": [
+        {
+          "iteration": 0,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 0.00231796966313118,
+          "accepted_merit": 3.5771861070683854e-11,
+          "accepted_recovery": 3,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": null,
+              "linear_iterations": 69,
+              "linear_true_residual": 2.8241782066590185e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.0004916887795050184,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 1,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 337,
+              "linear_iterations": 63,
+              "linear_true_residual": 3.677811562461397e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 1.1460931557579977e-08,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 2,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 130,
+              "linear_iterations": 63,
+              "linear_true_residual": 3.76877638440845e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 3.931589672965369e-07,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 3,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 12,
+              "linear_iterations": 63,
+              "linear_true_residual": 3.7814939904604723e-10,
+              "accepted_correction_norm_l2": 4.789821756209068,
+              "accepted_correction_norm_linf": 0.438648033828852,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 1,
+          "accepted_alpha": 0.13556159499016274,
+          "nonlinear_residual_linf": 0.0008731149947184498,
+          "accepted_merit": 2.6843792787363753e-11,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.375694662445559e-10,
+              "accepted_correction_norm_l2": 0.06497994469096298,
+              "accepted_correction_norm_linf": 0.009200909795319926,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.13556159499016274,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 0.0007586493548999235,
+          "accepted_merit": 3.2148898747255496e-13,
+          "accepted_recovery": 1,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.3284778770265184e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.0013527237117509285,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 1,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 6,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.329428168272535e-10,
+              "accepted_correction_norm_l2": 0.41776404216878793,
+              "accepted_correction_norm_linf": 0.05527107553783701,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 3,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 0.0001516685253600385,
+          "accepted_merit": 1.359644924212633e-15,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.7113935921823396e-10,
+              "accepted_correction_norm_l2": 0.09716946733860218,
+              "accepted_correction_norm_linf": 0.02202629147969055,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 4,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 1.545215153979538e-05,
+          "accepted_merit": 1.0416353104375602e-19,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 66,
+              "linear_true_residual": 2.8054082053388814e-10,
+              "accepted_correction_norm_l2": 0.006129265078816979,
+              "accepted_correction_norm_linf": 0.002341252515222687,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 5,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 1.810727841231601e-07,
+          "accepted_merit": 1.4241679182433582e-27,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 66,
+              "linear_true_residual": 2.350735461828359e-10,
+              "accepted_correction_norm_l2": 4.986642253035245e-05,
+              "accepted_correction_norm_linf": 2.4238869161083618e-05,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 6,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 2.2593485705948423e-11,
+          "accepted_merit": 5.537721255856817e-32,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.3573629011508239e-10,
+              "accepted_correction_norm_l2": 5.1776319086664766e-09,
+              "accepted_correction_norm_linf": 2.8185952698362277e-09,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "comparison": {
+      "checkpoint_fields": [
+        {
+          "iteration": 0,
+          "pmax_mpa": 741.2698961818662,
+          "pmax_xy_um": [
+            0.0,
+            0.0
+          ],
+          "theta_min": 0.02741728247661246,
+          "theta_less_than_one_cells": 110824,
+          "upper_ridge_peak_mpa": 705.3945972540793,
+          "upper_ridge_peak_xy_um": [
+            56.249999999999986,
+            50.00000000000002
+          ],
+          "lower_ridge_peak_mpa": 705.3945972540803,
+          "lower_ridge_peak_xy_um": [
+            56.249999999999986,
+            -50.00000000000002
+          ]
+        },
+        {
+          "iteration": 1,
+          "pmax_mpa": 820.8494706061055,
+          "pmax_xy_um": [
+            37.49999999999999,
+            65.62499999999999
+          ],
+          "theta_min": 0.02524137223009415,
+          "theta_less_than_one_cells": 110045,
+          "cavitation_state_changed_nodes": 905,
+          "upper_ridge_peak_mpa": 820.8494706061055,
+          "upper_ridge_peak_xy_um": [
+            37.49999999999999,
+            65.62499999999999
+          ],
+          "lower_ridge_peak_mpa": 820.849470605921,
+          "lower_ridge_peak_xy_um": [
+            37.49999999999999,
+            -65.62499999999999
+          ],
+          "pressure_change_rms_mpa": 11.742246745226133,
+          "pressure_correction_linf_mpa": 436.7441317952474
+        },
+        {
+          "iteration": 2,
+          "pmax_mpa": 819.2356226315546,
+          "pmax_xy_um": [
+            42.187500000000014,
+            64.06249999999999
+          ],
+          "theta_min": 0.0254624077765242,
+          "theta_less_than_one_cells": 110061,
+          "cavitation_state_changed_nodes": 20,
+          "upper_ridge_peak_mpa": 819.2356226315546,
+          "upper_ridge_peak_xy_um": [
+            42.187500000000014,
+            64.06249999999999
+          ],
+          "lower_ridge_peak_mpa": 819.2356226315278,
+          "lower_ridge_peak_xy_um": [
+            42.187500000000014,
+            -64.06249999999999
+          ],
+          "pressure_change_rms_mpa": 2.1424727006825823,
+          "pressure_correction_linf_mpa": 140.93145758584475
+        },
+        {
+          "iteration": 3,
+          "pmax_mpa": 815.5617264315435,
+          "pmax_xy_um": [
+            42.187500000000014,
+            64.06249999999999
+          ],
+          "theta_min": 0.025468257211872736,
+          "theta_less_than_one_cells": 110061,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 815.5617264315435,
+          "upper_ridge_peak_xy_um": [
+            42.187500000000014,
+            64.06249999999999
+          ],
+          "lower_ridge_peak_mpa": 815.5617264315254,
+          "lower_ridge_peak_xy_um": [
+            42.187500000000014,
+            -64.06249999999999
+          ],
+          "pressure_change_rms_mpa": 0.1400406174817747,
+          "pressure_correction_linf_mpa": 17.896824542349936
+        },
+        {
+          "iteration": 4,
+          "pmax_mpa": 813.163774993471,
+          "pmax_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "theta_min": 0.02549210846165806,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 6,
+          "upper_ridge_peak_mpa": 813.1637749934614,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 813.163774993471,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.5224441020904531,
+          "pressure_correction_linf_mpa": 66.18780457010246
+        },
+        {
+          "iteration": 5,
+          "pmax_mpa": 812.8824390013158,
+          "pmax_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "theta_min": 0.025493588100357956,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8824390013141,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8824390013158,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.03033322641603661,
+          "pressure_correction_linf_mpa": 3.114440587684393
+        },
+        {
+          "iteration": 6,
+          "pmax_mpa": 812.8809816565774,
+          "pmax_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "theta_min": 0.025493611573172203,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8809816565756,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8809816565774,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 0.0006742758991826131,
+          "pressure_correction_linf_mpa": 0.11989632910120487
+        },
+        {
+          "iteration": 7,
+          "pmax_mpa": 812.8809814694212,
+          "pmax_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "theta_min": 0.025493611582522502,
+          "theta_less_than_one_cells": 110055,
+          "cavitation_state_changed_nodes": 0,
+          "upper_ridge_peak_mpa": 812.8809814694212,
+          "upper_ridge_peak_xy_um": [
+            51.562500000000014,
+            59.37500000000002
+          ],
+          "lower_ridge_peak_mpa": 812.8809814694206,
+          "lower_ridge_peak_xy_um": [
+            51.562500000000014,
+            -59.37500000000002
+          ],
+          "pressure_change_rms_mpa": 4.570116869267486e-07,
+          "pressure_correction_linf_mpa": 8.323817110061645e-05
+        }
+      ],
+      "newton_records": [
+        {
+          "iteration": 0,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 0.006673412746139278,
+          "accepted_merit": 2.3692211911843565e-10,
+          "accepted_recovery": 5,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": null,
+              "linear_iterations": 60,
+              "linear_true_residual": 6.235254172626487e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.0031314593619976598,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 1,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 883,
+              "linear_iterations": 60,
+              "linear_true_residual": 3.1087318754642486e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 2.347072946775833e-09,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 2,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 296,
+              "linear_iterations": 60,
+              "linear_true_residual": 5.039259624972349e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 2.1700986109721017e-08,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 3,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 96,
+              "linear_iterations": 67,
+              "linear_true_residual": 5.53326244713999e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 1.2142658648974627e-07,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 4,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 12,
+              "linear_iterations": 67,
+              "linear_true_residual": 5.515861417423275e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 1.3423355420755735e-05,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 5,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 2,
+              "linear_iterations": 67,
+              "linear_true_residual": 5.514595690940155e-10,
+              "accepted_correction_norm_l2": 8.526209542500952,
+              "accepted_correction_norm_linf": 0.6098098470872901,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 1,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 0.0015442488188636338,
+          "accepted_merit": 6.152707888643245e-12,
+          "accepted_recovery": 1,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 66,
+              "linear_true_residual": 1.1529440444512076e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.027130545702385826,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 1,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 20,
+              "linear_iterations": 66,
+              "linear_true_residual": 1.1554866587195374e-10,
+              "accepted_correction_norm_l2": 1.5439233565785575,
+              "accepted_correction_norm_linf": 0.19677743636061848,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "accepted_alpha": 0.21497249034317473,
+          "nonlinear_residual_linf": 0.0004291753623244063,
+          "accepted_merit": 3.827034662399612e-12,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 66,
+              "linear_true_residual": 3.9968723147344923e-10,
+              "accepted_correction_norm_l2": 0.10041273595532106,
+              "accepted_correction_norm_linf": 0.024988681113258773,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.21497249034317473,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 3,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 0.00034080946212448725,
+          "accepted_merit": 2.5694441932608443e-14,
+          "accepted_recovery": 1,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 66,
+              "linear_true_residual": 4.0052513563428515e-10,
+              "accepted_correction_norm_l2": null,
+              "accepted_correction_norm_linf": null,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": false,
+                  "reason": "pressure/content/film infeasible"
+                },
+                {
+                  "stage": "affine_bound_backtrack",
+                  "alpha": 0.002644894555748881,
+                  "accepted": false,
+                  "reason": "feasible Armijo candidate"
+                }
+              ]
+            },
+            {
+              "recovery": 1,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 6,
+              "linear_iterations": 66,
+              "linear_true_residual": 3.9859324444449403e-10,
+              "accepted_correction_norm_l2": 0.3746030380580691,
+              "accepted_correction_norm_linf": 0.09241560915318708,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 4,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 5.255486130439097e-05,
+          "accepted_merit": 1.165858923013933e-17,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.4597230778858675e-10,
+              "accepted_correction_norm_l2": 0.021755955181910334,
+              "accepted_correction_norm_linf": 0.004348579409027344,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 5,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 1.4541052444741935e-06,
+          "accepted_merit": 7.983366530945339e-24,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 1.0828841309238918e-10,
+              "accepted_correction_norm_l2": 0.0004834815329946258,
+              "accepted_correction_norm_linf": 0.00016740685630953426,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "iteration": 6,
+          "accepted_alpha": 1.0,
+          "nonlinear_residual_linf": 1.6239119501926676e-09,
+          "accepted_merit": 5.616875728035343e-32,
+          "accepted_recovery": 0,
+          "models": [
+            {
+              "recovery": 0,
+              "status": "linear_solved",
+              "active_set_changed_nodes": 0,
+              "linear_iterations": 67,
+              "linear_true_residual": 8.994802133670283e-11,
+              "accepted_correction_norm_l2": 3.275799235897449e-07,
+              "accepted_correction_norm_linf": 1.1622241196810884e-07,
+              "line_search_trials": [
+                {
+                  "stage": "full",
+                  "alpha": 1.0,
+                  "accepted": true,
+                  "reason": "Accepted best feasible directional Armijo trial"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "interpretation": "Agreement on this pair of accepted roots tests sensitivity to the 129x129 versus 257x257 prolongated seed; it does not establish mesh convergence or physical validation."
+}

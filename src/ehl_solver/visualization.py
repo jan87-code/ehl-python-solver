@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -114,6 +115,7 @@ def plot_run_summary(
     newton_corrections: int | None = None,
     backend: str = "CPU",
     runtime_seconds: float | None = None,
+    film_display_range_nm: tuple[float, float] | None = None,
 ) -> tuple[Figure, dict[str, NDArray[np.float64]], dict[str, float | tuple[float, float]]]:
     """Create the standard 2x2 physical summary and raw y=0 profiles."""
     x, y, pressure, film = _validated_plot_fields(
@@ -131,6 +133,12 @@ def plot_run_summary(
         not np.isfinite(runtime_seconds) or runtime_seconds < 0
     ):
         raise ValueError("runtime_seconds must be finite and nonnegative")
+    if film_display_range_nm is not None and (
+        len(film_display_range_nm) != 2
+        or not np.all(np.isfinite(film_display_range_nm))
+        or film_display_range_nm[0] >= film_display_range_nm[1]
+    ):
+        raise ValueError("film_display_range_nm must be a finite increasing pair")
 
     center_y, center_pressure = interpolate_cross_section(
         x, y, pressure, axis="x", coordinate_m=0.0
@@ -181,9 +189,16 @@ def plot_run_summary(
         f"runtime={runtime_seconds:.4g} s" if runtime_seconds is not None else "runtime=n/a",
     ]
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10), constrained_layout=True)
-    fig.suptitle(title, fontsize=15, fontweight="bold")
-    fig.text(0.5, 0.955, " | ".join(metadata), ha="center", va="top", fontsize=8)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle(title, y=0.99, fontsize=15, fontweight="bold")
+    fig.text(
+        0.5,
+        0.95,
+        textwrap.fill(" | ".join(metadata), width=145),
+        ha="center",
+        va="top",
+        fontsize=8,
+    )
     x_mm, y_mm = x * 1e3, y * 1e3
     pressure_image = axes[0, 0].imshow(
         pressure * 1e-9,
@@ -215,6 +230,11 @@ def plot_run_summary(
         bbox={"facecolor": "black", "alpha": 0.45, "edgecolor": "none", "pad": 2},
     )
 
+    film_range = (
+        tuple(float(value) for value in film_display_range_nm)
+        if film_display_range_nm is not None
+        else (float(np.min(film) * 1e9), float(np.max(film) * 1e9))
+    )
     film_image = axes[0, 1].imshow(
         film * 1e9,
         extent=(x_mm[0], x_mm[-1], y_mm[0], y_mm[-1]),
@@ -222,10 +242,28 @@ def plot_run_summary(
         interpolation="nearest",
         aspect="equal",
         cmap="viridis",
-        vmin=float(np.min(film) * 1e9),
-        vmax=float(np.max(film) * 1e9),
+        vmin=film_range[0],
+        vmax=film_range[1],
     )
-    fig.colorbar(film_image, ax=axes[0, 1], label="Film thickness [nm]")
+    fig.colorbar(
+        film_image,
+        ax=axes[0, 1],
+        label="Film thickness [nm]",
+        extend="both" if film_display_range_nm is not None else "neither",
+    )
+    pmax_rows, pmax_columns = np.where(
+        np.isclose(pressure, maximum_pressure, rtol=0, atol=abs(maximum_pressure) * 1e-14)
+    )
+    axes[0, 0].scatter(
+        x_mm[pmax_columns],
+        y_mm[pmax_rows],
+        marker="x",
+        color="cyan",
+        s=42,
+        linewidths=1.5,
+        label="p_max",
+    )
+    axes[0, 0].legend(loc="best", fontsize=8)
     axes[0, 1].scatter(
         [minimum_xy[0] * 1e3], [minimum_xy[1] * 1e3],
         marker="x", color="red", s=45, label="Global minimum",
@@ -237,7 +275,22 @@ def plot_run_summary(
         xlim=(x_mm[0], x_mm[-1]),
         ylim=(y_mm[0], y_mm[-1]),
     )
+    axes[0, 1].scatter(
+        [0.0],
+        [0.0],
+        marker="o",
+        facecolors="none",
+        edgecolors="white",
+        s=55,
+        linewidths=1.5,
+        label=f"h_c={central_film * 1e9:.4g} nm at (0,0)",
+    )
     axes[0, 1].legend(loc="best", fontsize=8)
+    if film_display_range_nm is not None:
+        axes[0, 1].set_title(
+            "Film-thickness field; display clipped to "
+            f"{film_range[0]:g}-{film_range[1]:g} nm"
+        )
 
     centerline_x_mm = center_y * 1e3
     axes[1, 0].plot(centerline_x_mm, center_pressure * 1e-9, linewidth=1.0)
@@ -277,6 +330,7 @@ def plot_run_summary(
         xlim=(x_mm[0], x_mm[-1]),
     )
     axes[1, 1].legend(loc="best", fontsize=7)
+    fig.tight_layout(rect=(0.01, 0.01, 0.99, 0.86))
     profiles = {
         "x_m": center_y,
         "pressure_centerline_pa": center_pressure,
@@ -306,6 +360,7 @@ def write_run_summary(
     newton_corrections: int | None = None,
     backend: str = "CPU",
     runtime_seconds: float | None = None,
+    film_display_range_nm: tuple[float, float] | None = None,
 ) -> tuple[Path, Path]:
     """Save a standardized high-resolution PNG and its raw centerline CSV."""
     case = re.sub(r"[^A-Za-z0-9_.-]+", "_", case_name).strip("._")
@@ -335,6 +390,7 @@ def write_run_summary(
         newton_corrections=newton_corrections,
         backend=backend,
         runtime_seconds=runtime_seconds,
+        film_display_range_nm=film_display_range_nm,
     )
     try:
         figure.savefig(figure_path, dpi=240)

@@ -10,10 +10,12 @@ import numpy as np
 import scipy
 from scipy.integrate import trapezoid
 from scipy.interpolate import RegularGridInterpolator
+from scipy.signal import find_peaks
 
 from ehl_solver.elasticity import cell_integrated_kernel, elastic_deformation
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.transport_candidate import donor_fluxes
+from ehl_solver.visualization import write_run_summary
 
 MAIN_BOUNDS_M = (-100e-6, 60e-6, -75e-6, 75e-6)
 RIDGE_BOUNDS_M = (35e-6, 60e-6, 45e-6, 75e-6)
@@ -55,6 +57,238 @@ def _relative_metrics(reference, comparison):
         "relative_l2": float(np.linalg.norm(difference) / np.linalg.norm(reference)),
         "rms": float(np.sqrt(np.mean(difference**2))),
         "linf": float(np.max(np.abs(difference))),
+    }
+
+
+def _same_grid_seed_comparison(reference, comparison):
+    if not (
+        np.array_equal(reference["x_m"], comparison["x_m"])
+        and np.array_equal(reference["y_m"], comparison["y_m"])
+    ):
+        raise ValueError("same-grid seed comparison requires identical coordinates")
+    if reference["summary"]["case"] != comparison["summary"]["case"]:
+        raise ValueError("same-grid seed comparison requires identical physical cases")
+
+    x, y = reference["x_m"], reference["y_m"]
+    dx, dy = float(np.diff(x)[0]), float(np.diff(y)[0])
+    field_differences = {}
+    for name in (
+        "pressure_pa",
+        "film_m",
+        "deformation_m",
+        "theta",
+        "density_kg_m3",
+        "viscosity_pa_s",
+    ):
+        first, second = reference[name], comparison[name]
+        if first.shape != second.shape:
+            raise ValueError(f"field shape mismatch for {name}")
+        difference = second - first
+        metrics = _relative_metrics(first, second)
+        j, i = np.unravel_index(np.argmax(np.abs(difference)), difference.shape)
+        metrics["largest_difference_xy_um"] = [
+            float(x[i] * 1e6),
+            float(y[j] * 1e6),
+        ]
+        field_differences[name] = metrics
+
+    regions = {
+        "main_contact": (
+            (x[None, :] >= MAIN_BOUNDS_M[0])
+            & (x[None, :] <= MAIN_BOUNDS_M[1])
+            & (y[:, None] >= MAIN_BOUNDS_M[2])
+            & (y[:, None] <= MAIN_BOUNDS_M[3])
+        ),
+        "fixed_core_ridge": (
+            (x[None, :] >= RIDGE_BOUNDS_M[0])
+            & (x[None, :] <= RIDGE_BOUNDS_M[1])
+            & (np.abs(y[:, None]) >= RIDGE_BOUNDS_M[2])
+            & (np.abs(y[:, None]) <= RIDGE_BOUNDS_M[3])
+        ),
+        "fixed_upper_neighborhood": (
+            (x[None, :] >= 45e-6)
+            & (x[None, :] <= 60e-6)
+            & (y[:, None] >= 50e-6)
+            & (y[:, None] <= 65e-6)
+        ),
+        "fixed_lower_neighborhood": (
+            (x[None, :] >= 45e-6)
+            & (x[None, :] <= 60e-6)
+            & (y[:, None] >= -65e-6)
+            & (y[:, None] <= -50e-6)
+        ),
+    }
+    fixed_regions = {}
+    for name, mask in regions.items():
+        if not np.any(mask):
+            raise ValueError(f"empty fixed comparison region {name}")
+        a = reference["pressure_pa"][mask]
+        b = comparison["pressure_pa"][mask]
+        fixed_regions[name] = {
+            "bounds_definition": "fixed physical coordinates; inclusive nodes",
+            "pressure_difference_rms_mpa": float(np.sqrt(np.mean((b - a) ** 2)) / 1e6),
+            "reference_mean_pressure_mpa": float(np.mean(a) / 1e6),
+            "comparison_mean_pressure_mpa": float(np.mean(b) / 1e6),
+            "reference_integrated_pressure_n": float(np.sum(a) * dx * dy),
+            "comparison_integrated_pressure_n": float(np.sum(b) * dx * dy),
+        }
+
+    def scalar_state(run):
+        pressure, film = run["pressure_pa"], run["film_m"]
+        pmax = float(np.max(pressure))
+        p_locations = np.argwhere(
+            np.isclose(pressure, pmax, rtol=0.0, atol=abs(pmax) * 1e-14)
+        )
+        hmin = float(np.min(film))
+        h_locations = np.argwhere(
+            np.isclose(film, hmin, rtol=0.0, atol=abs(hmin) * 1e-14)
+        )
+        return {
+            "p_max_mpa": pmax / 1e6,
+            "p_max_locations_xy_um": [
+                [float(x[i] * 1e6), float(y[j] * 1e6)] for j, i in p_locations
+            ],
+            "h_c_nm": float(film[len(y) // 2, len(x) // 2] * 1e9),
+            "h_min_nm": hmin * 1e9,
+            "h_min_locations_xy_um": [
+                [float(x[i] * 1e6), float(y[j] * 1e6)] for j, i in h_locations
+            ],
+            "integrated_load_n": float(np.sum(pressure) * dx * dy),
+        }
+
+    def compact_history(run):
+        history = _checkpoint_history(run)
+        checkpoint_keys = (
+            "iteration",
+            "pmax_mpa",
+            "pmax_xy_um",
+            "theta_min",
+            "theta_less_than_one_cells",
+            "cavitation_state_changed_nodes",
+            "upper_ridge_peak_mpa",
+            "upper_ridge_peak_xy_um",
+            "lower_ridge_peak_mpa",
+            "lower_ridge_peak_xy_um",
+            "pressure_change_rms_mpa",
+            "pressure_correction_linf_mpa",
+        )
+        record_keys = (
+            "iteration",
+            "accepted_alpha",
+            "nonlinear_residual_linf",
+            "accepted_merit",
+            "accepted_recovery",
+        )
+        model_keys = (
+            "recovery",
+            "status",
+            "active_set_changed_nodes",
+            "linear_iterations",
+            "linear_true_residual",
+            "accepted_correction_norm_l2",
+            "accepted_correction_norm_linf",
+        )
+        return {
+            "checkpoint_fields": [
+                {key: row[key] for key in checkpoint_keys if key in row}
+                for row in history["checkpoint_fields"]
+            ],
+            "newton_records": [
+                {
+                    **{key: row[key] for key in record_keys},
+                    "models": [
+                        {
+                            **{key: model[key] for key in model_keys if key in model},
+                            "line_search_trials": model["trials"],
+                        }
+                        for model in row["linear_models"]
+                    ],
+                }
+                for row in history["newton_records"]
+            ],
+        }
+
+    def run_metadata(run):
+        summary = run["summary"]
+        resource_path = Path(run["directory"]) / "resource_monitor.json"
+        resource_monitor = None
+        if resource_path.exists():
+            monitor = json.loads(resource_path.read_text(encoding="utf-8-sig"))
+            if "peak_working_set_bytes" in monitor:
+                resource_monitor = {
+                    key: monitor[key]
+                    for key in (
+                        "elapsed_seconds",
+                        "peak_working_set_bytes",
+                        "available_ram_min_bytes",
+                        "samples",
+                        "guard_working_set_bytes",
+                        "guard_min_available_bytes",
+                    )
+                }
+            else:
+                samples = monitor["samples"]
+                resource_monitor = {
+                    "schema": "legacy per-sample monitor; process-memory maximum omitted",
+                    "initial_available_ram_gib": monitor["initial_available_ram_gib"],
+                    "minimum_available_ram_gib": monitor[
+                        "minimum_available_ram_gib"
+                    ],
+                    "initial_free_disk_gib": monitor["initial_free_disk_gib"],
+                    "sample_count": len(samples),
+                }
+        return {
+            "status": summary["status"],
+            "termination_reason": summary["termination_reason"],
+            "case": summary["case"],
+            "equation": summary["equation"],
+            "transport_fraction": summary["transport_fraction"],
+            "elapsed_seconds": summary["elapsed_seconds"],
+            "audit": summary["audit"],
+            "runtime": summary["runtime"],
+            "source_sha256": {
+                Path(name).name: digest
+                for name, digest in summary["source_sha256"].items()
+            },
+            "resource_monitor": resource_monitor,
+            "run_summary_figure": summary.get("run_summary_figure"),
+            "run_summary_profiles": summary.get("run_summary_profiles"),
+        }
+
+    return {
+        "comparison_method": (
+            "Direct nodal comparison; both accepted 513x513 roots have identical "
+            "physical coordinates and case inputs. Fixed-region pressure "
+            "integrals use nodal sums times dx*dy."
+        ),
+        "reference": {
+            "directory": reference["directory"],
+            "state_sha256": reference["summary"]["state_sha256"],
+            "seed": reference["summary"].get("seed"),
+            "run_metadata": run_metadata(reference),
+        },
+        "comparison": {
+            "directory": comparison["directory"],
+            "state_sha256": comparison["summary"]["state_sha256"],
+            "seed": comparison["summary"].get("seed"),
+            "run_metadata": run_metadata(comparison),
+        },
+        "same_grid_and_case": True,
+        "field_differences": field_differences,
+        "fixed_regions": fixed_regions,
+        "scalars": {
+            "reference": scalar_state(reference),
+            "comparison": scalar_state(comparison),
+        },
+        "nonlinear_history": {
+            "reference": compact_history(reference),
+            "comparison": compact_history(comparison),
+        },
+        "interpretation": (
+            "Agreement on this pair of accepted roots tests sensitivity to the "
+            "129x129 versus 257x257 prolongated seed; it does not establish "
+            "mesh convergence or physical validation."
+        ),
     }
 
 
@@ -358,6 +592,398 @@ def _ridge_geometry(run):
             )
         )),
         "positive_branch_midpoint_curvature_per_um": curvature,
+    }
+
+
+def _outlet_feature_locus(run, *, half_window_m=5e-6):
+    """Track the downstream local pressure maximum and outlet film minimum by y."""
+    x, y = run["x_m"], run["y_m"]
+    pressure, film = run["pressure_pa"], run["film_m"]
+    rows = []
+    for j, y_value in enumerate(y):
+        candidates, properties = find_peaks(
+            pressure[j], prominence=1e6, plateau_size=1
+        )
+        candidates = [
+            (int(index), float(prominence))
+            for index, prominence in zip(
+                candidates, properties["prominences"], strict=True
+            )
+            if 20e-6 <= x[index] <= 120e-6
+        ]
+        if candidates:
+            peak_index, prominence = max(candidates, key=lambda item: item[1])
+            width = _local_half_prominence_width(
+                x, pressure[j], peak_index, (20e-6, 120e-6)
+            )
+            spike_x = float(x[peak_index])
+            lower_x = max(x[0], spike_x - half_window_m)
+            upper_x = min(x[-1], spike_x + half_window_m)
+            integration_x = np.linspace(lower_x, upper_x, 101)
+            local_integral = float(
+                trapezoid(np.interp(integration_x, x, pressure[j]), x=integration_x)
+            )
+            peak_data = {
+                "spike_x_um": spike_x * 1e6,
+                "spike_pressure_mpa": float(pressure[j, peak_index] / 1e6),
+                "peak_prominence_mpa": prominence / 1e6,
+                "half_prominence_width_um": width["width_um"],
+                "cells_across_width": width["cells_across_width"],
+                "width_truncated_by_fixed_x_band": width["truncated"],
+                "fixed_window_pressure_integral_n_per_m": local_integral,
+                "fixed_window_bounds_um": [
+                    lower_x * 1e6,
+                    upper_x * 1e6,
+                ],
+            }
+        else:
+            peak_index = None
+            peak_data = {
+                "spike_x_um": None,
+                "spike_pressure_mpa": None,
+                "peak_prominence_mpa": None,
+                "half_prominence_width_um": None,
+                "cells_across_width": None,
+                "width_truncated_by_fixed_x_band": None,
+                "fixed_window_pressure_integral_n_per_m": None,
+                "fixed_window_bounds_um": None,
+            }
+
+        outlet_mask = (x >= 0.0) & (x <= 120e-6)
+        outlet_indices = np.flatnonzero(outlet_mask)
+        film_index = int(outlet_indices[np.argmin(film[j, outlet_mask])])
+        rows.append(
+            {
+                "y_um": float(y_value * 1e6),
+                **peak_data,
+                "film_minimum_x_um": float(x[film_index] * 1e6),
+                "film_minimum_nm": float(film[j, film_index] * 1e9),
+                "theta_at_pressure_peak": (
+                    float(run["theta"][j, peak_index])
+                    if peak_index is not None
+                    else None
+                ),
+                "pressure_peak_found": peak_index is not None,
+            }
+        )
+
+    p = pressure
+    max_pressure = float(np.max(p))
+    global_points = np.argwhere(
+        np.isclose(p, max_pressure, rtol=0.0, atol=abs(max_pressure) * 1e-14)
+    )
+    global_xy_um = [
+        [float(x[i] * 1e6), float(y[j] * 1e6)] for j, i in global_points
+    ]
+    peak_y = max((abs(point[1]) for point in global_xy_um), default=0.0)
+    connected_rows = [row for row in rows if abs(row["y_um"]) <= peak_y + 1e-9]
+    has_continuous_cut_peak = bool(connected_rows) and all(
+        row["pressure_peak_found"] for row in connected_rows
+    )
+    positive = [row for row in connected_rows if row["y_um"] >= 0]
+    x_steps = np.diff([row["spike_x_um"] for row in positive])
+    return {
+        "pressure_maximum_locus": rows,
+        "global_pmax_locations_xy_um": global_xy_um,
+        "tracking_definition": (
+            "For every y row, select the most prominent local maximum with "
+            "20<=x<=120 um and prominence>=1 MPa. Width is the 1-D half-"
+            "prominence width relative to the higher of the left/right "
+            "minimum over that same fixed x-band. Integrals use a fixed "
+            "+/-5 um x-window, reported per unit transverse length."
+        ),
+        "film_constriction_definition": (
+            "For each y, take min(h) over 0<=x<=120 um; this is a transverse "
+            "locus of outlet constrictions, not a global-minimum locator."
+        ),
+        "continuity_from_centerline_to_global_off_axis_peak": {
+            "continuous_cut_maxima_present": has_continuous_cut_peak,
+            "rows_in_interval": len(connected_rows),
+            "positive_branch_maximum_adjacent_x_step_um": (
+                float(np.max(np.abs(x_steps))) if x_steps.size else None
+            ),
+            "classification": (
+                "one continuous curved downstream pressure-maximum ridge"
+                if has_continuous_cut_peak
+                else "inconclusive at the available transverse cut sampling"
+            ),
+            "scope_note": (
+                "Continuity describes the sampled cut-local-maxima locus; it "
+                "does not establish a continuous physical singularity or a "
+                "resolved ridge width."
+            ),
+        },
+    }
+
+
+def _local_half_prominence_width(coordinate_m, values_pa, peak_index, bounds_m):
+    """Measure width relative to the higher local valley in a fixed x-band."""
+    lower = int(np.searchsorted(coordinate_m, bounds_m[0], side="left"))
+    upper = int(np.searchsorted(coordinate_m, bounds_m[1], side="right"))
+    if lower >= peak_index or upper <= peak_index + 1:
+        return {
+            "width_um": None,
+            "cells_across_width": None,
+            "truncated": True,
+        }
+    left_min = lower + int(np.argmin(values_pa[lower : peak_index + 1]))
+    right_min = peak_index + int(np.argmin(values_pa[peak_index:upper]))
+    peak = float(values_pa[peak_index])
+    baseline = max(float(values_pa[left_min]), float(values_pa[right_min]))
+    if baseline >= peak:
+        return {
+            "width_um": None,
+            "cells_across_width": None,
+            "truncated": True,
+        }
+    half_level = baseline + 0.5 * (peak - baseline)
+    left = peak_index
+    while left > lower and values_pa[left - 1] >= half_level:
+        left -= 1
+    right = peak_index
+    while right + 1 < upper and values_pa[right + 1] >= half_level:
+        right += 1
+    if left == lower or right == upper - 1:
+        return {
+            "width_um": None,
+            "cells_across_width": None,
+            "truncated": True,
+        }
+    left_crossing = coordinate_m[left - 1] + (
+        (half_level - values_pa[left - 1])
+        * (coordinate_m[left] - coordinate_m[left - 1])
+        / (values_pa[left] - values_pa[left - 1])
+    )
+    right_crossing = coordinate_m[right] + (
+        (half_level - values_pa[right])
+        * (coordinate_m[right + 1] - coordinate_m[right])
+        / (values_pa[right + 1] - values_pa[right])
+    )
+    width_m = float(right_crossing - left_crossing)
+    spacing_m = float(np.median(np.diff(coordinate_m)))
+    return {
+        "width_um": width_m * 1e6,
+        "cells_across_width": width_m / spacing_m,
+        "truncated": False,
+    }
+
+
+def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 996.0)):
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle
+
+    output = Path(output_directory)
+    output.mkdir(parents=True, exist_ok=True)
+    case = PointContactCase(**run["summary"]["case"])
+    p = run["pressure_pa"]
+    x, y = run["x_m"], run["y_m"]
+    locus = _outlet_feature_locus(run)
+    rows = locus["pressure_maximum_locus"]
+    pressure_rows = [row for row in rows if row["pressure_peak_found"]]
+    pressure_x = np.asarray([row["spike_x_um"] for row in pressure_rows])
+    pressure_y = np.asarray([row["y_um"] for row in pressure_rows])
+    film_x = np.asarray([row["film_minimum_x_um"] for row in rows])
+    film_y = np.asarray([row["y_um"] for row in rows])
+    pmax_xy = np.asarray(locus["global_pmax_locations_xy_um"])
+    feature_json = output / "outlet_feature_locus.json"
+    feature_csv = output / "outlet_feature_locus.csv"
+    feature_json.write_text(json.dumps(locus, indent=2, allow_nan=False))
+    columns = (
+        "y_um",
+        "spike_x_um",
+        "spike_pressure_mpa",
+        "peak_prominence_mpa",
+        "half_prominence_width_um",
+        "cells_across_width",
+        "width_truncated_by_fixed_x_band",
+        "fixed_window_pressure_integral_n_per_m",
+        "film_minimum_x_um",
+        "film_minimum_nm",
+        "theta_at_pressure_peak",
+    )
+    np.savetxt(
+        feature_csv,
+        np.asarray(
+            [
+                [
+                    np.nan if row[column] is None else row[column]
+                    for column in columns
+                ]
+                for row in rows
+            ],
+            dtype=np.float64,
+        ),
+        delimiter=",",
+        header=",".join(columns),
+        comments="",
+    )
+
+    summary_png, profile_csv = write_run_summary(
+        x,
+        y,
+        p,
+        run["film_m"],
+        directory=output,
+        case_name="ciulli_15n_donor",
+        load_n=case.load_n,
+        formulation="donor-flux",
+        status=run["summary"]["status"],
+        force_audit=run["summary"].get("audit"),
+        newton_corrections=run["summary"].get("newton_corrections"),
+        backend="CPU (NumPy/SciPy)",
+        runtime_seconds=run["summary"].get("elapsed_seconds"),
+        film_display_range_nm=film_range_nm,
+    )
+
+    xx, yy = np.meshgrid(x * 1e3, y * 1e3)
+    feature_x_mm, feature_y_mm = pressure_x / 1000, pressure_y / 1000
+    film_x_mm, film_y_mm = film_x / 1000, film_y / 1000
+    hertz_radius_mm = case.hertz.radius_m * 1e3
+    circle = Circle(
+        (0.0, 0.0),
+        hertz_radius_mm,
+        fill=False,
+        linestyle="--",
+        linewidth=1.2,
+        edgecolor="white",
+        label="Nominal dry-Hertz boundary",
+    )
+    figure, axes = plt.subplots(1, 2, figsize=(15, 6), constrained_layout=True)
+    pressure_map = axes[0].pcolormesh(
+        xx, yy, p * 1e-9, shading="auto", cmap="magma"
+    )
+    figure.colorbar(pressure_map, ax=axes[0], label="Pressure [GPa]")
+    axes[0].plot(
+        feature_x_mm,
+        feature_y_mm,
+        color="cyan",
+        linewidth=1.5,
+        label="Downstream local-maximum locus",
+    )
+    axes[0].axhline(0, color="white", linestyle=":", linewidth=0.9, label="y=0")
+    if pmax_xy.size:
+        axes[0].scatter(
+            pmax_xy[:, 0] / 1000,
+            pmax_xy[:, 1] / 1000,
+            marker="x",
+            color="lime",
+            s=45,
+            label="Global p_max",
+        )
+    theta_level = 1.0 - 1e-10
+    if np.min(run["theta"]) < theta_level < np.max(run["theta"]):
+        axes[0].contour(
+            xx,
+            yy,
+            run["theta"],
+            levels=[theta_level],
+            colors=["white"],
+            linewidths=0.9,
+        )
+    axes[0].add_patch(circle)
+    from matplotlib.lines import Line2D
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    handles.append(
+        Line2D([], [], color="white", linewidth=0.9, label="theta=1/cavitation boundary")
+    )
+    labels.append("theta=1/cavitation boundary")
+    axes[0].legend(handles, labels, loc="lower right", fontsize=7)
+    axes[0].annotate(
+        "+x entrainment",
+        xy=(0.96, 0.93),
+        xytext=(0.76, 0.93),
+        xycoords="axes fraction",
+        textcoords="axes fraction",
+        color="white",
+        arrowprops={"arrowstyle": "->", "color": "white"},
+        fontsize=8,
+    )
+    axes[0].set(
+        xlabel="x [mm]",
+        ylabel="y [mm]",
+        title="Pressure maximum locus; theta=1 boundary (white)",
+        xlim=(-0.12, 0.15),
+        ylim=(-0.12, 0.12),
+    )
+
+    film_map = axes[1].pcolormesh(
+        xx,
+        yy,
+        run["film_m"] * 1e9,
+        shading="auto",
+        cmap="viridis",
+        vmin=film_range_nm[0],
+        vmax=film_range_nm[1],
+    )
+    figure.colorbar(
+        film_map, ax=axes[1], label="Film thickness [nm]", extend="both"
+    )
+    axes[1].plot(
+        feature_x_mm,
+        feature_y_mm,
+        color="white",
+        linewidth=1.4,
+        label="Pressure maximum locus",
+    )
+    axes[1].plot(
+        film_x_mm,
+        film_y_mm,
+        color="magenta",
+        linewidth=1.4,
+        label="Outlet film-minimum locus",
+    )
+    axes[1].axhline(0, color="white", linestyle=":", linewidth=0.9, label="y=0")
+    if pmax_xy.size:
+        axes[1].scatter(
+            pmax_xy[:, 0] / 1000,
+            pmax_xy[:, 1] / 1000,
+            marker="x",
+            color="red",
+            s=45,
+            label="Global p_max",
+        )
+    min_j, min_i = np.unravel_index(np.argmin(run["film_m"]), run["film_m"].shape)
+    axes[1].scatter(
+        [x[min_i] * 1e3],
+        [y[min_j] * 1e3],
+        marker="v",
+        color="black",
+        s=38,
+        label="Global h_min",
+    )
+    axes[1].add_patch(
+        Circle(
+            (0.0, 0.0),
+            hertz_radius_mm,
+            fill=False,
+            linestyle="--",
+            linewidth=1.2,
+            edgecolor="black",
+            label="Nominal dry-Hertz boundary",
+        )
+    )
+    axes[1].set(
+        xlabel="x [mm]",
+        ylabel="y [mm]",
+        title=(
+            "Film display clipped to "
+            f"{film_range_nm[0]:g}-{film_range_nm[1]:g} nm; data unchanged"
+        ),
+        xlim=(-0.12, 0.15),
+        ylim=(-0.12, 0.12),
+    )
+    axes[1].legend(loc="lower right", fontsize=7)
+    overlay_png = output / "ciulli_15n_513_donor_outlet_locus_overlay.png"
+    figure.savefig(overlay_png, dpi=240)
+    plt.close(figure)
+    return {
+        "run_summary_figure": summary_png.name,
+        "run_summary_profiles": profile_csv.name,
+        "outlet_locus_figure": overlay_png.name,
+        "outlet_locus_data": feature_csv.name,
+        "outlet_locus_metadata": feature_json.name,
+        "film_display_range_nm": list(film_range_nm),
     }
 
 
@@ -890,6 +1516,7 @@ def diagnose(root_paths):
         "smooth_fully_flooded_flux_manufactured_order": _manufactured_flux_order(case),
         "independent_gaussian_elasticity_check": _elasticity_synthetic(case),
         "513_newton_history": _checkpoint_history(runs[-1]),
+        "outlet_spike_locus_513": _outlet_feature_locus(runs[-1]),
         "interpretation": (
             "Post-processing only; uses accepted saved roots and checkpoints. "
             "No simulation, field modification, or physical-parameter tuning."
@@ -901,8 +1528,41 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--roots", nargs=4, type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--seed-comparison",
+        nargs=2,
+        type=Path,
+        metavar=("REFERENCE_513", "ALTERNATE_513"),
+        help="compare two accepted same-grid roots from different prolongated seeds",
+    )
+    parser.add_argument(
+        "--seed-comparison-output",
+        type=Path,
+        help="write compact same-grid seed comparison metadata to this path",
+    )
+    parser.add_argument(
+        "--visual-output",
+        type=Path,
+        help="new directory for the standardized 2x2 figure and outlet-locus overlay",
+    )
     args = parser.parse_args(argv)
     result = diagnose(args.roots)
+    if args.seed_comparison is not None:
+        seed_comparison = _same_grid_seed_comparison(
+            _read_root(args.seed_comparison[0]),
+            _read_root(args.seed_comparison[1]),
+        )
+        result["same_grid_seed_comparison"] = seed_comparison
+        if args.seed_comparison_output is not None:
+            args.seed_comparison_output.write_text(
+                json.dumps(seed_comparison, indent=2, allow_nan=False)
+            )
+    elif args.seed_comparison_output is not None:
+        parser.error("--seed-comparison-output requires --seed-comparison")
+    if args.visual_output is not None:
+        result["visual_outputs"] = _write_outlet_locus_outputs(
+            _read_root(args.roots[-1]), args.visual_output
+        )
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False))
     print(f"Wrote core-ridge diagnostics to {args.output}")
     return 0

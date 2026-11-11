@@ -151,7 +151,7 @@ def _field_comparison(coarse, fine):
 
 def _midplane_comparison(coarse, fine):
     profile_comparisons = {}
-    coordinates = np.linspace(*PROFILE_WINDOW_M, 401) * 1e-6
+    coordinates = np.linspace(*PROFILE_WINDOW_M, 401)
     for direction, coordinate_key, other_key in (
         ("longitudinal", "x_m", "y_m"),
         ("transverse", "y_m", "x_m"),
@@ -498,6 +498,224 @@ def main_contact_structure_comparison(coarse, fine, *, spacing_um=0.5):
         "interpretation_note": (
             "The Hertz footprint is a geometric diagnostic partition, not a "
             "separate Reynolds or cavitation boundary."
+        ),
+    }
+
+
+def _scalar_refinement(values):
+    q65, q129, q257 = map(float, values)
+    coarse_change, fine_change = q129 - q65, q257 - q129
+    result = {
+        "values_65_129_257": [q65, q129, q257],
+        "change_65_to_129": coarse_change,
+        "change_129_to_257": fine_change,
+        "fine_to_coarse_change_ratio": (
+            abs(fine_change / coarse_change) if coarse_change else None
+        ),
+        "monotone_contraction": bool(
+            coarse_change * fine_change > 0
+            and abs(fine_change) < abs(coarse_change)
+        ),
+        "observed_order": None,
+        "richardson_extrapolated_value": None,
+        "fine_grid_gci_percent_fs_1_25": None,
+        "coarse_grid_gci_percent_fs_1_25": None,
+        "asymptotic_gci_ratio": None,
+    }
+    if result["monotone_contraction"]:
+        order = float(np.log(abs(coarse_change / fine_change)) / np.log(2.0))
+        denominator = 2**order - 1
+        coarse_gci = (
+            1.25 * abs(coarse_change / q129) / denominator * 100 if q129 else None
+        )
+        fine_gci = (
+            1.25 * abs(fine_change / q257) / denominator * 100 if q257 else None
+        )
+        result.update(
+            observed_order=order,
+            richardson_extrapolated_value=float(q257 + fine_change / denominator),
+            coarse_grid_gci_percent_fs_1_25=coarse_gci,
+            fine_grid_gci_percent_fs_1_25=fine_gci,
+            asymptotic_gci_ratio=(
+                float(fine_gci / (coarse_gci / 2**order))
+                if coarse_gci and fine_gci
+                else None
+            ),
+        )
+    return result
+
+
+def _outlet_integrated_pressure(run, spike):
+    if not spike.get("identified"):
+        return {
+            "defined": False,
+            "reason": spike.get("reason"),
+        }
+    p = run["pressure_pa"]
+    peak_x = spike["peak_x_m"]
+    width = spike["half_prominence_width_m"]
+    a_h = circular_point_contact(
+        run["case"]["load_n"],
+        run["case"]["radius_m"],
+        run["case"]["contact_modulus_pa"],
+    ).radius_m
+    integration_spacing = 0.25e-6
+    x_sample = np.linspace(
+        peak_x - width / 2,
+        peak_x + width / 2,
+        max(3, int(np.ceil(width / integration_spacing)) + 1),
+    )
+    y_sample = np.linspace(-a_h, a_h, int(np.ceil(2 * a_h / integration_spacing)) + 1)
+    xx, yy = np.meshgrid(x_sample, y_sample)
+    pressure_sample = _sample_2d(run, p, xx, yy)
+    contribution_n = _integral(pressure_sample, x_sample, y_sample)
+    centerline_x, centerline_pressure = centerline_pressure_profile(
+        run["x_m"], run["y_m"], p
+    )
+    centerline_sample = np.interp(x_sample, centerline_x, centerline_pressure)
+    local_baseline = np.interp(
+        x_sample,
+        [x_sample[0], x_sample[-1]],
+        [centerline_sample[0], centerline_sample[-1]],
+    )
+    return {
+        "defined": True,
+        "x_window_um": [float((peak_x - width / 2) * 1e6), float((peak_x + width / 2) * 1e6)],
+        "y_window_um": [-float(a_h * 1e6), float(a_h * 1e6)],
+        "pressure_integral_n": contribution_n,
+        "centerline_pressure_integral_pa_m": float(
+            trapezoid(centerline_sample, x=x_sample)
+        ),
+        "centerline_excess_above_local_linear_baseline_pa_m": float(
+            trapezoid(np.maximum(0.0, centerline_sample - local_baseline), x=x_sample)
+        ),
+        "interpolation_spacing_um": integration_spacing * 1e6,
+        "interpretation": (
+            "Integrated interpolated absolute pressure over the detected "
+            "centerline half-prominence width and the Hertz-radius lateral span. "
+            "The 1D excess integral subtracts the local linear endpoint baseline."
+        ),
+    }
+
+
+def three_grid_convergence(mesh_runs):
+    """Assess 65/129/257 nested-grid behavior without forcing extrapolation."""
+    runs = sorted(mesh_runs, key=lambda run: run["case"]["nx"])
+    if len(runs) != 3 or [run["case"]["nx"] for run in runs] != [65, 129, 257]:
+        raise ValueError("Exactly the accepted 65x65, 129x129 and 257x257 roots are required")
+    if any(
+        run["case"]["ny"] != run["case"]["nx"]
+        or run["case"]["transport"] != "donor"
+        or run["case"]["domain_half_width_x_m"] != runs[0]["case"]["domain_half_width_x_m"]
+        or run["case"]["domain_half_width_y_m"] != runs[0]["case"]["domain_half_width_y_m"]
+        for run in runs
+    ):
+        raise ValueError("The three runs must be square donor grids on one physical domain")
+    intervals = [run["case"]["nx"] - 1 for run in runs]
+    if intervals[1] / intervals[0] != 2 or intervals[2] / intervals[1] != 2:
+        raise ValueError("The nested grid refinement ratio must be two")
+    values = {}
+    for key, getter in (
+        ("h_min_nm", lambda run: np.min(run["film_m"]) * 1e9),
+        (
+            "h_c_nm",
+            lambda run: run["film_m"][len(run["y_m"]) // 2, len(run["x_m"]) // 2]
+            * 1e9,
+        ),
+        ("p_max_mpa", lambda run: np.max(run["pressure_pa"]) / 1e6),
+        ("integrated_load_n", lambda run: run["audit"]["force_n"]),
+    ):
+        values[key] = _scalar_refinement([getter(run) for run in runs])
+    root_audits = []
+    scalar_locations = []
+    for run in runs:
+        j_min, i_min = np.unravel_index(
+            int(np.argmin(run["film_m"])), run["film_m"].shape
+        )
+        j_max, i_max = np.unravel_index(
+            int(np.argmax(run["pressure_pa"])), run["pressure_pa"].shape
+        )
+        scalar_locations.append(
+            {
+                "grid": [run["case"]["ny"], run["case"]["nx"]],
+                "h_min_xy_um": [
+                    float(run["x_m"][i_min] * 1e6),
+                    float(run["y_m"][j_min] * 1e6),
+                ],
+                "p_max_xy_um": [
+                    float(run["x_m"][i_max] * 1e6),
+                    float(run["y_m"][j_max] * 1e6),
+                ],
+            }
+        )
+        audit = run["audit"]
+        root_audits.append(
+            {
+                "grid": [run["case"]["ny"], run["case"]["nx"]],
+                "numerically_accepted": audit["numerically_accepted"],
+                "force_n": audit["force_n"],
+                "force_relative_error": audit["force_relative_error"],
+                "relative_local_balance": audit["mass"]["relative_local_balance"],
+                "relative_global_balance": audit["mass"]["relative_global_balance"],
+                "maximum_si_mass_divergence_kg_m2_s": audit["mass"][
+                    "maximum_si_mass_divergence_kg_m2_s"
+                ],
+                "maximum_complementarity": audit["mass"]["maximum_complementarity"],
+                "film_reconstruction_error_m": audit["film_reconstruction_error_m"],
+                "direct_elasticity_checked": audit["direct_elasticity_checked"],
+            }
+        )
+
+    pairwise = []
+    for coarse, fine in zip(runs, runs[1:], strict=False):
+        fields = regional_mesh_comparison(coarse, fine)
+        structure = main_contact_structure_comparison(coarse, fine)
+        pairwise.append(
+            {
+                "comparison": f"{coarse['case']['nx']} -> {fine['case']['nx']}",
+                "regions": fields["regions"],
+                "hertz_core_partition": structure["regions"],
+                "main_contact_profile_differences": _midplane_comparison(coarse, fine),
+                "hotspot_and_cavitation": structure["hotspot_and_cavitation"],
+            }
+        )
+    field_orders = {}
+    for region_key in ("main_contact_excluding_spike", "outlet_spike", "full_contact"):
+        for field_key in ("pressure_rms_mpa_over_positive_support", "film_rms_nm"):
+            first = pairwise[0]["regions"][region_key][field_key]
+            second = pairwise[1]["regions"][region_key][field_key]
+            field_orders[f"{region_key}_{field_key}"] = {
+                "difference_norms_65_to_129_and_129_to_257": [first, second],
+                "contraction_ratio": float(first / second) if second else None,
+                "observed_order_of_difference_norm": (
+                    float(np.log(first / second) / np.log(2.0))
+                    if first > second > 0
+                    else None
+                ),
+                "field_richardson_gci_not_reported": True,
+            }
+    spikes = {}
+    for run in runs:
+        px, pp = centerline_pressure_profile(run["x_m"], run["y_m"], run["pressure_pa"])
+        diag = outlet_spike_diagnostics(px, pp, window_m=OUTLET_WINDOW_M)
+        spikes[f"{run['case']['nx']}x{run['case']['ny']}"] = {
+            **diag,
+            "integrated_pressure": _outlet_integrated_pressure(run, diag),
+        }
+    return {
+        "grid_intervals": intervals,
+        "refinement_ratio": 2.0,
+        "same_domain_and_equation": True,
+        "scalars": values,
+        "scalar_locations": scalar_locations,
+        "independent_root_audits": root_audits,
+        "pairwise_field_comparisons": pairwise,
+        "field_difference_norm_trends": field_orders,
+        "outlet_spike": spikes,
+        "interpretation": (
+            "Scalar Richardson/GCI estimates are descriptive only when the "
+            "corresponding signed changes contract monotonically. Field norm "
+            "orders are contraction diagnostics, not field extrapolations."
         ),
     }
 

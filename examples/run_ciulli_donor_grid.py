@@ -216,6 +216,53 @@ def _persist_solver_record(output, record, previous_active):
     return str(record_path), current_active
 
 
+def _reconcile_persisted_history(output, compact_history):
+    paths = []
+    for record in compact_history:
+        path = Path(output) / "diagnostics" / f"iteration_{record['iteration']:04d}.json"
+        detail = json.loads(path.read_text())
+        if len(detail["models"]) != len(record["models"]):
+            raise RuntimeError(f"Persisted solver history is incomplete: {path}")
+        accepted = []
+        for model_detail, model_summary in zip(
+            detail["models"], record["models"], strict=True
+        ):
+            alpha = model_summary["accepted_step"]
+            if alpha is None:
+                continue
+            matches = [
+                trial
+                for trial in model_detail["trials"]
+                if trial.get("alpha") == alpha
+            ]
+            if len(matches) != 1:
+                raise RuntimeError(f"Accepted line-search step is ambiguous in {path}")
+            matches[0].update(
+                accepted=True,
+                reason="Accepted best feasible directional Armijo trial",
+            )
+            model_detail["accepted_step"] = alpha
+            correction_norm = model_detail.get("correction_norm_l2")
+            model_detail["accepted_correction_norm_l2"] = (
+                alpha * correction_norm if correction_norm is not None else None
+            )
+            accepted.append(model_detail["recovery"])
+        if len(accepted) > 1:
+            raise RuntimeError(f"Multiple accepted recovery models in {path}")
+        detail["accepted_recovery"] = accepted[0] if accepted else None
+        detail["accepted_alpha"] = next(
+            (
+                model["accepted_step"]
+                for model in detail["models"]
+                if model.get("accepted_step") is not None
+            ),
+            None,
+        )
+        path.write_text(json.dumps(clean_json(detail), indent=2, allow_nan=False))
+        paths.append(str(path))
+    return paths
+
+
 def _revision():
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
@@ -430,6 +477,9 @@ def run(
                 for record in root.history
             ],
             state_sha256=_digest(output / "state.npz"),
+        )
+        metadata["diagnostic_records"] = _reconcile_persisted_history(
+            output, metadata["history"]
         )
     except (LimitedNewtonError, LimitedObserverError, RuntimeError, ValueError) as exc:
         candidate = latest.get("state")

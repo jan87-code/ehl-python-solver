@@ -10,6 +10,8 @@ from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase, hertz_guess
 from examples.analyze_ciulli_donor_grid import (
     _midplane_comparison,
+    _outlet_integrated_pressure,
+    _scalar_refinement,
     main_contact_structure_comparison,
     profile_error_metrics,
     regional_mesh_comparison,
@@ -59,6 +61,37 @@ def test_midplane_comparison_reports_common_coordinate_units():
     assert result["transverse"]["film_m"]["linf"] == pytest.approx(1.0)
 
 
+def test_midplane_comparison_samples_the_declared_si_window():
+    axis = np.linspace(-400e-6, 400e-6, 5)
+    xx, yy = np.meshgrid(axis, axis)
+    pressure = 600e6 + 1e12 * xx + 0.3e12 * yy
+    fine_pressure = pressure + 1e12 * xx
+    film = 1e-6 + 1e-3 * xx
+    fine_film = film + 1e-3 * xx
+    coarse = {
+        "x_m": axis,
+        "y_m": axis,
+        "pressure_pa": pressure,
+        "film_m": film,
+    }
+    fine = {
+        "x_m": axis,
+        "y_m": axis,
+        "pressure_pa": fine_pressure,
+        "film_m": fine_film,
+    }
+    result = _midplane_comparison(coarse, fine)
+    expected_rms_mpa = np.sqrt(np.mean(np.linspace(-100, 100, 401) ** 2))
+    assert result["longitudinal"]["pressure_pa"]["rms"] == pytest.approx(
+        expected_rms_mpa
+    )
+    assert result["transverse"]["pressure_pa"]["rms"] == pytest.approx(0.0, abs=1e-12)
+    assert result["longitudinal"]["film_m"]["rms"] == pytest.approx(
+        expected_rms_mpa
+    )
+    assert result["transverse"]["film_m"]["rms"] == pytest.approx(0.0, abs=1e-12)
+
+
 def test_regional_comparison_separates_main_contact_and_outlet_error():
     base_case = json.loads(
         (Path(__file__).parents[1] / "cases/ciulli_15n_donor.json").read_text()
@@ -104,6 +137,45 @@ def test_regional_comparison_separates_main_contact_and_outlet_error():
         for key in ("hertz_core", "transition")
     ) == pytest.approx(100.0)
     assert structure["hotspot_and_cavitation"]["cavitation_state_mismatch_percent_in_main"] == 0
+
+
+def test_scalar_refinement_reports_order_only_for_monotone_contraction():
+    result = _scalar_refinement([1.25, 1.0625, 1.015625])
+    assert result["observed_order"] == pytest.approx(2.0)
+    assert result["richardson_extrapolated_value"] == pytest.approx(1.0)
+    assert result["fine_grid_gci_percent_fs_1_25"] > 0
+
+    oscillatory = _scalar_refinement([1.0, 1.2, 1.1])
+    assert not oscillatory["monotone_contraction"]
+    assert oscillatory["observed_order"] is None
+    assert oscillatory["richardson_extrapolated_value"] is None
+
+
+def test_outlet_integral_reports_absolute_and_baseline_subtracted_pressure():
+    axis = np.linspace(-400e-6, 400e-6, 41)
+    xx, yy = np.meshgrid(axis, axis)
+    pressure = 100e6 + 100e6 * np.exp(-((xx - 100e-6) / 10e-6) ** 2)
+    case = json.loads(
+        (Path(__file__).parents[1] / "cases/ciulli_15n_donor.json").read_text()
+    )
+    run = {
+        "case": case,
+        "x_m": axis,
+        "y_m": axis,
+        "pressure_pa": pressure,
+    }
+    result = _outlet_integrated_pressure(
+        run,
+        {
+            "identified": True,
+            "peak_x_m": 100e-6,
+            "half_prominence_width_m": 40e-6,
+        },
+    )
+    assert result["defined"]
+    assert result["pressure_integral_n"] > 0
+    assert result["centerline_pressure_integral_pa_m"] > 0
+    assert result["centerline_excess_above_local_linear_baseline_pa_m"] > 0
 
 
 def test_barus_sensitivity_fluid_matches_reported_zero_pressure_slope():

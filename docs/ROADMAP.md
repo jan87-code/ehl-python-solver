@@ -139,27 +139,38 @@ have zero cavitated area and zero cavitation-mask mismatch in the main
 region. The ridge maximum over `x=[0,60] um` shifts from 12.5 to 44 um at
 `y=-56.5 um`, indicating broad full-film pressure reshaping.
 
-The solver requires uniform axes, so local/nonuniform refinement is not
-currently supported. Spike-only refinement would not address the main-field
-difference. The next run is 257x257, seeded by bilinear prolongation from the
-accepted 129x129 root, retaining the same +/-0.4 mm domain and numerical/
-physical acceptance gates. This gives the consistent `65 -> 129 -> 257`
-sequence at refinement ratio 2; 66,049 nodes use the explicit 70,000-node
-budget. The prior 193x193 iterate remains rejected and is not repeated.
+The 257x257 donor-flux run seeded from the accepted 129x129 root completed
+with unchanged physical/numerical acceptance gates. The 65 -> 129 -> 257
+sequence is nested at refinement ratio 2. The accepted 257 result passes
+independent force, local/global mass, JFO complementarity, film
+reconstruction and direct-elasticity audits; the full fields and diagnostic
+history remain in the local ignored results archive. The run used an
+explicit 70,000-node budget for 66,049 nodes and recorded 4-thread OpenBLAS
+configuration; the GMRES/SuperLU, matrix-vector and FFT solver paths were
+not configured as parallel solvers. See the detailed measurements in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
-The donor runner now records per-iteration nonlinear residual blocks,
-audits, recovery/Krylov results, line-search trials, correction norms and
-packed active sets; it checkpoints complete SI fields and allows an
-explicit checkpoint seed. Preflight confirms a feasible but unaccepted 129
-to 257 prolongation. Four OpenBLAS threads are configured and runtime-
-queried; GMRES/SuperLU and NumPy FFT paths are not configured as parallel
-solvers. No competing jobs are launched. See the latest 257x257 result and
-its acceptance status in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
-Only three accepted nested grids with a monotonic/asymptotic trend may
-justify observed-order or Richardson/GCI estimates. The spike remains
-separately under-resolved even at 257x257 (about 1.15 cells per prior width
-estimate). Local/nonuniform refinement remains a future solver capability,
-not a currently available shortcut.
+Mesh convergence is still not established. Main-contact pressure RMS
+differences contract only from 31.71 to 24.83 MPa (descriptive difference
+order about 0.35), while main-region Linf increases from 233.23 to
+275.09 MPa. Main-contact film RMS changes from 9.59 to 10.47 nm; `h_c`
+changes by -6.98 then -11.64 nm, and `h_min` is nonmonotone. The scalar
+`p_max` sequence admits a conditional order/GCI estimate, but its maximizing
+location moves on the finest grid and this does not establish field
+convergence. The analysis also corrected an earlier double unit conversion
+in the midplane comparison coordinates; corrected values are in the report.
+
+The outlet peak remains under-resolved at 257x257: its estimated width is
+3.96 um, about 1.27 cells, and the estimated integrated pressure in its
+grid-dependent local window changes from 0.11479 to 0.10245 N. A uniform
+513x513 run could be informative for the main field but requires 263,169
+nodes, beyond the current 70,000-node case budget, and would still provide
+only about 2.5 cells across the prior spike-width estimate. Before such a
+run, perform bounded memory/runtime preflight and preserve the existing
+acceptance gates and diagnostics. Since the solver requires uniform axes,
+local/nonuniform refinement is a future solver-development requirement for
+efficient spike resolution. The failed 193x193 iterate remains rejected
+and is not repeated.
 
 The digitized-profile comparison and remaining priorities are documented in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md). Keep the donor-flux formulation

@@ -4494,16 +4494,21 @@ is `x=[-100,60] um`, `y=[-75,75] um`; the separate midplane comparison uses
 | Fixed-domain comparison | Main-region pressure relative L2 / RMS / Linf | Main-region film relative L2 / RMS / Linf |
 |---|---|---|
 | 33 -> 65 | 7.74% / 42.69 / 236.02 MPa | 10.15% / 44.58 / 109.64 nm |
-| 65 -> 129 | 5.71% / 31.64 / 233.23 MPa | 2.00% / 9.58 / 40.92 nm |
+| 65 -> 129 | 5.71% / 31.71 / 233.23 MPa | 2.01% / 9.59 / 40.92 nm |
 
 On the `y=0` longitudinal and `x=0` transverse midplanes, 65 -> 129 gives
-pressure relative L2 about 0.674%, RMS 5.03 MPa, and film relative L2 about
-1.418%, RMS 6.98 nm. The 33 -> 65 midplane film RMS is 36.11 nm. The main
-contact 2D Linf pressure changes remain large, and the minimum/central-film
-sequence is nonmonotone (`h_min`: +30.5%, then +0.88%; `h_c`: +7.92%, then
--1.42%). Three meshes do not establish an asymptotic order or a reliable
-Richardson/GCI estimate. The two finer meshes show reduced film sensitivity
-but do not prove full-field convergence.
+pressure relative L2/RMS of 5.51%/33.79 MPa longitudinally and
+4.98%/28.95 MPa transversely; film relative L2/RMS is 2.21%/10.84 nm and
+1.92%/8.24 nm, respectively. Reprocessing found that the earlier midplane
+analysis applied a micrometre-to-metre conversion twice to coordinates
+already stored in SI, so the earlier midplane values in this report were
+incorrect and are superseded here. This was an analysis-only correction;
+the accepted solver fields are unchanged. Corrected 33 -> 65 midplane film
+RMS is 49.76 nm longitudinally and 46.38 nm transversely. The main-contact
+2D Linf pressure changes remain large, and the minimum/central-film sequence
+is nonmonotone (`h_min`: +30.5%, then +0.88%; `h_c`: +7.92%, then -1.42%).
+The two finer meshes show reduced film sensitivity but do not prove
+full-field convergence.
 
 | Fixed-spacing domain expansion | Main-region pressure relative L2 / RMS / Linf | Main-region film relative L2 / RMS / Linf |
 |---|---|---|
@@ -4543,6 +4548,134 @@ linear-solve or correction mechanism, and the distinct limited-capacity
 endpoint diagnosis must not be used to attribute this donor-run failure.
 Do not use the final iterate as a solution or increase iteration limits
 without a diagnostic plan.
+
+### 257x257 fixed-domain refinement and three-grid assessment
+
+The accepted 257x257 donor-flux root used the same `+/-0.4 mm` domain,
+equations, physical inputs, boundary conditions and acceptance tolerances as
+the 129x129 root. The accepted 129x129 pressure/content fields were
+bilinearly prolonged as a feasible but unaccepted initial guess. The only
+resource-setting change was an explicit 70,000-node budget for the 66,049
+physical nodes. Seven Newton corrections completed in 365.8 s. The run
+recorded 4-thread OpenBLAS configuration, but GMRES/SuperLU, matrix-vector
+products and FFT convolution were not configured as parallel solver paths.
+Its full fields, per-correction diagnostics and checkpoints remain in the
+local ignored result archive; the reproducible runner and analysis scripts
+are committed separately.
+The numerical run used source revision `097637d74adb4c62fe523d0de8f9b705c1139548`.
+Afterward, the persisted per-iteration records were reconciled against the
+compact solver history to restore accepted-trial markers; this repaired
+diagnostic metadata only and did not alter the accepted state. The runner
+now performs that reconciliation on completion, and the Newton diagnostic
+callback writes after accepted line-search selection for future runs.
+
+The independent final audit reports 15 N integrated load (zero relative
+force error), relative local/global mass balances `6.45e-14`/`5.66e-17`,
+maximum SI mass divergence `8.75e-12 kg/(m^2 s)`, maximum JFO
+complementarity `1.18e-25`, film reconstruction error `1.82e-20 m`, and a
+passing direct-elasticity check. The root is accepted as equation closure
+for this discrete donor-flux problem, not as evidence of physical validation.
+
+The nested fixed-domain grids have 64, 128 and 256 intervals (refinement
+ratio 2). The common-coordinate pairwise field comparisons are:
+
+| Region and grid pair | Pressure relative L2 / RMS / Linf | Film relative L2 / RMS / Linf |
+|---|---|---|
+| Full contact, 65 -> 129 | 7.43% / 38.52 / 237.48 MPa | 2.40% / 11.24 / 47.49 nm |
+| Full contact, 129 -> 257 | 6.18% / 32.23 / 299.17 MPa | 2.12% / 9.94 / 23.91 nm |
+| Main contact excluding outlet, 65 -> 129 | 5.71% / 31.71 / 233.23 MPa | 2.01% / 9.59 / 40.92 nm |
+| Main contact excluding outlet, 129 -> 257 | 4.48% / 24.83 / 275.09 MPa | 2.21% / 10.47 / 22.63 nm |
+| Outlet/spike region, 65 -> 129 | 18.50% / 59.06 / 237.48 MPa | 3.77% / 16.23 / 47.49 nm |
+| Outlet/spike region, 129 -> 257 | 15.41% / 53.39 / 299.17 MPa | 1.69% / 7.48 / 23.91 nm |
+
+Pressure RMS norms contract only modestly in the main region, from 31.71 to
+24.83 MPa (factor 1.28); the corresponding difference-norm order is about
+0.35 and is descriptive, not an accepted field convergence order. Main
+pressure Linf increases from 233.23 to 275.09 MPa. Main film RMS increases
+from 9.59 to 10.47 nm, while film Linf decreases. These mixed behaviors do
+not demonstrate asymptotic full-field convergence. The outlet pressure RMS
+also contracts only slightly (59.06 to 53.39 MPa) and its Linf increases.
+In the full-contact `x=[-100,100] um` pressure-error energy, the main/outlet
+shares are 54.70%/45.30% for 65 -> 129 and 48.12%/51.88% for 129 -> 257.
+The separate release-region pressure-error energy is only 0.044% and 0.011%
+of the respective full-contact energy, so it is not the source of the
+discrepancy.
+
+The dry-Hertz footprint with `a_H=100 um` is used as the core/transition
+partition; it covers 93.65% of the declared main-region area. The core
+contains 99.787% of main-region squared pressure-error energy for 65 -> 129
+and 99.977% for 129 -> 257. Thus the remaining difference is in the
+physically relevant core, not primarily in the outer transition.
+
+| Region / grid pair | Pressure relative L2 / RMS / Linf | Film relative L2 / RMS / Linf |
+|---|---|---|
+| Hertz core, 65 -> 129 | 5.71% / 32.73 / 233.23 MPa | 2.04% / 9.57 / 40.92 nm |
+| Hertz core, 129 -> 257 | 4.49% / 25.65 / 275.09 MPa | 2.25% / 10.46 / 22.63 nm |
+| Transition, 65 -> 129 | 5.57% / 5.80 / 13.84 MPa | 1.62% / 9.82 / 15.46 nm |
+| Transition, 129 -> 257 | 1.53% / 1.51 / 5.00 MPa | 1.77% / 10.58 / 13.07 nm |
+
+As expected from the spatial error-energy shares, the core contains nearly
+all the pressure Linf for both refinements; transition differences are
+small in absolute pressure even where their relative L2 is nonzero.
+
+The largest 65 -> 129 main-region difference is 233.23 MPa near
+`(50,-56.5) um`; a `10 um` half-width neighborhood there contributes 17.07%
+of the main-region error energy. For 129 -> 257 the largest difference is
+275.09 MPa near `(59.5,53) um`. Both comparisons have zero cavitated area
+and zero active-set mismatch in the main region, with theta differing only
+by roundoff. This is a broader full-film pressure-ridge shape/location
+change, not an isolated hotspot or cavitation-front displacement.
+
+Corrected common-coordinate midplane differences are:
+
+| Grid pair / profile | Pressure relative L2 / RMS / Linf | Film relative L2 / RMS / Linf |
+|---|---|---|
+| 65 -> 129, longitudinal (`y=0`) | 5.51% / 33.79 / 204.36 MPa | 2.21% / 10.84 / 41.27 nm |
+| 65 -> 129, transverse (`x=0`) | 4.98% / 28.95 / 112.43 MPa | 1.92% / 8.24 / 22.41 nm |
+| 129 -> 257, longitudinal (`y=0`) | 4.22% / 25.76 / 216.38 MPa | 2.32% / 11.28 / 19.16 nm |
+| 129 -> 257, transverse (`x=0`) | 3.19% / 18.50 / 90.64 MPa | 2.15% / 9.20 / 11.64 nm |
+
+The midplane pressure L2/RMS differences decrease, but longitudinal
+pressure Linf increases and both film RMS differences increase. Midplanes
+therefore also do not establish convergence.
+
+| Scalar | 65x65 | 129x129 | 257x257 | Assessment |
+|---|---:|---:|---:|---|
+| `h_c` [nm] | 492.246 | 485.267 | 473.629 | Changes grow (6.98 then 11.64 nm); no convergence |
+| `h_min` [nm] | 282.747 | 285.231 | 281.997 | Nonmonotone; no convergence estimate |
+| `p_max` [MPa] | 746.301 | 741.270 | 739.669 | Monotone scalar decrease |
+| Integrated load [N] | 15.000 | 15.000 | 15.000 | Prescribed load; not a discretization indicator |
+
+For `p_max` alone, the three values give a formal observed order of 1.65,
+Richardson estimate 738.922 MPa and fine-grid GCI 0.126% (safety factor
+1.25), with asymptotic ratio 1.002. This is a conditional scalar estimate,
+not a field GCI. The maximizing location moves from `(0,0) um` on 65x65 and
+129x129 to `(53.125,56.25) um` on 257x257, so the scalar fit is not strong
+evidence that the peak location or surrounding field has converged. Do not
+use this GCI to support physical film validation.
+
+The 257x257 outlet peak is at `x=84.375 um`, `635.175 MPa`, with an
+interpolated half-prominence width of `3.960 um`, only `1.267` grid cells.
+At 129x129 it is at `81.25 um`, `617.834 MPa`, width `3.593 um` or `0.575`
+cells. The adjacent sampled pressures are `599.135`/`205.708 MPa` at 129
+and `594.469`/`253.466 MPa` at 257 (before/after the peak). Integrated
+absolute pressure over each grid's detected half-prominence x-window and
+`|y|<=100 um` is `0.11479 N` and `0.10245 N`, respectively. Because the
+window follows the grid-dependent detected width, this is a diagnostic
+local integral, not a fixed-window convergence norm. The spike remains
+under-resolved: neither its height nor width is converged.
+
+The 257 result shows some contraction in pressure L2/RMS profiles, but the
+main pressure field, film field, `h_c`, and `h_min` do not yet support a
+mesh-converged claim. A uniform 513x513 grid would be a useful next
+refinement for the main field, but entails 263,169 nodes (four times the
+257 grid) and exceeds the current explicit node budget; it is unlikely to
+resolve a roughly 4 um spike adequately (about 2.5 cells across the prior
+width estimate). Do not launch it without a bounded memory/runtime
+preflight and diagnostic capture. The solver currently requires uniform
+axes, so nonuniform/local refinement is a future capability needed to
+study the spike efficiently. The 257 data do not establish convergence
+sufficient for a defensible physical-validation claim.
 
 ### Level 3: comparison with Figure 13
 
@@ -4749,7 +4882,7 @@ The 257x257 node count (66,049) requires the explicitly supported
 70,000-node budget instead of the case's default 20,000; all physical,
 nonlinear, Krylov and independent acceptance gates remain unchanged.
 
-### Main-contact pressure structure and 257x257 run preparation
+### Main-contact pressure structure and 257x257 run diagnostics
 
 The main-contact split uses the case's Hertz radius, `a_H=100 um`, calculated
 from the reported load, equivalent radius and modulus. This is a geometry-
@@ -4810,10 +4943,14 @@ No competing solver jobs are used. OpenBLAS is the only positively
 verified threaded backend setting; this does not imply the complete solve
 uses four cores.
 
-After the 257 run, compare only independently accepted roots on common
-physical coordinates. Evaluate main/core pressure and film changes, scalar
-trends and the pressure-error spatial distribution. Estimate order and
-Richardson/GCI only if 65/129/257 are monotone and exhibit an asymptotic
-trend. The spike remains separate: the 129x129 width predicts only about
-1.15 cells on 257x257, which cannot establish spike-height or width
-convergence.
+The accepted 257x257 root has now been compared with the accepted 65x65 and
+129x129 roots on common physical coordinates; the results are detailed in
+the preceding "257x257 fixed-domain refinement and three-grid assessment"
+section. Pressure RMS differences contract slowly, but the main pressure
+and film fields and `h_c`/`h_min` do not demonstrate mesh convergence. Only
+`p_max` admits a conditional scalar Richardson/GCI estimate, with the
+maximizing location changing on the finest grid. The outlet peak is still
+under-resolved at 1.267 cells across its estimated width. A uniform
+513x513 run could improve main-field evidence but requires a separate
+resource preflight and would not adequately resolve the spike; local or
+nonuniform refinement remains future work.

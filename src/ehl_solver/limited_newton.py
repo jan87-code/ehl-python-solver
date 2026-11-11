@@ -322,6 +322,24 @@ def solve_limited_load(
                         reference = candidate_reference
                     else:
                         reference_alpha = 0.0
+            if best is None:
+                if diagnostic_observer is not None:
+                    try:
+                        diagnostic_observer(iteration, record)
+                    except Exception as exc:
+                        raise LimitedObserverError(
+                            "Diagnostic observer failed; numerical solve not continued"
+                        ) from exc
+                raise RuntimeError("All bounded limited/active recovery models exhausted")
+            trial, entry, candidate = best
+            candidate.update(
+                accepted=True, reason="Accepted best feasible directional Armijo trial"
+            )
+            record["accepted_recovery"] = entry["recovery"]
+            record["accepted_alpha"] = candidate["alpha"]
+            record["accepted_merit"] = candidate["merit"]
+            guide = trial - state
+            state = trial
             if diagnostic_observer is not None:
                 try:
                     diagnostic_observer(iteration, record)
@@ -329,14 +347,6 @@ def solve_limited_load(
                     raise LimitedObserverError(
                         "Diagnostic observer failed; numerical solve not continued"
                     ) from exc
-            if best is None:
-                raise RuntimeError("All bounded limited/active recovery models exhausted")
-            trial, entry, candidate = best
-            candidate.update(
-                accepted=True, reason="Accepted best feasible directional Armijo trial"
-            )
-            guide = trial - state
-            state = trial
     except (RuntimeError, ValueError, FloatingPointError) as exc:
         if isinstance(exc, LimitedObserverError):
             raise

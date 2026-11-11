@@ -122,9 +122,11 @@ def test_monolithic_plots_include_required_diagnostics_and_units(tmp_path):
         results_directory=tmp_path,
         continuation=continuation,
     )
-    assert len(paths) == 6
+    assert len(paths) == 8
     assert all(path.is_file() and path.stat().st_size > 0 for path in paths)
     assert "pressure_distribution.png" in {path.name for path in paths}
+    assert any(path.name.endswith("_summary.png") for path in paths)
+    assert any(path.name.endswith("_profiles.csv") for path in paths)
 
     import matplotlib.pyplot as plt
 

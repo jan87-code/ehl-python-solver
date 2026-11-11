@@ -28,6 +28,7 @@ from ehl_solver.cavitating_newton import solve_cavitating_newton
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.elasticity import cell_integrated_kernel, elastic_deformation
 from ehl_solver.verification import audit_cavitating_solution
+from ehl_solver.visualization import write_run_summary
 
 
 def load_native(path):
@@ -205,15 +206,27 @@ def solver_parity(native, directory):
             result = solve_cavitating_newton(problem, target_load_n=0.002)
         wall = time.perf_counter() - start
         actual, expected = result.solution, reference.solution
-        np.testing.assert_allclose(actual.pressure_pa, expected.pressure_pa, rtol=2e-7, atol=1e-5)
-        np.testing.assert_allclose(
-            actual.film_thickness_m, expected.film_thickness_m, rtol=2e-8, atol=1e-14
-        )
-        np.testing.assert_allclose(
-            actual.fractional_film_content, expected.fractional_film_content, rtol=2e-7, atol=1e-9
-        )
+        parity_failure = None
+        try:
+            np.testing.assert_allclose(
+                actual.pressure_pa, expected.pressure_pa, rtol=2e-7, atol=1e-5
+            )
+            np.testing.assert_allclose(
+                actual.film_thickness_m,
+                expected.film_thickness_m,
+                rtol=2e-8,
+                atol=1e-14,
+            )
+            np.testing.assert_allclose(
+                actual.fractional_film_content,
+                expected.fractional_film_content,
+                rtol=2e-7,
+                atol=1e-9,
+            )
+        except AssertionError as error:
+            parity_failure = str(error)
         audit = audit_cavitating_solution(problem, actual)
-        if (
+        audit_accepted = not (
             audit.mass_maximum > 1.001e-8
             or abs(audit.load_n - 0.002) > 2e-11
             or audit.maximum_complementarity > 1e-10
@@ -223,8 +236,12 @@ def solver_parity(native, directory):
             or audit.pressure_boundary_max_pa != 0
             or audit.inlet_saturation_error > 1e-10
             or audit.film_coupling_max_error_m > 1e-17
-        ):
-            raise RuntimeError("GPU convolution solver parity fails residual/load acceptance")
+        )
+        status = (
+            "accepted_numerical_root"
+            if audit_accepted and parity_failure is None
+            else "rejected"
+        )
         np.savez_compressed(
             directory / f"solver_{int(modulus)}.npz",
             pressure_pa=actual.pressure_pa,
@@ -235,6 +252,47 @@ def solver_parity(native, directory):
             x_m=problem.x_m,
             y_m=problem.y_m,
         )
+        reference_audit = audit_cavitating_solution(problem, expected)
+        cpu_figure, cpu_profiles = write_run_summary(
+            problem.x_m,
+            problem.y_m,
+            expected.pressure_pa,
+            expected.film_thickness_m,
+            directory=directory,
+            case_name=f"native_hip_E{int(modulus)}_cpu_reference",
+            load_n=0.002,
+            formulation="cavitating-newton",
+            status=status,
+            force_audit=asdict(reference_audit),
+            newton_corrections=len(reference.history),
+            backend="CPU (NumPy)",
+            runtime_seconds=cpu_wall,
+        )
+        hip_figure, hip_profiles = write_run_summary(
+            problem.x_m,
+            problem.y_m,
+            actual.pressure_pa,
+            actual.film_thickness_m,
+            directory=directory,
+            case_name=f"native_hip_E{int(modulus)}_hip-convolution",
+            load_n=0.002,
+            formulation="cavitating-newton",
+            status=status,
+            force_audit=asdict(audit),
+            newton_corrections=len(result.history),
+            backend="HIP convolution (CPU solver)",
+            runtime_seconds=wall,
+        )
+        if parity_failure is not None:
+            raise RuntimeError(
+                "GPU convolution solver parity failed; diagnostic summaries were saved:\n"
+                + parity_failure
+            )
+        if not audit_accepted:
+            raise RuntimeError(
+                "GPU convolution solver failed residual/load acceptance; "
+                "diagnostic summaries were saved"
+            )
         row = {
             "E_star_pa": modulus,
             "shape": problem.shape,
@@ -248,6 +306,10 @@ def solver_parity(native, directory):
             "convolution_transfer_inclusive_sum_ms": sum(calls),
             "newton_iterations_numpy": len(reference.history),
             "newton_iterations_hip_convolution": len(result.history),
+            "cpu_run_summary_figure": cpu_figure.name,
+            "cpu_run_summary_profiles": cpu_profiles.name,
+            "hip_run_summary_figure": hip_figure.name,
+            "hip_run_summary_profiles": hip_profiles.name,
             "pressure_relative_difference": float(
                 np.linalg.norm(actual.pressure_pa - expected.pressure_pa)
                 / np.linalg.norm(expected.pressure_pa)

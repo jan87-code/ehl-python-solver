@@ -265,7 +265,7 @@ the physical model.
 - [x] Nondimensional isoviscous-incompressible Reynolds residual and manufactured solutions
 - [x] Prescribed-film full-film Reynolds solver, parabolic point-contact verification, domain/grid sensitivity, and sparse-solver diagnostics
 - [x] Prescribed-h0 weak Reynolds-elasticity coupling with compliance continuation and zero-compliance regression
-- [x] Coupled pressure/film visualization, interpolated cross sections, convergence histories, and optional accepted-iteration PNG snapshots
+- [x] Coupled pressure/film visualization, interpolated cross sections, convergence histories, optional accepted-iteration PNG snapshots, and a standardized per-run 2x2 pressure/film/centerline summary with raw profile CSVs
 - [x] Prescribed-film JFO cavitation prototype with wedge mass-conservation,
   front-refinement and uniform inlet-starvation verification
   - Regressions cover local/global flux balance, the full-film limit, repeated

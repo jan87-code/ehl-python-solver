@@ -16,7 +16,7 @@ from ehl_solver.cavitating_continuation import (
 from ehl_solver.cavitating_coupled import CavitatingElasticityProblem, solve_cavitating_elasticity
 from ehl_solver.cavitating_newton import solve_cavitating_newton
 from ehl_solver.verification import audit_cavitating_solution
-from examples.run_cavitating_elasticity import save_plots
+from examples.run_cavitating_elasticity import save_plots, write_standard_summary
 
 
 def main(directory, *, plots=False):
@@ -111,6 +111,28 @@ def main(directory, *, plots=False):
                 )
                 + "\n"
             )
+        final_audit = audit_cavitating_solution(problem, solution)
+        summary_files = write_standard_summary(
+            directory,
+            name,
+            problem,
+            solution,
+            status="accepted_numerical_root" if failed is None else "rejected",
+            force_audit={
+                "force_residual_n": solution.load_n - force,
+                "force_relative_error": abs(solution.load_n - force) / force,
+            },
+            newton_corrections=sum(len(trial.newton_history) for trial in trials),
+        )
+        np.savez_compressed(
+            directory / f"{name}_final_state.npz",
+            x_m=problem.x_m,
+            y_m=problem.y_m,
+            pressure_pa=solution.pressure_pa,
+            theta=solution.fractional_film_content,
+            film_m=solution.film_thickness_m,
+            displacement_m=solution.elastic_displacement_m,
+        )
         report["cases"].append(
             {
                 "target_load_n": force,
@@ -118,8 +140,9 @@ def main(directory, *, plots=False):
                 "final_h0_m": solution.central_film_offset_m,
                 "final_load_n": solution.load_n,
                 "maximum_displacement_m": float(np.max(solution.elastic_displacement_m)),
-                "final_audit": asdict(audit_cavitating_solution(problem, solution)),
+                "final_audit": asdict(final_audit),
                 "trials": trial_records,
+                **summary_files,
             }
         )
         (directory / "summary.json").write_text(json.dumps(report, indent=2) + "\n")

@@ -26,6 +26,7 @@ from ehl_solver.monolithic import (
     solve_monolithic_full_film_load,
 )
 from ehl_solver.reynolds import solve_reynolds_pressure
+from ehl_solver.visualization import write_run_summary
 
 
 def case(n, compliance=1., e_star=1e8):
@@ -234,16 +235,65 @@ def compare(n, repeats, max_steps, newton_max_size, output_directory, skip_cpu_l
     entry["final_h0_m"] = gpu_solution.central_film_offset_m
     entry["minimum_film_m"] = float(gpu_solution.film_thickness_m.min())
     entry["final_load_error_n"] = gpu_solution.calculated_load_n - problem.target_load_n
-    assert entry["final_cpu_reynolds_rms"] <= options["reynolds_tolerance"]
-    assert abs(entry["final_cpu_scaled_load_error"]) <= options["load_tolerance"]
+    gpu_pressure = gpu_solution.pressure_dimensionless.cpu().numpy()
+    gpu_audit_accepted = (
+        entry["final_cpu_reynolds_rms"] <= options["reynolds_tolerance"]
+        and abs(entry["final_cpu_scaled_load_error"]) <= options["load_tolerance"]
+    )
+    gpu_figure, gpu_profiles = write_run_summary(
+        problem.x,
+        problem.y,
+        gpu_pressure * problem.pressure_scale_pa,
+        gpu_solution.film_thickness_m.cpu().numpy(),
+        directory=output_directory,
+        case_name=f"signed_full_film_{n}_cuda",
+        load_n=problem.target_load_n,
+        formulation="signed-full-film",
+        status="accepted_numerical_root" if gpu_audit_accepted else "rejected",
+        force_audit={
+            "force_residual_n": entry["final_load_error_n"],
+            "force_relative_error": abs(entry["final_cpu_scaled_load_error"]),
+        },
+        newton_corrections=len(gpu_solution.history),
+        backend="CUDA (PyTorch)",
+        runtime_seconds=entry["gpu_solver_ms"] / 1000,
+    )
+    entry["cuda_run_summary_figure"] = gpu_figure.name
+    entry["cuda_run_summary_profiles"] = gpu_profiles.name
     if cpu_solution is not None:
         entry["solver_speedup"] = entry["cpu_solver_ms"]/entry["gpu_solver_ms"]
         entry["end_to_end_speedup"] = entry["cpu_solver_ms"]/entry["gpu_end_to_end_ms"]
-        gpu_pressure = gpu_solution.pressure_dimensionless.cpu().numpy()
         entry["final_pressure_relative_l2"] = float(np.linalg.norm(
             gpu_pressure-cpu_solution.pressure_dimensionless)/np.linalg.norm(cpu_solution.pressure_dimensionless))
         entry["final_h0_difference_m"] = abs(gpu_solution.central_film_offset_m
                                              - cpu_solution.central_film_offset_m)
+        cpu_figure, cpu_profiles = write_run_summary(
+            problem.x,
+            problem.y,
+            cpu_solution.pressure_pa,
+            cpu_solution.film_thickness_m,
+            directory=output_directory,
+            case_name=f"signed_full_film_{n}_cpu",
+            load_n=problem.target_load_n,
+            formulation="signed-full-film",
+            status="accepted_numerical_root",
+            force_audit={
+                "force_residual_n": cpu_solution.load_residual_n,
+                "force_relative_error": abs(
+                    cpu_solution.load_residual_n / problem.target_load_n
+                ),
+            },
+            newton_corrections=len(cpu_solution.history),
+            backend="CPU (NumPy/SciPy)",
+            runtime_seconds=entry["cpu_solver_ms"] / 1000,
+        )
+        entry["cpu_run_summary_figure"] = cpu_figure.name
+        entry["cpu_run_summary_profiles"] = cpu_profiles.name
+    if not gpu_audit_accepted:
+        raise RuntimeError(
+            "GPU full-film solver failed independent CPU Reynolds/load checks; "
+            "diagnostic summary was saved"
+        )
     if matched_torch_cpu:
         entry["matched_linear_speedup"] = entry["matched_cpu_gmres_ms"]/entry["gpu_gmres_ms"]
         entry["matched_solver_speedup"] = entry["matched_cpu_solver_ms"]/entry["gpu_solver_ms"]
@@ -312,6 +362,28 @@ def main():
                  "bordered_residual": correction.bordered_residual_relative,
                  "h0_m": solution.central_film_offset_m,
                  "load_error_n": solution.load_residual_n}
+        figure_path, profiles_path = write_run_summary(
+            problem.x,
+            problem.y,
+            solution.pressure_pa,
+            solution.film_thickness_m,
+            directory=args.output_directory,
+            case_name=f"signed_full_film_{n}_cpu",
+            load_n=problem.target_load_n,
+            formulation="signed-full-film",
+            status="accepted_numerical_root",
+            force_audit={
+                "force_residual_n": solution.load_residual_n,
+                "force_relative_error": abs(
+                    solution.load_residual_n / problem.target_load_n
+                ),
+            },
+            newton_corrections=len(solution.history),
+            backend="CPU (NumPy/SciPy)",
+            runtime_seconds=wall_ms / 1000,
+        )
+        entry["cpu_run_summary_figure"] = figure_path.name
+        entry["cpu_run_summary_profiles"] = profiles_path.name
         report["cases"].append(entry)
         (args.output_directory / "summary.json").write_text(json.dumps(report, indent=2))
         print(json.dumps(entry), flush=True)

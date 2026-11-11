@@ -25,6 +25,7 @@ from ehl_solver.limited_newton import (
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json
+from ehl_solver.visualization import write_run_summary
 
 
 def _digest(path):
@@ -542,6 +543,38 @@ def run(
         )
         if isinstance(exc, LimitedNewtonError):
             metadata["failure_audit"] = exc.audit
+    figure_state = output / (
+        "state.npz"
+        if metadata["status"] == "accepted_numerical_root"
+        else "candidate_unaccepted.npz"
+    )
+    if not figure_state.exists():
+        figure_state = output / "latest_state.npz"
+    if figure_state.exists():
+        with np.load(figure_state, allow_pickle=False) as archive:
+            figure_path, profiles_path = write_run_summary(
+                archive["x_m"],
+                archive["y_m"],
+                archive["pressure_pa"],
+                archive["film_m"],
+                directory=output,
+                case_name=Path(case_path).stem,
+                load_n=case.load_n,
+                formulation="donor-flux",
+                status=metadata["status"],
+                force_audit=metadata.get("audit", metadata.get("failure_audit")),
+                newton_corrections=metadata.get(
+                    "newton_corrections", metadata.get("diagnostic_record_count")
+                ),
+                backend="CPU (NumPy/SciPy)",
+                runtime_seconds=metadata.get("elapsed_seconds"),
+            )
+        metadata["run_summary_figure"] = figure_path.name
+        metadata["run_summary_profiles"] = profiles_path.name
+    else:
+        metadata["run_summary_unavailable_reason"] = (
+            "No valid or checkpointed field was available for plotting."
+        )
     write_summary()
     if metadata["status"] != "accepted_numerical_root":
         raise RuntimeError(

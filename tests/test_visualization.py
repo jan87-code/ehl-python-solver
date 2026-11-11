@@ -191,10 +191,13 @@ def test_report_saves_all_requested_pngs_with_safe_case_directory(tmp_path):
         results_directory=tmp_path,
     )
 
-    assert len(paths) == 8
-    assert all(path.is_file() and path.stat().st_size > 1000 for path in paths)
+    assert len(paths) == 10
+    assert all(path.is_file() and path.stat().st_size > 0 for path in paths)
+    assert all(path.stat().st_size > 1000 for path in paths if path.suffix == ".png")
     assert paths[0].parent == tmp_path / "demo_case"
     assert any("snapshot_iter_0002" in path.name for path in paths)
+    assert any(path.name.endswith("_summary.png") for path in paths)
+    assert any(path.name.endswith("_profiles.csv") for path in paths)
 
 
 def test_monolithic_history_plots_krylov_traces_residuals_and_pressure_extrema():

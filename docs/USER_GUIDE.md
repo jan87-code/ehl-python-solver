@@ -95,6 +95,8 @@ my_case_run_001/
   case.json
   report.md
   fields.png
+  point_contact_..._summary.png
+  point_contact_..._summary_profiles.csv
   interactive_3d.html
   summary.json
   solution.npz
@@ -107,7 +109,9 @@ For a normal completed run:
 | Open | What you get |
 | --- | --- |
 | `report.md` in Markdown preview | Run status, film values, HD differences, force/mass checks and limits |
-| `fields.png` in an image viewer | Pressure/film maps, centreline pressure and convergence history |
+| `*_summary.png` in an image viewer | Standard 2x2 pressure/film maps and raw centreline pressure/film profiles |
+| `*_summary_profiles.csv` | Raw SI and display-unit data used for both centreline panels |
+| `fields.png` in an image viewer | Compatibility copy of the standard 2x2 summary |
 | `interactive_3d.html` in a browser | Offline, rotatable pressure and film surfaces with hover values |
 | `summary.json` | Full inputs, audits, trial/failure diagnostics, units, source hashes and runtime |
 | `case.json` | The exact resolved SI inputs used for this run |
@@ -118,13 +122,17 @@ connection. It shows the full grid in two independent 3D scenes: unfiltered
 pressure in GPa and film thickness in nm, over x/y coordinates in mm (x follows
 the positive entrainment direction). Drag to rotate, scroll to zoom, and hover
 for values. The title reports the numerical run status and explicitly notes
-that physical validation is incomplete. `--no-plots` suppresses both plot
-files; if no root was produced, no field plots are available.
+that physical validation is incomplete.
 
-The plot currently displays pressure in GPa, coordinates in mm and film in nm.
-Its labeled film colour cap only affects the picture; the saved data are
-uncapped. Convergence-iteration plots are numerical iteration histories,
-not physical time histories. The current solver has no transient time axis.
+The standard summary displays the full unfiltered pressure field in GPa,
+coordinates in mm and film in nm; it annotates the +x entrainment direction,
+film extrema, central film, load audit, backend, and runtime when available.
+The lower panels show unsmoothed profiles at y=0, interpolated linearly when
+needed. The pressure and film ranges are not clipped. The CSV contains both
+SI and display-unit profile columns. Solver convergence histories remain
+separate diagnostic outputs and are not substituted for a physical profile.
+`--no-plots` skips the optional interactive 3D plot; it does not suppress the
+standard summary.
 
 Read the status before interpreting a picture:
 
@@ -132,9 +140,10 @@ Read the status before interpreting a picture:
   passed. Check mesh/domain studies separately before using its accuracy.
 - `rejected`: inspect the reason and diagnostics. A last saved state can still
   produce a plausible plot; it is not an accepted solution.
-- If nonlinear failure occurs before a valid root exists, `summary.json` and
-  `report.md` record the failure, but `solution.npz` and `fields.png` are not
-  produced because there are no solution fields to inspect.
+- If nonlinear failure occurs with a saved last valid state, the standard
+  summary is generated from that state and marked `FAILED / NOT AN ACCEPTED
+  SOLUTION`; it is a diagnostic, not an accepted result. If no valid state
+  exists, only the failure report and metadata are produced.
 - `running` left after an interrupted process: the run has not established
   acceptance. Preserve it as partial diagnostic output.
 

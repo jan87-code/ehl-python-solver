@@ -18,7 +18,7 @@ from scipy.optimize import brentq
 from ehl_solver.cavitating_coupled import CavitatingElasticityProblem, solve_cavitating_elasticity
 from ehl_solver.cavitating_newton import CavitatingNewtonError, solve_cavitating_newton
 from ehl_solver.verification import audit_cavitating_solution
-from examples.run_cavitating_elasticity import save_plots
+from examples.run_cavitating_elasticity import save_plots, write_standard_summary
 
 
 def nested_reference(problem, target_load_n):
@@ -107,13 +107,36 @@ def main(directory, *, plots=False, target_load_n=0.002):
         try:
             result = solve_cavitating_newton(problem, target_load_n=target_load_n)
         except CavitatingNewtonError as error:
+            failure = {
+                "reason": str(error),
+                "diagnostics": error.diagnostics,
+                "history": [asdict(row) for row in error.history],
+            }
+            if error.last_solution is not None:
+                failed_solution = error.last_solution
+                np.savez_compressed(
+                    directory / f"{label}_last_valid.npz",
+                    x_m=problem.x_m,
+                    y_m=problem.y_m,
+                    pressure_pa=failed_solution.pressure_pa,
+                    theta=failed_solution.fractional_film_content,
+                    film_m=failed_solution.film_thickness_m,
+                    displacement_m=failed_solution.elastic_displacement_m,
+                )
+                failure.update(
+                    write_standard_summary(
+                        directory,
+                        label,
+                        problem,
+                        failed_solution,
+                        status="rejected",
+                        force_audit=error.diagnostics,
+                        newton_corrections=len(error.history),
+                    )
+                )
             (directory / f"{label}_failure.json").write_text(
                 json.dumps(
-                    {
-                        "reason": str(error),
-                        "diagnostics": error.diagnostics,
-                        "history": [asdict(row) for row in error.history],
-                    },
+                    failure,
                     indent=2,
                 )
                 + "\n"
@@ -130,7 +153,7 @@ def main(directory, *, plots=False, target_load_n=0.002):
             displacement_m=solution.elastic_displacement_m,
         )
         audit = audit_cavitating_solution(problem, solution)
-        if (
+        audit_accepted = not (
             audit.mass_maximum > 1.001e-8
             or audit.maximum_complementarity > 1e-10
             or abs(audit.load_n - target_load_n) / target_load_n > 1e-8
@@ -140,7 +163,20 @@ def main(directory, *, plots=False, target_load_n=0.002):
             or audit.pressure_boundary_max_pa != 0
             or audit.inlet_saturation_error > 1e-10
             or audit.film_coupling_max_error_m > 1e-17
-        ):
+        )
+        summary_files = write_standard_summary(
+            directory,
+            label,
+            problem,
+            solution,
+            status="accepted_numerical_root" if audit_accepted else "rejected",
+            force_audit={
+                "force_residual_n": result.load_residual_n,
+                "force_relative_error": abs(result.load_residual_n / target_load_n),
+            },
+            newton_corrections=len(result.history),
+        )
+        if not audit_accepted:
             raise RuntimeError(f"independent loaded-state audit failed: {audit}")
         entry = {
             "shape": shape,
@@ -148,9 +184,21 @@ def main(directory, *, plots=False, target_load_n=0.002):
             "peak_pressure_pa": float(solution.pressure_pa.max()),
             "audit": asdict(audit),
             "history": [asdict(row) for row in result.history],
+            **summary_files,
         }
         if shape == (9, 13):
             reference, evaluations = nested_reference(problem, target_load_n)
+            reference_summary = write_standard_summary(
+                directory,
+                f"{label}_nested_reference",
+                problem,
+                reference,
+                force_audit={
+                    "force_residual_n": reference.load_n - target_load_n,
+                    "force_relative_error": abs(reference.load_n - target_load_n)
+                    / target_load_n,
+                },
+            )
             entry["nested_reference"] = {
                 "h0_m": reference.central_film_offset_m,
                 "audit": asdict(audit_cavitating_solution(problem, reference)),
@@ -159,6 +207,7 @@ def main(directory, *, plots=False, target_load_n=0.002):
                     np.linalg.norm(solution.pressure_pa - reference.pressure_pa)
                     / np.linalg.norm(reference.pressure_pa)
                 ),
+                **reference_summary,
             }
             np.savez_compressed(
                 directory / f"{label}_nested_reference.npz",

@@ -7,6 +7,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from ehl_solver.prototype import (
     hertz_guess,
     transfer_guess,
 )
+from ehl_solver.visualization import write_run_summary
 
 
 def clean_json(value):
@@ -88,55 +90,6 @@ def save_state(path, system, state, root):
         displacement_m=s.elastic_displacement_m,
         offset_m=root.central_film_offset_m,
     )
-
-
-def plot_result(case, root, iterations, directory):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    s = root.solution
-    p = case.problem()
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7), constrained_layout=True)
-    mx = abs(p.x_m) <= 1.5 * case.hertz.radius_m
-    my = abs(p.y_m) <= 1.5 * case.hertz.radius_m
-    extent = [p.x_m[mx][0] * 1e3, p.x_m[mx][-1] * 1e3, p.y_m[my][0] * 1e3, p.y_m[my][-1] * 1e3]
-    cap_nm = 2 * case.correlation().central_film_m * 1e9
-    for ax, field, scale, title in [
-        (axes[0, 0], s.pressure_pa, 1e-9, "Pressure [GPa], unfiltered"),
-        (axes[0, 1], s.film_thickness_m, 1e9, f"Film [nm], colour capped at {cap_nm:.0f}"),
-    ]:
-        artist = ax.imshow(
-            field[np.ix_(my, mx)] * scale,
-            extent=extent,
-            origin="lower",
-            interpolation="nearest",
-            vmax=cap_nm if scale == 1e9 else None,
-        )
-        ax.set(xlabel="x [mm], entrainment +x", ylabel="y [mm]", title=title)
-        fig.colorbar(artist, ax=ax)
-    axes[1, 0].plot(p.x_m * 1e3, s.pressure_pa[case.ny // 2] / 1e9)
-    axes[1, 0].set(
-        xlabel="x [mm]",
-        ylabel="Centreline pressure [GPa]",
-        xlim=(-1.5 * case.hertz.radius_m * 1e3, 1.5 * case.hertz.radius_m * 1e3),
-    )
-    for key, label in [
-        ("mass_maximum", "Scaled mass residual"),
-        ("relative_global_balance", "Global mass balance"),
-    ]:
-        axes[1, 1].semilogy(
-            [a["iteration"] for a in iterations],
-            [max(a["audit"][key], 1e-18) for a in iterations],
-            ".-",
-            label=label,
-        )
-    axes[1, 1].set(xlabel="Newton correction / state", ylabel="Residual measure")
-    axes[1, 1].legend(fontsize=8)
-    fig.suptitle(f"{case.load_n:g} N, {case.ny}x{case.nx}, {case.transport}: numerical prototype")
-    fig.savefig(directory / "fields.png", dpi=160)
-    plt.close(fig)
 
 
 def write_markdown(directory, report):
@@ -209,6 +162,7 @@ metadata. This report does not imply physical validation.
 def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plots=True):
     if type(maximum_iterations) is not int or not 0 <= maximum_iterations <= 100:
         raise ValueError("Correction budget must be in 0..100")
+    started = time.perf_counter()
     directory = Path(directory)
     system = case.system()
     if seed_directory is None:
@@ -316,10 +270,27 @@ def run_case(case, directory, *, seed_directory=None, maximum_iterations=30, plo
     report["history_audit"] = audit_history(history)
     save_state(directory / "solution.npz", system, latest["state"], root)
     report["state_sha256"] = digest(directory / "solution.npz")
+    summary_figure, profile_data = write_run_summary(
+        system.problem.x_m,
+        system.problem.y_m,
+        root.solution.pressure_pa,
+        root.solution.film_thickness_m,
+        directory=directory,
+        case_name="point_contact",
+        load_n=case.load_n,
+        formulation=f"{case.transport}-flux",
+        status=report["status"],
+        force_audit=report["independent_audit"],
+        newton_corrections=len(history),
+        backend="CPU (NumPy/SciPy)",
+        runtime_seconds=time.perf_counter() - started,
+    )
+    report["run_summary_figure"] = summary_figure.name
+    report["run_summary_profiles"] = profile_data.name
     write()
     write_markdown(directory, report)
     if plots:
-        plot_result(case, root, report["iterations"], directory)
+        shutil.copyfile(summary_figure, directory / "fields.png")
         write_interactive_plot(
             case, root, report["status"], directory / "interactive_3d.html"
         )
@@ -334,7 +305,11 @@ def main(argv=None):
         "--seed", type=Path, help="Accepted prototype output for spatial warm start"
     )
     parser.add_argument("--max-iterations", type=int, default=30)
-    parser.add_argument("--no-plots", action="store_true")
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="skip the optional interactive 3D plot (the standard summary is always saved)",
+    )
     args = parser.parse_args(argv)
     try:
         case = (

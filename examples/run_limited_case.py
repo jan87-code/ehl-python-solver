@@ -13,6 +13,7 @@ from ehl_solver.limited_newton import LimitedNewtonError, solve_limited_load
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json, digest, load_run
+from ehl_solver.visualization import write_run_summary
 
 
 def main(case_path, seed, output, maximum_iterations):
@@ -105,6 +106,24 @@ def main(case_path, seed, output, maximum_iterations):
         assert independent["numerically_accepted"]
         report["separate_final_audit"] = independent
         write()
+    with np.load(output / "solution.npz", allow_pickle=False) as archive:
+        figure_path, profiles_path = write_run_summary(
+            archive["x_m"],
+            archive["y_m"],
+            archive["pressure_pa"],
+            archive["film_m"],
+            directory=output,
+            case_name=case_path.stem if case_path else "point_contact",
+            load_n=case.load_n,
+            formulation="limited-capacity",
+            status=report["status"],
+            force_audit=report.get("separate_final_audit", report.get("audit")),
+            newton_corrections=len(report.get("history", ())),
+            backend="CPU (NumPy/SciPy)",
+        )
+    report["run_summary_figure"] = figure_path.name
+    report["run_summary_profiles"] = profiles_path.name
+    write()
     print(
         json.dumps(
             clean_json(

@@ -13,6 +13,31 @@ import scipy
 
 from ehl_solver.cavitating_coupled import CavitatingElasticityProblem, solve_cavitating_elasticity
 from ehl_solver.verification import audit_cavitating_solution
+from ehl_solver.visualization import write_run_summary
+
+
+def write_standard_summary(
+    directory, name, problem, result, *, status="accepted_numerical_root",
+    force_audit=None, newton_corrections=None,
+):
+    figure_path, profiles_path = write_run_summary(
+        problem.x_m,
+        problem.y_m,
+        result.pressure_pa,
+        result.film_thickness_m,
+        directory=directory,
+        case_name=name,
+        load_n=result.load_n,
+        formulation="cavitating-jfo",
+        status=status,
+        force_audit=force_audit,
+        newton_corrections=newton_corrections,
+        backend="CPU (NumPy/SciPy)",
+    )
+    return {
+        "run_summary_figure": figure_path.name,
+        "run_summary_profiles": profiles_path.name,
+    }
 
 
 def save_plots(directory, name, problem, result):
@@ -123,7 +148,7 @@ def main(directory: Path, *, modulus_pa=1e7, plots=False):
             displacement_m=result.elastic_displacement_m,
         )
         audit = audit_cavitating_solution(problem, result)
-        if (
+        audit_accepted = not (
             audit.mass_maximum > 1.001e-8
             or audit.maximum_complementarity > 1e-10
             or audit.minimum_pressure_pa < -1e-10 * problem.pressure_scale_pa
@@ -134,7 +159,15 @@ def main(directory: Path, *, modulus_pa=1e7, plots=False):
             or audit.film_coupling_max_error_m > 1e-17
             or audit.load_n <= 0
             or abs(audit.net_boundary_flux - audit.summed_volume_balance) > 1e-11
-        ):
+        )
+        summary_files = write_standard_summary(
+            directory,
+            name,
+            problem,
+            result,
+            status="accepted_numerical_root" if audit_accepted else "rejected",
+        )
+        if not audit_accepted:
             raise RuntimeError(f"independent coupled state audit failed: {audit}")
         report["cases"].append(
             {
@@ -144,6 +177,7 @@ def main(directory: Path, *, modulus_pa=1e7, plots=False):
                 "peak_pressure_pa": float(result.pressure_pa.max()),
                 "audit": asdict(audit),
                 "history": [asdict(row) for row in result.history],
+                **summary_files,
             }
         )
         (directory / "summary.json").write_text(json.dumps(report, indent=2) + "\n")

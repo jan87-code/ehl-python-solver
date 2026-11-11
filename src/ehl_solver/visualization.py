@@ -11,6 +11,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import ArrayLike, NDArray
+from scipy.integrate import trapezoid
 from scipy.interpolate import RegularGridInterpolator
 
 if TYPE_CHECKING:
@@ -91,6 +92,275 @@ def interpolate_cross_section(
         points = np.column_stack((y, np.full_like(y, coordinate_m)))
         coordinates = y
     return coordinates.copy(), np.asarray(interpolator(points), dtype=np.float64)
+
+
+def _final_field_numpy(field: ArrayLike) -> NDArray[np.float64]:
+    """Convert final fields for plotting, including an explicit CUDA-to-host copy."""
+    if hasattr(field, "detach") and hasattr(field, "cpu"):
+        field = field.detach().cpu().numpy()
+    return np.asarray(field, dtype=np.float64)
+
+
+def plot_run_summary(
+    x_m: ArrayLike,
+    y_m: ArrayLike,
+    pressure_pa: ArrayLike,
+    film_thickness_m: ArrayLike,
+    *,
+    load_n: float,
+    formulation: str,
+    status: str,
+    force_audit: dict[str, Any] | None = None,
+    newton_corrections: int | None = None,
+    backend: str = "CPU",
+    runtime_seconds: float | None = None,
+) -> tuple[Figure, dict[str, NDArray[np.float64]], dict[str, float | tuple[float, float]]]:
+    """Create the standard 2x2 physical summary and raw y=0 profiles."""
+    x, y, pressure, film = _validated_plot_fields(
+        x_m, y_m, _final_field_numpy(pressure_pa), _final_field_numpy(film_thickness_m)
+    )
+    if x[0] > 0.0 or x[-1] < 0.0:
+        raise ValueError("x_m must span x=0 to define the central film thickness")
+    if not np.isfinite(load_n):
+        raise ValueError("load_n must be finite")
+    if not formulation.strip() or not status.strip() or not backend.strip():
+        raise ValueError("formulation, status and backend must be nonempty")
+    if newton_corrections is not None and newton_corrections < 0:
+        raise ValueError("newton_corrections must be nonnegative")
+    if runtime_seconds is not None and (
+        not np.isfinite(runtime_seconds) or runtime_seconds < 0
+    ):
+        raise ValueError("runtime_seconds must be finite and nonnegative")
+
+    center_y, center_pressure = interpolate_cross_section(
+        x, y, pressure, axis="x", coordinate_m=0.0
+    )
+    _, center_film = interpolate_cross_section(
+        x, y, film, axis="x", coordinate_m=0.0
+    )
+    central_film = float(np.interp(0.0, x, center_film))
+    minimum_j, minimum_i = np.unravel_index(np.argmin(film), film.shape)
+    minimum_film = float(film[minimum_j, minimum_i])
+    minimum_xy = (float(x[minimum_i]), float(y[minimum_j]))
+    maximum_pressure = float(np.max(pressure))
+
+    audit_text = "force audit n/a"
+    if force_audit:
+        relative_force = next(
+            (
+                force_audit[key]
+                for key in ("force_relative_error", "relative_force_error")
+                if key in force_audit
+            ),
+            None,
+        )
+        force_residual = next(
+            (
+                force_audit[key]
+                for key in ("force_residual_n", "load_residual_n")
+                if key in force_audit
+            ),
+            None,
+        )
+        if relative_force is not None:
+            audit_text = f"force rel. error={float(relative_force):.2e}"
+        elif force_residual is not None:
+            audit_text = f"force residual={float(force_residual):.2e} N"
+
+    accepted = status in ("accepted", "accepted_numerical_root", "ACCEPTED")
+    status_label = "ACCEPTED" if accepted else "FAILED / NOT AN ACCEPTED SOLUTION"
+    title = f"{load_n:g} N, {y.size}x{x.size}, {formulation}, {status_label}"
+    metadata = [
+        f"h_c={central_film * 1e9:.4g} nm",
+        f"h_min={minimum_film * 1e9:.4g} nm at "
+        f"({minimum_xy[0] * 1e3:.4g}, {minimum_xy[1] * 1e3:.4g}) mm",
+        f"p_max={maximum_pressure * 1e-9:.4g} GPa",
+        audit_text,
+        f"Newton corrections={newton_corrections if newton_corrections is not None else 'n/a'}",
+        f"{backend}",
+        f"runtime={runtime_seconds:.4g} s" if runtime_seconds is not None else "runtime=n/a",
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10), constrained_layout=True)
+    fig.suptitle(title, fontsize=15, fontweight="bold")
+    fig.text(0.5, 0.955, " | ".join(metadata), ha="center", va="top", fontsize=8)
+    x_mm, y_mm = x * 1e3, y * 1e3
+    pressure_image = axes[0, 0].imshow(
+        pressure * 1e-9,
+        extent=(x_mm[0], x_mm[-1], y_mm[0], y_mm[-1]),
+        origin="lower",
+        interpolation="nearest",
+        aspect="equal",
+        cmap="magma",
+        vmin=float(np.min(pressure) * 1e-9),
+        vmax=float(np.max(pressure) * 1e-9),
+    )
+    fig.colorbar(pressure_image, ax=axes[0, 0], label="Pressure [GPa]")
+    axes[0, 0].set(
+        xlabel="x [mm]",
+        ylabel="y [mm]",
+        title="Unfiltered pressure field",
+        xlim=(x_mm[0], x_mm[-1]),
+        ylim=(y_mm[0], y_mm[-1]),
+    )
+    axes[0, 0].annotate(
+        "+x entrainment",
+        xy=(0.24, 0.94),
+        xytext=(0.06, 0.94),
+        xycoords="axes fraction",
+        textcoords="axes fraction",
+        color="white",
+        fontsize=8,
+        arrowprops={"arrowstyle": "->", "color": "white", "lw": 1.4},
+        bbox={"facecolor": "black", "alpha": 0.45, "edgecolor": "none", "pad": 2},
+    )
+
+    film_image = axes[0, 1].imshow(
+        film * 1e9,
+        extent=(x_mm[0], x_mm[-1], y_mm[0], y_mm[-1]),
+        origin="lower",
+        interpolation="nearest",
+        aspect="equal",
+        cmap="viridis",
+        vmin=float(np.min(film) * 1e9),
+        vmax=float(np.max(film) * 1e9),
+    )
+    fig.colorbar(film_image, ax=axes[0, 1], label="Film thickness [nm]")
+    axes[0, 1].scatter(
+        [minimum_xy[0] * 1e3], [minimum_xy[1] * 1e3],
+        marker="x", color="red", s=45, label="Global minimum",
+    )
+    axes[0, 1].set(
+        xlabel="x [mm]",
+        ylabel="y [mm]",
+        title="Film-thickness field",
+        xlim=(x_mm[0], x_mm[-1]),
+        ylim=(y_mm[0], y_mm[-1]),
+    )
+    axes[0, 1].legend(loc="best", fontsize=8)
+
+    centerline_x_mm = center_y * 1e3
+    axes[1, 0].plot(centerline_x_mm, center_pressure * 1e-9, linewidth=1.0)
+    axes[1, 0].set(
+        xlabel="x [mm]",
+        ylabel="Pressure [GPa]",
+        title="Centerline pressure, y=0",
+        xlim=(x_mm[0], x_mm[-1]),
+    )
+    axes[1, 1].plot(centerline_x_mm, center_film * 1e9, linewidth=1.0, label="Raw centerline")
+    axes[1, 1].scatter(
+        [0.0], [central_film * 1e9], marker="o", s=28, zorder=3,
+        label=f"h_c={central_film * 1e9:.4g} nm at x=0",
+    )
+    center_minimum_i = int(np.argmin(center_film))
+    axes[1, 1].scatter(
+        [centerline_x_mm[center_minimum_i]],
+        [center_film[center_minimum_i] * 1e9],
+        marker="v",
+        s=30,
+        zorder=3,
+        label=f"Centerline min={center_film[center_minimum_i] * 1e9:.4g} nm",
+    )
+    axes[1, 1].text(
+        0.02,
+        0.98,
+        f"Global h_min={minimum_film * 1e9:.4g} nm at "
+        f"x={minimum_xy[0] * 1e3:.4g} mm, y={minimum_xy[1] * 1e3:.4g} mm",
+        transform=axes[1, 1].transAxes,
+        va="top",
+        fontsize=8,
+    )
+    axes[1, 1].set(
+        xlabel="x [mm]",
+        ylabel="Film thickness [nm]",
+        title="Centerline film thickness, y=0",
+        xlim=(x_mm[0], x_mm[-1]),
+    )
+    axes[1, 1].legend(loc="best", fontsize=7)
+    profiles = {
+        "x_m": center_y,
+        "pressure_centerline_pa": center_pressure,
+        "film_centerline_m": center_film,
+    }
+    metrics: dict[str, float | tuple[float, float]] = {
+        "central_film_m": central_film,
+        "minimum_film_m": minimum_film,
+        "minimum_film_xy_m": minimum_xy,
+        "maximum_pressure_pa": maximum_pressure,
+    }
+    return fig, profiles, metrics
+
+
+def write_run_summary(
+    x_m: ArrayLike,
+    y_m: ArrayLike,
+    pressure_pa: ArrayLike,
+    film_thickness_m: ArrayLike,
+    *,
+    directory: str | Path,
+    case_name: str,
+    load_n: float,
+    formulation: str,
+    status: str,
+    force_audit: dict[str, Any] | None = None,
+    newton_corrections: int | None = None,
+    backend: str = "CPU",
+    runtime_seconds: float | None = None,
+) -> tuple[Path, Path]:
+    """Save a standardized high-resolution PNG and its raw centerline CSV."""
+    case = re.sub(r"[^A-Za-z0-9_.-]+", "_", case_name).strip("._")
+    formula = re.sub(r"[^A-Za-z0-9_.-]+", "-", formulation).strip("-.")
+    if not case or not formula:
+        raise ValueError("case_name and formulation must contain filename-safe characters")
+    accepted = status in ("accepted", "accepted_numerical_root", "ACCEPTED")
+    status_tag = "ACCEPTED" if accepted else "FAILED"
+    load_tag = f"{load_n:g}N".replace(".", "p")
+    grid = _final_field_numpy(pressure_pa).shape
+    if len(grid) != 2:
+        raise ValueError("pressure_pa must have shape (ny, nx)")
+    stem = f"{case}_{load_tag}_{grid[1]}x{grid[0]}_{formula}_{status_tag}_summary"
+    output = Path(directory)
+    output.mkdir(parents=True, exist_ok=True)
+    figure_path = output / f"{stem}.png"
+    profile_path = output / f"{stem}_profiles.csv"
+    figure, profiles, _ = plot_run_summary(
+        x_m,
+        y_m,
+        pressure_pa,
+        film_thickness_m,
+        load_n=load_n,
+        formulation=formulation,
+        status=status,
+        force_audit=force_audit,
+        newton_corrections=newton_corrections,
+        backend=backend,
+        runtime_seconds=runtime_seconds,
+    )
+    try:
+        figure.savefig(figure_path, dpi=240)
+    finally:
+        plt.close(figure)
+    profile_data = np.column_stack(
+        (
+            profiles["x_m"],
+            profiles["x_m"] * 1e3,
+            profiles["pressure_centerline_pa"],
+            profiles["pressure_centerline_pa"] * 1e-9,
+            profiles["film_centerline_m"],
+            profiles["film_centerline_m"] * 1e9,
+        )
+    )
+    np.savetxt(
+        profile_path,
+        profile_data,
+        delimiter=",",
+        header=(
+            "x_m,x_mm,pressure_centerline_pa,pressure_centerline_gpa,"
+            "film_centerline_m,film_centerline_nm"
+        ),
+        comments="",
+    )
+    return figure_path, profile_path
 
 
 def plot_pressure_distribution(
@@ -420,6 +690,21 @@ def save_coupled_figures(
         figure.savefig(path, dpi=160)
         plt.close(figure)
         paths.append(path)
+    load_n = float(trapezoid(trapezoid(pressure, x, axis=1), y))
+    summary_figure, summary_profiles = write_run_summary(
+        x,
+        y,
+        pressure,
+        film,
+        directory=output,
+        case_name=case,
+        load_n=load_n,
+        formulation="coupled-reynolds",
+        status="accepted_numerical_root",
+        newton_corrections=len(solution.history),
+        backend="CPU (NumPy/SciPy)",
+    )
+    paths.extend((summary_figure, summary_profiles))
     return tuple(paths)
 
 
@@ -994,4 +1279,38 @@ def save_monolithic_figures(
         figure.savefig(path, dpi=160)
         plt.close(figure)
         paths.append(path)
+    target_load_n = getattr(
+        solution,
+        "target_load_n",
+        float(trapezoid(trapezoid(pressure, x, axis=1), y)),
+    )
+    load_residual_n = getattr(solution, "load_residual_n", None)
+    relative_load_error = (
+        abs(load_residual_n / target_load_n)
+        if load_residual_n is not None and target_load_n != 0
+        else None
+    )
+    force_audit = (
+        {
+            "force_residual_n": load_residual_n,
+            "force_relative_error": relative_load_error,
+        }
+        if load_residual_n is not None
+        else None
+    )
+    summary_figure, summary_profiles = write_run_summary(
+        x,
+        y,
+        pressure,
+        film,
+        directory=output,
+        case_name=case,
+        load_n=target_load_n,
+        formulation="signed-full-film",
+        status="accepted_numerical_root",
+        force_audit=force_audit,
+        newton_corrections=len(solution.history),
+        backend="CPU (NumPy/SciPy)",
+    )
+    paths.extend((summary_figure, summary_profiles))
     return tuple(paths)

@@ -119,6 +119,30 @@ audit cannot attribute the failure specifically to Krylov, active-set or
 line-search behavior. Do not use its field or blindly increase iteration
 limits.
 
+Regional reanalysis of the accepted 65x65 and 129x129 fields localizes about
+54.7% of the full-contact squared pressure difference to `x=[-100,60] um`
+and 45.3% to `x=[60,100] um`; the downstream release region contributes
+only 0.044%. Main-region pressure remains different by 5.71% relative L2
+(31.71 MPa RMS), so the gap is not solely an outlet-spike artifact. The
+outlet region differs by 18.50% (59.06 MPa RMS), and its 237.48 MPa Linf
+occurs near `(75,31) um`. The coarse centerline has no strict local outlet
+peak, while the fine field has one at 81.25 um; its displacement cannot be
+measured from these two grids. Full regional metrics and common-coordinate
+difference maps are generated from the existing fields; the compressed maps
+remain in ignored `results/`.
+
+The coupled solver requires uniform axes, so local/nonuniform refinement is
+not currently supported. The main-contact share and large main-region Linf
+also mean spike-only refinement would not address the full error. A
+129x129-seeded uniform 193x193 attempt is the next optional diagnostic
+calculation only after full nonlinear/Krylov/line-search history capture is
+added; it may inform main-field trends but its expected spike width is still
+under one cell. Do not infer convergence from one added grid, and do not
+repeat the previous unauditable attempt. The physical-validation block
+remains an accepted, quantified numerical mesh uncertainty for the measured
+film profiles, not an arbitrary required grid size or a claimed convergence
+tolerance.
+
 The digitized-profile comparison and remaining priorities are documented in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md). Keep the donor-flux formulation
 as the declared initial validation target. The missing exact

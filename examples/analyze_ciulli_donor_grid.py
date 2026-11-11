@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from scipy.integrate import trapezoid
 from scipy.interpolate import RegularGridInterpolator
 
 from ehl_solver.pressure_analysis import (
@@ -18,6 +19,13 @@ MAIN_X_M = (-100e-6, 60e-6)
 MAIN_Y_M = (-75e-6, 75e-6)
 OUTLET_WINDOW_M = (75e-6, 175e-6)
 PROFILE_WINDOW_M = (-100e-6, 100e-6)
+REGIONAL_WINDOW_M = (-100e-6, 175e-6, -75e-6, 75e-6)
+REGION_BOUNDS_UM = {
+    "full_contact": (-100.0, 100.0),
+    "main_contact_excluding_spike": (-100.0, 60.0),
+    "outlet_spike": (60.0, 100.0),
+    "pressure_release": (100.0, 175.0),
+}
 
 
 def profile_error_metrics(observed_um, computed_um, digitization_uncertainty_um):
@@ -187,6 +195,189 @@ def _midplane_comparison(coarse, fine):
     return profile_comparisons
 
 
+def _integral(values, x, y):
+    return float(trapezoid(trapezoid(values, x=x, axis=1), x=y, axis=0))
+
+
+def _regional_metrics(coarse_p, fine_p, coarse_h, fine_h, x, y, bounds_um):
+    x0, x1 = bounds_um
+    region = (
+        (x[None, :] >= x0 * 1e-6)
+        & (x[None, :] <= x1 * 1e-6)
+        & (y[:, None] >= REGIONAL_WINDOW_M[2])
+        & (y[:, None] <= REGIONAL_WINDOW_M[3])
+    )
+    pressure_support = region & ((coarse_p > 1e3) | (fine_p > 1e3))
+    dp, dh = fine_p - coarse_p, fine_h - coarse_h
+    p_error_integral = _integral(dp**2 * pressure_support, x, y)
+    p_reference_integral = _integral(coarse_p**2 * pressure_support, x, y)
+    h_error_integral = _integral(dh**2 * region, x, y)
+    h_reference_integral = _integral(coarse_h**2 * region, x, y)
+    if not np.any(pressure_support) or not np.any(region):
+        raise ValueError("Regional comparison window has no sampled support")
+    p_values = np.where(pressure_support, abs(dp), -np.inf)
+    h_values = np.where(region, abs(dh), -np.inf)
+    p_j, p_i = np.unravel_index(int(np.argmax(p_values)), p_values.shape)
+    h_j, h_i = np.unravel_index(int(np.argmax(h_values)), h_values.shape)
+    p_area = _integral(pressure_support.astype(np.float64), x, y)
+    area = _integral(region.astype(np.float64), x, y)
+    return {
+        "bounds_x_um": [x0, x1],
+        "pressure_relative_l2": float(
+            np.sqrt(p_error_integral / p_reference_integral)
+        ),
+        "pressure_rms_mpa_over_positive_support": float(
+            np.sqrt(p_error_integral / p_area) / 1e6
+        ),
+        "pressure_linf_mpa": float(abs(dp[p_j, p_i]) / 1e6),
+        "pressure_linf_xy_um": [float(x[p_i] * 1e6), float(y[p_j] * 1e6)],
+        "positive_pressure_support_percent": float(100 * p_area / area),
+        "pressure_support_mismatch_percent": float(
+            100
+            * _integral(((coarse_p > 1e3) != (fine_p > 1e3)) & region, x, y)
+            / area
+        ),
+        "film_relative_l2": float(np.sqrt(h_error_integral / h_reference_integral)),
+        "film_rms_nm": float(np.sqrt(h_error_integral / area) * 1e9),
+        "film_linf_nm": float(abs(dh[h_j, h_i]) * 1e9),
+        "film_linf_xy_um": [float(x[h_i] * 1e6), float(y[h_j] * 1e6)],
+        "pressure_error_squared_integral_pa2_m2": p_error_integral,
+    }
+
+
+def regional_mesh_comparison(coarse, fine, *, spacing_um=0.5):
+    """Compare nested accepted fields on common physical coordinates; no solve."""
+    if (
+        not np.isfinite(spacing_um)
+        or spacing_um <= 0
+        or coarse["case"]["domain_half_width_x_m"]
+        != fine["case"]["domain_half_width_x_m"]
+        or coarse["case"]["domain_half_width_y_m"]
+        != fine["case"]["domain_half_width_y_m"]
+        or coarse["case"]["nx"] >= fine["case"]["nx"]
+        or coarse["case"]["ny"] >= fine["case"]["ny"]
+    ):
+        raise ValueError("Increasing grids on the same physical domain are required")
+    x0, x1, y0, y1 = REGIONAL_WINDOW_M
+    count_x = round((x1 - x0) * 1e6 / spacing_um) + 1
+    count_y = round((y1 - y0) * 1e6 / spacing_um) + 1
+    x = np.linspace(x0, x1, count_x)
+    y = np.linspace(y0, y1, count_y)
+    xx, yy = np.meshgrid(x, y)
+    p0 = _sample_2d(coarse, coarse["pressure_pa"], xx, yy)
+    p1 = _sample_2d(fine, fine["pressure_pa"], xx, yy)
+    h0 = _sample_2d(coarse, coarse["film_m"], xx, yy)
+    h1 = _sample_2d(fine, fine["film_m"], xx, yy)
+    regions = {
+        name: _regional_metrics(p0, p1, h0, h1, x, y, bounds)
+        for name, bounds in REGION_BOUNDS_UM.items()
+    }
+    contact_error = regions["full_contact"][
+        "pressure_error_squared_integral_pa2_m2"
+    ]
+    for metric in regions.values():
+        metric["fraction_of_contact_pressure_error_squared_percent"] = (
+            100 * metric["pressure_error_squared_integral_pa2_m2"] / contact_error
+            if contact_error
+            else None
+        )
+        metric.pop("pressure_error_squared_integral_pa2_m2")
+
+    centerline_index = int(np.argmin(abs(y)))
+    profile_mask = (x >= 60e-6) & (x <= 100e-6)
+    profile_x = x[profile_mask]
+    profile_coarse = p0[centerline_index, profile_mask]
+    profile_fine = p1[centerline_index, profile_mask]
+    shifts = np.arange(-12.5e-6, 12.5001e-6, 0.125e-6)
+    best_shift = None
+    for shift in shifts:
+        shifted = np.interp(
+            profile_x + shift,
+            profile_x,
+            profile_fine,
+            left=np.nan,
+            right=np.nan,
+        )
+        valid = np.isfinite(shifted)
+        rms = float(np.sqrt(np.mean((shifted[valid] - profile_coarse[valid]) ** 2)))
+        if best_shift is None or rms < best_shift["rms_pa"]:
+            best_shift = {
+                "translation_um": float(shift * 1e6),
+                "rms_pa": rms,
+                "valid_samples": int(np.count_nonzero(valid)),
+            }
+    peak_data = {}
+    for label, run in (("coarse", coarse), ("fine", fine)):
+        pressure_x, pressure = centerline_pressure_profile(
+            run["x_m"], run["y_m"], run["pressure_pa"]
+        )
+        window_tolerance = 8 * np.finfo(np.float64).eps * 100e-6
+        indices = np.flatnonzero(
+            (pressure_x >= 75e-6 - window_tolerance)
+            & (pressure_x <= 100e-6 + window_tolerance)
+        )
+        window_maximum = None
+        if indices.size:
+            maximum_index = indices[np.argmax(pressure[indices])]
+            window_maximum = {
+                "x_um": float(pressure_x[maximum_index] * 1e6),
+                "pressure_mpa": float(pressure[maximum_index] / 1e6),
+            }
+        peak_data[label] = {
+            "window_maximum": window_maximum,
+            "strict_interior_peaks": [
+                {
+                    "x_um": float(pressure_x[i] * 1e6),
+                    "pressure_mpa": float(pressure[i] / 1e6),
+                }
+                for i in indices
+                if 0 < i < len(pressure) - 1
+                and pressure[i] > pressure[i - 1]
+                and pressure[i] > pressure[i + 1]
+            ],
+        }
+    return {
+        "coarse_grid": [coarse["case"]["ny"], coarse["case"]["nx"]],
+        "fine_grid": [fine["case"]["ny"], fine["case"]["nx"]],
+        "common_grid_spacing_um": spacing_um,
+        "common_window_x_um": [x0 * 1e6, x1 * 1e6],
+        "common_window_y_um": [y0 * 1e6, y1 * 1e6],
+        "regions": regions,
+        "contact_pressure_error_energy_share": {
+            "main_contact_excluding_spike_percent": regions[
+                "main_contact_excluding_spike"
+            ]["fraction_of_contact_pressure_error_squared_percent"],
+            "outlet_spike_percent": regions["outlet_spike"][
+                "fraction_of_contact_pressure_error_squared_percent"
+            ],
+        },
+        "outlet_centerline_profile": {
+            "x_um": (profile_x * 1e6).tolist(),
+            "coarse_pressure_mpa": (profile_coarse / 1e6).tolist(),
+            "fine_pressure_mpa": (profile_fine / 1e6).tolist(),
+            "raw_rms_mpa": float(
+                np.sqrt(np.mean((profile_fine - profile_coarse) ** 2)) / 1e6
+            ),
+            "best_translation_diagnostic": {
+                **best_shift,
+                "rms_mpa": best_shift["rms_pa"] / 1e6,
+                "not_peak_location_estimate": True,
+            },
+            "peak_detection": peak_data,
+        },
+        "fields": {
+            "x_m": x,
+            "y_m": y,
+            "pressure_coarse_pa": p0,
+            "pressure_fine_pa": p1,
+            "pressure_difference_pa": p1 - p0,
+            "film_coarse_m": h0,
+            "film_fine_m": h1,
+            "film_difference_m": h1 - h0,
+        },
+    }
+
+
 def analyze(mesh_directories, domain_directories, profile_csv):
     mesh = sorted((_load_run(path) for path in mesh_directories), key=lambda r: r["case"]["nx"])
     domain = sorted(
@@ -271,8 +462,19 @@ def main(argv=None):
         "--profiles", type=Path, default=Path("cases/ciulli_2008_figure13_s0_profiles.csv")
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--regional-fields", type=Path)
     args = parser.parse_args(argv)
     result = analyze(args.mesh, args.domain, args.profiles)
+    if args.regional_fields is not None:
+        mesh_runs = sorted(
+            (_load_run(path) for path in args.mesh), key=lambda r: r["case"]["nx"]
+        )
+        regional = regional_mesh_comparison(mesh_runs[1], mesh_runs[2])
+        result["regional_mesh_diagnostics_65_to_129"] = {
+            key: value for key, value in regional.items() if key != "fields"
+        }
+        with args.regional_fields.open("wb") as stream:
+            np.savez_compressed(stream, **regional["fields"])
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False))
     print(json.dumps(result, indent=2, allow_nan=False))
     return 0

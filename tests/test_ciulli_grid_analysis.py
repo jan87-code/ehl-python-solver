@@ -11,6 +11,7 @@ from ehl_solver.prototype import PointContactCase, hertz_guess
 from examples.analyze_ciulli_donor_grid import (
     _midplane_comparison,
     profile_error_metrics,
+    regional_mesh_comparison,
 )
 from examples.run_ciulli_constitutive_sensitivity import (
     _BarusFluid,
@@ -55,6 +56,44 @@ def test_midplane_comparison_reports_common_coordinate_units():
     assert result["transverse"]["pressure_pa"]["linf"] == pytest.approx(1.0)
     assert result["longitudinal"]["film_m"]["rms"] == pytest.approx(1.0)
     assert result["transverse"]["film_m"]["linf"] == pytest.approx(1.0)
+
+
+def test_regional_comparison_separates_main_contact_and_outlet_error():
+    base_case = json.loads(
+        (Path(__file__).parents[1] / "cases/ciulli_15n_donor.json").read_text()
+    )
+    x_coarse = np.linspace(-0.4e-3, 0.4e-3, 5)
+    y_coarse = np.linspace(-0.4e-3, 0.4e-3, 5)
+    x_fine = np.linspace(-0.4e-3, 0.4e-3, 41)
+    y_fine = np.linspace(-0.4e-3, 0.4e-3, 9)
+    coarse = {
+        "case": {**base_case, "nx": 5, "ny": 5},
+        "x_m": x_coarse,
+        "y_m": y_coarse,
+        "pressure_pa": np.full((5, 5), 10e6),
+        "film_m": np.full((5, 5), 100e-9),
+    }
+    xx, yy = np.meshgrid(x_fine, y_fine)
+    pressure_fine = np.full((9, 41), 10e6)
+    pressure_fine[xx > 60e-6] += 2e6
+    fine = {
+        "case": {**base_case, "nx": 41, "ny": 9},
+        "x_m": x_fine,
+        "y_m": y_fine,
+        "pressure_pa": pressure_fine,
+        "film_m": np.full((9, 41), 101e-9),
+    }
+    result = regional_mesh_comparison(coarse, fine, spacing_um=1.0)
+    regions = result["regions"]
+    assert regions["main_contact_excluding_spike"]["pressure_relative_l2"] == pytest.approx(
+        0.0, abs=1e-14
+    )
+    assert regions["outlet_spike"]["pressure_relative_l2"] > 0
+    assert regions["full_contact"]["film_rms_nm"] == pytest.approx(1.0)
+    assert sum(result["contact_pressure_error_energy_share"].values()) == pytest.approx(
+        100.0
+    )
+    assert result["fields"]["pressure_difference_pa"].shape == (151, 276)
 
 
 def test_barus_sensitivity_fluid_matches_reported_zero_pressure_slope():

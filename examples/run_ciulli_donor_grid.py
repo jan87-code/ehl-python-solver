@@ -34,6 +34,12 @@ def _digest(path):
 def _save_state(path, probe, state, case):
     pressure, theta, film = probe.fields(state)
     problem = probe.system.problem
+    deformation = (
+        film
+        - state[-1] * problem.film_scale_m
+        - problem.rigid_geometry_m
+    )
+    density, viscosity, _, _ = case.fluid().properties(pressure)
     with Path(path).open("wb") as stream:
         np.savez_compressed(
             stream,
@@ -41,6 +47,9 @@ def _save_state(path, probe, state, case):
             pressure_pa=pressure,
             theta=theta,
             film_m=film,
+            deformation_m=deformation,
+            density_kg_m3=density,
+            viscosity_pa_s=viscosity,
             x_m=problem.x_m,
             y_m=problem.y_m,
             case_json=json.dumps(asdict(case), sort_keys=True),
@@ -287,6 +296,28 @@ def _scipy_openblas_thread_count():
     return None
 
 
+def _numpy_openblas_thread_count():
+    library_paths = Path(np.__file__).resolve().parent.parent.glob(
+        "numpy.libs/*openblas*"
+    )
+    loader = getattr(ctypes, "WinDLL", ctypes.CDLL)
+    for path in library_paths:
+        try:
+            library = loader(str(path))
+        except OSError:
+            continue
+        for symbol in (
+            "openblas_get_num_threads",
+            "openblas_get_num_threads_",
+            "openblas_get_num_threads64_",
+        ):
+            getter = getattr(library, symbol, None)
+            if getter is not None:
+                getter.restype = ctypes.c_int
+                return int(getter())
+    return None
+
+
 def run(
     case_path,
     output,
@@ -363,11 +394,12 @@ def run(
                     "NUMEXPR_NUM_THREADS",
                 )
             },
+            numpy_openblas_active_threads=_numpy_openblas_thread_count(),
             scipy_openblas_active_threads=_scipy_openblas_thread_count(),
             linear_algebra_backend=(
-                "SciPy sparse GMRES with SuperLU factorization; NumPy/SciPy "
-                "build reports SciPy OpenBLAS. The iterative matvec/FFT and "
-                "SuperLU path are not configured as parallel solvers."
+                "SciPy sparse GMRES/SuperLU; NumPy and SciPy OpenBLAS "
+                "thread counts queried independently. NumPy FFT and Python "
+                "matrix-free operations are not configured as parallel solvers."
             ),
         ),
         fluid=asdict(case.fluid()),
@@ -376,6 +408,14 @@ def run(
         maximum_krylov_cycles=10,
         gmres_restart=60,
         seed=seed_provenance,
+        field_archive_keys=[
+            "pressure_pa",
+            "film_m",
+            "deformation_m",
+            "density_kg_m3",
+            "viscosity_pa_s",
+            "theta",
+        ],
         history_directory="diagnostics",
         checkpoint_directory="checkpoints",
         termination_reason=None,

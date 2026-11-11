@@ -69,6 +69,12 @@ def test_point_contact_accepts_seventy_k_and_hundred_k_budgets():
     assert case_100.system().base.n <= 100000
 
 
+def test_point_contact_accepts_513_grid_budget():
+    case = PointContactCase(ny=513, nx=513, maximum_physical_nodes=300000)
+    assert case.ny * case.nx == 263169
+    assert case.ny * case.nx <= case.maximum_physical_nodes
+
+
 def test_real_standalone_run_and_reaudited_portable_seed(solved):
     folder, case, report = solved
     assert report["independent_audit"]["numerically_accepted"]

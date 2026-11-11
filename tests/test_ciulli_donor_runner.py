@@ -1,5 +1,4 @@
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -9,24 +8,13 @@ from ehl_solver.prototype import PointContactCase
 from examples.run_ciulli_donor_grid import (
     _persist_solver_record,
     _reconcile_persisted_history,
+    _save_state,
     _seed_state,
 )
 
 
 def _checkpoint(path, case, state, probe):
-    pressure, theta, film = probe.fields(state)
-    problem = probe.system.problem
-    with path.open("wb") as stream:
-        np.savez_compressed(
-            stream,
-            state_dimensionless=state,
-            pressure_pa=pressure,
-            theta=theta,
-            film_m=film,
-            x_m=problem.x_m,
-            y_m=problem.y_m,
-            case_json=json.dumps(asdict(case)),
-        )
+    _save_state(path, probe, state, case)
 
 
 def test_seed_loading_supports_exact_restart_and_bilinear_prolongation(tmp_path):
@@ -38,6 +26,22 @@ def test_seed_loading_supports_exact_restart_and_bilinear_prolongation(tmp_path)
     ]
     checkpoint = tmp_path / "checkpoint.npz"
     _checkpoint(checkpoint, source_case, source_state, source_probe)
+    with np.load(checkpoint, allow_pickle=False) as archive:
+        for field in (
+            "pressure_pa",
+            "film_m",
+            "deformation_m",
+            "density_kg_m3",
+            "viscosity_pa_s",
+            "theta",
+        ):
+            assert field in archive
+        np.testing.assert_allclose(
+            archive["film_m"],
+            archive["deformation_m"]
+            + source_state[-1] * source_probe.system.problem.film_scale_m
+            + source_probe.system.problem.rigid_geometry_m,
+        )
 
     exact_state, exact_metadata = _seed_state(checkpoint, source_case, source_probe)
     np.testing.assert_array_equal(exact_state, source_state)

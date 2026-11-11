@@ -162,15 +162,25 @@ in the midplane comparison coordinates; corrected values are in the report.
 
 The outlet peak remains under-resolved at 257x257: its estimated width is
 3.96 um, about 1.27 cells, and the estimated integrated pressure in its
-grid-dependent local window changes from 0.11479 to 0.10245 N. A uniform
-513x513 run could be informative for the main field but requires 263,169
-nodes, beyond the current 70,000-node case budget, and would still provide
-only about 2.5 cells across the prior spike-width estimate. Before such a
-run, perform bounded memory/runtime preflight and preserve the existing
-acceptance gates and diagnostics. Since the solver requires uniform axes,
-local/nonuniform refinement is a future solver-development requirement for
-efficient spike resolution. The failed 193x193 iterate remains rejected
-and is not repeated.
+grid-dependent local window changes from 0.11479 to 0.10245 N. A bounded
+513x513 resource preflight has now been completed for a diagnostic
+refinement. The exact target sparse matrix has 522,243 rows, 2.61 million
+nonzeros and 33.4 MB storage; its SuperLU factors occupy 639 MB. The measured
+preflight peak working set was 1.45 GiB and private bytes 2.51 GiB, while
+26.18 GiB RAM was available at preflight start. The 513x513 operator estimate
+is 0.283 GiB and the 60-vector GMRES basis is about 0.241 GiB. Reserving an
+8 GiB process budget leaves at least 16 GiB for the OS and other processes.
+The results volume had 103 GiB free; conservative uncompressed checkpoint
+and diagnostic storage is below 1 GiB. NumPy and SciPy OpenBLAS were
+independently queried at 4 threads with all BLAS/OpenMP/NumExpr environment
+limits set to 4. The explicit supported node budget is raised to 300,000 for
+this case only; its 263,169 nodes fit that bound. The 513x513 solve is the
+next diagnostic gate and must retain the existing equations and acceptance
+criteria. It is expected to provide only about 2.5 cells across the prior
+spike-width estimate, so it cannot establish spike convergence. Since the
+solver requires uniform axes, local/nonuniform refinement remains a future
+requirement for efficient spike resolution. The failed 193x193 iterate
+remains rejected and is not repeated.
 
 The digitized-profile comparison and remaining priorities are documented in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md). Keep the donor-flux formulation

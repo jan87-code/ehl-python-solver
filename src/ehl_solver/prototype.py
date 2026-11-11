@@ -63,11 +63,12 @@ class PointContactCase:
             raise ValueError("Odd grids >=5 required")
         if (
             type(self.maximum_physical_nodes) is not int
-            or self.maximum_physical_nodes not in (20000, 30000, 40000, 50000, 70000, 100000)
+            or self.maximum_physical_nodes
+            not in (20000, 30000, 40000, 50000, 70000, 100000, 300000)
         ):
             raise ValueError(
                 "maximum_physical_nodes must be one of the explicitly supported budgets: "
-                "20000, 30000, 40000, 50000, 70000, or 100000"
+                "20000, 30000, 40000, 50000, 70000, 100000, or 300000"
             )
         if self.ny * self.nx > self.maximum_physical_nodes:
             raise ValueError(

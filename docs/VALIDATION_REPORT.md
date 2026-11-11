@@ -4932,7 +4932,10 @@ correction norms, and packed active-set masks. It writes field checkpoints
 at each audited nonlinear iterate and preserves the rejected final candidate
 plus termination reason. A checkpoint can be supplied again as `--seed`;
 it remains a guess, never an accepted root. Runtime metadata records
-environment thread limits and the queried SciPy OpenBLAS thread count.
+environment thread limits and independently queried NumPy and SciPy
+OpenBLAS thread counts. Checkpoints retain pressure, fractional content,
+film, deformation, density, viscosity, axes, and the dimensionless restart
+state.
 
 Backend inspection found SciPy sparse GMRES and SuperLU in the Newton linear
 path, with NumPy's FFT convolution and Python matrix-free products; those
@@ -4950,7 +4953,50 @@ section. Pressure RMS differences contract slowly, but the main pressure
 and film fields and `h_c`/`h_min` do not demonstrate mesh convergence. Only
 `p_max` admits a conditional scalar Richardson/GCI estimate, with the
 maximizing location changing on the finest grid. The outlet peak is still
-under-resolved at 1.267 cells across its estimated width. A uniform
-513x513 run could improve main-field evidence but requires a separate
-resource preflight and would not adequately resolve the spike; local or
-nonuniform refinement remains future work.
+under-resolved at 1.267 cells across its estimated width.
+
+### Resource preflight for 513x513 donor-flux refinement
+
+A 513x513 preflight was run against the actual accepted 257x257 seed and
+target-grid donor linearization, including assembly and SuperLU
+factorization of the sparse preconditioner. The measured host has 63.2 GiB
+physical RAM; 26.18 GiB was available at the start of the instrumented
+preflight and 24.74 GiB remained after the target factorization. The measured
+peak working set was 1.447 GiB and peak private usage 2.510 GiB.
+
+| Component | Measured/estimated size |
+|---|---:|
+| 513x513 grid / interior unknowns | 263,169 / 261,121 |
+| Newton vector `(2*n+1)` | 4.18 MB |
+| GMRES restart basis (60+2 vectors) | 259 MB |
+| Elasticity operator workspace estimate (`128 * product(fft_shape)`) | 304 MB |
+| Sparse bordered preconditioner, assembled | 2,608,168 nonzeros / 33.4 MB |
+| SuperLU L/U factors | 52,903,113 nonzeros / 639 MB |
+| Preflight process peak working set / private bytes | 1.447 / 2.510 GiB |
+| Available RAM before / after exact matrix and factorization | 26.18 / 24.74 GiB |
+| Free results-volume storage | 103 GiB |
+
+An 8 GiB conservative process working-set budget is set for the run, retaining
+at least 16 GiB available to the OS and other applications. Uncompressed
+field checkpoints (restart state, pressure, film, deformation, density,
+viscosity, cavitation content and axes) are estimated below 0.6 GiB for 31
+correction checkpoints plus final/latest snapshots; active-set and JSON
+diagnostics are budgeted below 0.1 GiB. A 1 GiB storage reserve is therefore
+well below available disk.
+
+The run environment sets `OPENBLAS_NUM_THREADS`, `OMP_NUM_THREADS`,
+`MKL_NUM_THREADS`, `BLIS_NUM_THREADS`, and `NUMEXPR_NUM_THREADS` to 4.
+Independent runtime queries report 4 threads for both NumPy and SciPy
+OpenBLAS. The iterative NumPy FFT, Python matrix-free products, and SuperLU
+factorization are not configured as parallel solvers; no nested solver
+parallelism or competing solver jobs are used. The existing runner's node
+budget accepted up to 100,000 nodes, so this specific run uses the explicit
+300,000-node limit for 263,169 nodes; equations, model, line-search,
+nonlinear, Krylov, and independent acceptance gates are unchanged.
+
+The resource preflight passes. The 513x513 donor run is the next diagnostic
+gate; its outcome and four-grid comparison will be reported before deciding
+whether any further refinement or discretization work is warranted. The
+estimated spike resolution is only about 2.5 cells across its previous
+width, so the run cannot by itself establish spike-height or width
+convergence.

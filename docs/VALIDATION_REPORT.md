@@ -5636,7 +5636,7 @@ Cumulative rows overlap and must not be added. Solver-reported elapsed was
 | Field reconstruction (169) | 0.043 / 0.02 | 3.428 / 1.77 | overlap with elasticity |
 | Line searches (12) | 0.018 / 0.01 | 1.298 / 0.67 | nonlinear control and residual |
 | Donor face flux (86) | 0.124 / 0.06 | 0.312 / 0.16 | tested resident GPU kernel |
-| JFO residual (24) | 0.023 / 0.01 | 0.865 / 0.45 | full device residual still needed |
+| JFO residual (24) | 0.023 / 0.01 | 0.865 / 0.45 | device operator subsequently verified below |
 
 State arrays contain 66,049 nodes and use float64; the 513 grid has 263,169.
 The archived profile records 695 total GMRES iterations in 24 Krylov histories
@@ -5695,3 +5695,66 @@ joint-refinement module excluded. Complete `pytest -q` remains blocked during
 collection by its existing POSIX-only `resource` import. Changed-file Ruff and
 `git diff --check` pass; `ruff check .` reports the existing E501 in the
 untracked `.kilo/` notebook helper.
+
+## Device donor/JFO residual and bordered products (2026-11-12)
+
+The full-strength **donor endpoint only** now has a resident PyTorch
+residual and selected generalized Jacobian-vector product. These reproduce
+the CPU interior state `(P, D, h0/h_ref)`, where `P=p/p_ref` and
+`D=1-theta`, the copied content boundaries, zero boundary pressure,
+elastic deformation, donor face fluxes, `min(P,D)` complementarity and
+normalized load row. The CPU endpoint's nondimensional mass residual is
+divided by 100.
+At exact complementarity ties the guide selects the generalized derivative;
+the separate true one-sided derivative selects the direction-dependent
+minimum. Active-mask overrides affect the selected model, not the nonlinear
+residual. Input and film feasibility checks synchronize scalar decisions,
+but do not transfer field arrays to the host.
+
+Four saved 257x257 CPU Newton states, checkpoints 0, 3, 6 and 7, were
+compared without another nonlinear solve. The accepted state SHA-256 is
+`ecac5724a26374879a9e028e43631d043f6b16ebf5e00f8f001fc8dea038010b`.
+Across smooth, localized pressure, localized content, offset, combined and
+near-tie-masked smooth directions, the largest CPU/CUDA selected and
+directional JVP relative L2 discrepancy was `5.68e-15`. Residual absolute
+Linf differences were at most `1.22e-14` in the scaled residual. At the final
+root the relative L2 residual difference is `0.403`, and relative Linf is
+`10.47`: these ratios are dominated by a reference residual close to
+roundoff and are **not** a relative-residual parity pass.
+
+Second-order one-sided CPU residual finite differences used four feasible
+steps and a deterministic seed; in this set no complementarity branch changed.
+Best relative L2 discrepancies were about `2.5e-12` for smooth directions,
+`6.4e-8` for localized pressure, `1.1e-13` to `5.4e-12` for localized content,
+and `2.7e-9` to `5.2e-9` for offset directions. These samples do not establish
+accuracy across every active-set switch; separate focused tests exercise exact
+ties and overridden active rows. An earlier unmasked perturbation did cross
+two complementarity branches at finite steps, so such differences must not
+be interpreted as unconditional derivative errors or proofs.
+
+For five warmed applications at the accepted 257x257 checkpoint, the CPU
+residual averaged 47.15 ms and synchronized CUDA 31.45 ms (1.50x); the frozen
+JVP averaged 49.37 ms and 27.27 ms (1.81x). These short resident-component
+measurements omit setup, transfers, preconditioner, Krylov and audits;
+observed timings varied substantially between checkpoints and shared-device
+activity is not controlled. They are not end-to-end solver speedups.
+
+This is **not a device nonlinear solver**. In the tested PyTorch CUDA build,
+`torch.sparse.spsolve` reports that CUDA cuDSS support was not compiled in,
+and CUDA CSR triangular solve is unavailable. The CPU preconditioner uses
+SuperLU; moving full Krylov fields to the host for each application violates
+the residency requirement. A robust device-native JFO pressure/content
+active-set preconditioner and its verified bordered Krylov recovery remain
+open work. Existing GPU signed-full-film solvers do not fill that gap.
+No accepted CUDA root, full CPU/GPU solver comparison, GPU-specific run
+figure, end-to-end speedup, or 513/1025 GPU solve is claimed. The 1025 gate
+remains closed, and neither mesh convergence nor physical validation follows
+from these operator checks. See [USER_GUIDE.md](USER_GUIDE.md) for reproduction.
+
+Verification: the focused operator/directional suite passed **64 tests**;
+the Windows-compatible suite passed **832, with 1 skipped**. Full `pytest -q`
+remains blocked during collection by the existing POSIX-only `resource`
+import in `tests/test_joint_refinement.py`. Changed-file Ruff passes;
+repository-wide `ruff check .` reports the existing E501 in the untracked
+`.kilo/` notebook helper. No unrelated files were changed to mask these
+limitations.

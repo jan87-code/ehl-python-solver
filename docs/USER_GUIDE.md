@@ -250,3 +250,21 @@ Both require the saved accepted archive and a working PyTorch CUDA/ROCm device.
 These are resident component comparisons, not a GPU JFO solver or proof of
 mesh convergence. See [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for the
 measured scope, limitations, and checksums.
+
+To compare the complete donor/JFO residual and bordered products on saved
+257x257 CPU Newton checkpoints, use a fresh output filename:
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:OPENBLAS_NUM_THREADS = "1"
+$env:OMP_NUM_THREADS = "1"
+.\.venv\Scripts\python.exe -m examples.benchmark_ciulli_jfo_device --root results\ciulli_20261112_cpu_thread_benchmark_v3\threads_1 --output results\my_jfo_device_operator.json
+```
+
+The archive must include the recorded case and checkpoints 0, 3, 6 and 7;
+the output contains compact error, finite-difference and component timing
+data, and refuses to overwrite an existing file. These measurements do not
+run a nonlinear CUDA solver or establish CPU/GPU accepted-root equivalence.
+In particular, relative residual error is misleading near a roundoff-level
+root; inspect the absolute errors as well. Component timings exclude setup
+and field transfers, and are not an end-to-end speedup.

@@ -2717,7 +2717,7 @@ panel uses a clearly labelled contact-range viewport so the outlet constriction
 remains visible while numerical profile exports stay unmodified. The accepted
 513x513 figure was regenerated from its saved state, not by rerunning the
 solver. Current CPU/CUDA comparison helpers produce separate summaries from
-their actual backend fields; donor/JFO has no CUDA implementation, and the
+their actual backend fields; donor/JFO has no CUDA nonlinear solver, and the
 optional signed-full-film CUDA solver remains a mathematical verification
 tool rather than physical EHL validation.
 
@@ -2760,17 +2760,16 @@ was rerun for these plots.
 The resident PyTorch CUDA elasticity and new donor face-flux/JVP kernels agree
 with NumPy at near-roundoff on saved 257x257 and 513x513 fields. These are
 **operator-only** results, not a GPU JFO result or whole-solver speedup.
-The existing device nonlinear solver is signed full-film only; complementarity,
-load row, preconditioning, globalization and independent JFO audits are not
-implemented for a device-resident donor solve. Do not mix CPU/GPU fields
-inside iterations as a substitute.
+At this milestone the existing device nonlinear solver was signed full-film
+only. See the subsequent device donor/JFO residual milestone below for the
+current operator status. Do not mix CPU/GPU fields inside iterations as a
+substitute for a resident solver.
 
-**Next gate:** independently verify a full device-resident donor residual and
-bordered JVP, including active-set boundary behavior; then implement and test
-device Krylov/preconditioning, nonlinear feasibility/globalization and
-reproducible checkpoint/audits before comparing an accepted 257x257 CUDA
-solution against CPU. Review the CPU donor-zero limiter overhead as a separate
-equivalence-preserving optimization. Investigate resolution and the physical
+**Next gate:** implement and test device Krylov/preconditioning, nonlinear
+feasibility/globalization and reproducible checkpoint/audits before comparing
+an accepted 257x257 CUDA solution against CPU. Review the CPU donor-zero
+limiter overhead as a separate equivalence-preserving optimization.
+Investigate resolution and the physical
 outlet-feature shape using independently verified operators and controlled
 local-resolution studies. A 1025x1025 run is not justified by these operator
 benchmarks alone. Full details, timings, and profiling limitations are in
@@ -2781,3 +2780,25 @@ CUDA operator parity. The Windows-compatible suite passed **828, 1 skipped**;
 the complete suite still fails collection on the existing POSIX-only
 `resource` import. Changed-file Ruff and `git diff --check` pass; repository
 Ruff remains blocked by the pre-existing untracked `.kilo/` E501.
+
+### Complete device donor/JFO operators (2026-11-12)
+
+The full-strength donor residual and bordered JVP, including copied
+content-boundary derivatives, load, complementarity tie selection and active
+overrides, have been checked on small CPU/CUDA cases and four saved 257x257
+Newton states. Selected and true directional products agree with CPU to
+relative L2 `5.68e-15` or better on the sampled directions; finite-difference
+checks and the near-zero residual normalization caveat are documented in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md). This is an independently
+verified **operator increment**, not an accepted CUDA donor/JFO solve.
+
+**Remaining gate:** design and verify a GPU-resident active-set
+pressure/content preconditioner, then integrate resident Krylov and Newton
+with true linear/bordered residual checks, feasibility, directional Armijo
+globalization, failure histories, checkpointing and independently recomputed
+acceptance audits. CUDA sparse direct/CSR triangular solves are unavailable
+in the tested PyTorch build; per-iteration host-field transfers are not an
+acceptable workaround. Then compare actual CPU and CUDA solutions, audits,
+figures, memory and end-to-end runtimes at 257x257, and 513x513 if practical.
+Do not run 1025x1025 until those gates and the unresolved outlet-resolution
+question justify it. No solver physics or acceptance tolerances changed.

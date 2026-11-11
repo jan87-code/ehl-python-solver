@@ -1,0 +1,38 @@
+{
+  "scope": "Full donor/JFO residual and bordered products only; no nonlinear CUDA solve",
+  "grid_ny_nx": [257, 257],
+  "accepted_state_sha256": "ecac5724a26374879a9e028e43631d043f6b16ebf5e00f8f001fc8dea038010b",
+  "checkpoint_file_sha256": {
+    "0": "fbc2dd5b714d082a312f63503991d18ab3ae56eeea0b7f2d12d4c8b7ae507b92",
+    "3": "30153ee8ccbbb580925f29ed04fb36a440fda90381ff4ace6929eae31c0775a4",
+    "6": "8df36c10c205ba41fde79d633a03187c65c7ffbc15f661b6a6c52aab3bef71a8",
+    "7": "ecac5724a26374879a9e028e43631d043f6b16ebf5e00f8f001fc8dea038010b"
+  },
+  "environment": {
+    "gpu": "NVIDIA RTX A2000 Laptop GPU",
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "cpu_threads": 1
+  },
+  "sampled_direction_seed": 2026,
+  "sampled_direction_types": [
+    "smooth",
+    "localized_pressure",
+    "localized_theta",
+    "offset",
+    "combined",
+    "smooth_front_masked"
+  ],
+  "maximum_cpu_gpu_jvp_relative_l2": 5.679305663218709e-15,
+  "maximum_cpu_gpu_residual_absolute_linf": 1.2197650297215052e-14,
+  "accepted_root_residual_relative_l2": 0.4034818741624983,
+  "accepted_root_residual_relative_linf": 10.465171398906113,
+  "relative_residual_caveat": "The CPU residual is close to roundoff; relative residual errors are not a parity pass.",
+  "finite_difference": "Second-order one-sided CPU residual at four feasible step sizes; no branch switches in this sample.",
+  "unresolved": [
+    "Resident donor/JFO active-set preconditioner and nonlinear solver",
+    "Independent accepted CUDA-root audits and CPU/GPU equivalence",
+    "Whole-solver runtime, memory and standardized CUDA run figure",
+    "Outlet-feature mesh convergence and physical validation"
+  ]
+}

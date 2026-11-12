@@ -140,16 +140,32 @@ class HybridJFOCorrectionSolver:
     on the requested torch device.
     """
 
-    def __init__(self, case, backend=None, *, memory_limit_bytes=2**30):
+    def __init__(
+        self,
+        case,
+        backend=None,
+        *,
+        workspace_limit_bytes=None,
+        memory_limit_bytes=None,
+    ):
+        if workspace_limit_bytes is None and memory_limit_bytes is None:
+            workspace_limit_bytes = 2**30
+        elif workspace_limit_bytes is None:
+            workspace_limit_bytes = memory_limit_bytes
+        elif memory_limit_bytes is not None:
+            raise ValueError("specify only one workspace limit")
+        if type(workspace_limit_bytes) is not int or workspace_limit_bytes < 1:
+            raise ValueError("workspace_limit_bytes must be a positive integer")
         self.backend = make_backend("torch", "cuda") if backend is None else backend
         if self.backend.name != "torch":
             raise ValueError("hybrid JFO correction requires a torch backend")
         initialization_started = time.perf_counter()
         self.evaluator = DeviceDonorJFO(
-            case, self.backend, memory_limit_bytes=memory_limit_bytes
+            case, self.backend, memory_limit_bytes=workspace_limit_bytes
         )
         self.initialization_seconds = time.perf_counter() - initialization_started
-        self.memory_limit_bytes = memory_limit_bytes
+        self.workspace_limit_bytes = workspace_limit_bytes
+        self.memory_limit_bytes = workspace_limit_bytes
 
     def __call__(
         self,
@@ -178,7 +194,7 @@ class HybridJFOCorrectionSolver:
             or type(maximum_krylov_cycles) is not int
             or maximum_krylov_cycles < 1
             or type(gmres_restart) is not int
-            or gmres_restart < 1
+            or not 1 <= gmres_restart <= 60
             or not math.isfinite(schur_tolerance)
             or schur_tolerance <= 0
         ):
@@ -254,7 +270,7 @@ class HybridJFOCorrectionSolver:
             rtol=krylov_rtol,
             restart=gmres_restart,
             max_iterations=maximum_krylov_cycles * gmres_restart,
-            memory_limit_bytes=self.memory_limit_bytes,
+            memory_limit_bytes=self.workspace_limit_bytes,
         )
         synchronize()
         gmres_seconds = time.perf_counter() - gmres_started

@@ -2885,16 +2885,29 @@ memory, root and field-comparison data are in
 This establishes CPU/GPU numerical equivalence and equation closure for
 these two finite grids, not mesh convergence, physical validity, or a
 fully-device JFO implementation. The targeted core pressure/flux review found
-no defect to block refinement, but the verified hybrid's 1025x1025 resource
-preflight fails its configured CUDA workspace limits. Its 3080x3080 FFT
-workspace estimate is 1.131 GiB against a 1 GiB cap; restart-60 GMRES estimates
-2.027 GiB against that same cap (and exceeds half the currently free 4 GiB GPU
-memory). The host SuperLU and result-storage estimates fit current headroom,
-but do not override the CUDA admission failure.
+no defect to block refinement. The original 1025x1025 preflight rejected the
+default 1-GiB workspace/restart-60 settings, so saved 513x513 checkpoints
+were subsequently tested with restarts 20, 30 and 40 at a 1536-MiB cap.
+All nine corrections retained the existing Krylov tolerance and passed the
+independently recomputed true-residual and CPU-parity gates. Only restart 20
+has positive conservative 1025 GMRES admission margin (+246 MB); restart 30
+and 40 are over their respective budgets by 113 MB and 532 MB. Restart 20 is
+selected despite its slower 513 correction time. The measured benchmark,
+workspace estimates and admission calculation are recorded in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
-Do not launch 1025x1025 or raise the memory cap for this run. The next step is
-to design and verify a memory-admissible hybrid configuration on saved 513
-checkpoints, retaining the current Krylov tolerance and independently
-rechecking correction residual/parity and peak GPU memory. Only then reconsider
-1025x1025 from the accepted 513x513 seed. The preflight assumptions, estimates
-and limits are documented in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+The first 1025x1025 hybrid setup used the accepted 513 seed, restart 20 and a
+1536-MiB cap, but stopped before the first Newton correction: an internal
+`LimitedLoadLinearization` probe had not received the configured FFT workspace
+limit and rejected the DC-FFT allocation at its old 1-GiB default. This is a
+resource-plumbing failure, not a nonlinear or physical rejection. The cap is
+now propagated into that nested probe, and the focused regression set passes
+(85 tests with `MPLBACKEND=Agg`; three existing PyTorch warnings). The failed
+setup/checkpoint has been preserved and will not be overwritten. No 1025
+solution is accepted yet. A retry is now running in the fresh directory
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/`;
+its summary is still at iteration 0, so no nonlinear acceptance or final
+audits are available. Host free RAM and disk preflights remain safe estimates,
+but projected runtime and GPU memory are not measured 1025 usage. Even if
+accepted, one 513-to-1025 pair supports only a comparison of changes, not
+Richardson extrapolation, GCI, or physical EHL validation.

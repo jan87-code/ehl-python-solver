@@ -6057,15 +6057,92 @@ The CUDA workspace admission fails with the current verified settings:
 
 #### Decision
 
-The core numerical review found no flux-discretization defect, so it does not
-block a future uniform-refinement experiment. **The 1025x1025 calculation was
-not run and is not accepted:** the verified hybrid configuration fails its
-current GPU memory admission checks. Do not bypass these checks by raising the
-cap or silently changing restart. First expose and verify a memory-admissible
-hybrid configuration on saved 513x513 corrections, preserving the `1e-9`
-Krylov tolerance and independent true-residual/CPU-parity gates, and measure
-its peak GPU memory. Then reconsider a 1025x1025 run from the accepted 513
-seed. Until such a run passes the independent force, mass, JFO complementarity,
-film-reconstruction, elasticity and outlet-feature audits, there are no
-513x513-to-1025x1025 convergence results and no change to the current
-numerical-verification level.
+The core numerical review found no flux-discretization defect to block a
+uniform-refinement experiment. The initial 1025x1025 preflight above records
+the default restart-60/1-GiB configuration and its failure; that is a
+superseded configuration, not permission to bypass admission checks. The
+following saved-correction measurements select a lower restart with unchanged
+linear tolerances and acceptance gates.
+
+### Measured hybrid workspace/restart settings and 1025x1025 gate
+
+The hybrid runner now exposes `--gmres-restart` (integer 1–60) and
+`--fft-workspace-limit-mib` (integer 1–4096). The workspace limit is propagated
+to the CPU field-construction FFT, the CUDA elasticity/JFO operator and GMRES
+admission. The default remains restart 60 and 1024 MiB. The explicitly
+supported physical-node budget now includes 1,100,000 nodes; the 1025x1025
+grid has 1,050,625 physical nodes. These changes expose resource settings and
+do not change the equations, constitutive laws, tolerances or nonlinear gates.
+
+Saved 513x513 checkpoints 0/3/6 were tested with restart 20, 30 and 40, a
+1536-MiB workspace limit, ten maximum Krylov cycles and `rtol=1e-9`. Each CPU
+reference correction was computed once. All nine hybrid corrections passed
+the `5e-9` independently recomputed true-residual gate, `5e-7` correction
+relative-L2 parity gate and `1e-10` CPU/CUDA residual-parity Linf gate.
+Measured correction outcomes:
+
+| Restart | Krylov iterations (0/3/6) | Hybrid correction seconds (0/3/6) | Maximum true residual | Maximum correction relative L2 | Peak allocated / reserved |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 20 | 40 / 40 / 40 | 16.47 / 16.75 / 17.06 | `3.75e-12` | `1.09e-9` | 280.5 / 323.0 MB |
+| 30 | 29 / 30 / 30 | 15.98 / 16.00 / 15.10 | `5.20e-10` | `1.14e-9` | 322.4 / 343.9 MB |
+| 40 | 29 / 31 / 32 | 16.29 / 15.02 / 15.97 | `3.72e-10` | `3.47e-10` | 364.4 / 385.9 MB |
+
+CPU corrections took 40.00–42.05 s each and required 67–69 Krylov
+iterations. Restart 20's hybrid true residual was 45.7–448 times smaller than
+the matching CPU residual; for restarts 30/40 it was not uniformly smaller,
+but remained within the unchanged absolute acceptance gate. Hybrid transfer
+overhead was 0.061–0.092 s per correction. Restart 30 was fastest on average
+at 513x513, but it does not pass the conservative 1025 projection below.
+Measured peak reserved increments were about 323 MB for restart 20/30 and
+365 MB for restart 40. The benchmark JSON and checkpoint hashes are preserved
+under ignored `results/ciulli_20261112_hybrid_restart_memory_preflight.json`.
+
+The measured host/GPU snapshot immediately before the 1025 launch was 28.83
+GiB free host RAM, 113.13 GiB free disk, and 3,455,791,924 bytes free on the
+4,294,443,008-byte RTX A2000 Laptop GPU. The prior 1025 host estimate remains
+about 13.5 GiB committed memory, 436 MiB result storage and 2.72 hours; these
+are extrapolations, not measured 1025 usage. At 1025 the FFT workspace estimate
+is 1,214,259,200 bytes (1.131 GiB), so a 1536-MiB cap leaves 396,353,536 bytes
+(378 MiB) above that estimate. This cap is 1.72 GiB below the measured free
+GPU memory at the start of the selected 513 correction configuration.
+
+For the GMRES admission check, the measured 513 reserved increments were
+scaled by the 1025-to-513 grid-area ratio, then conservatively subtracted from
+measured free VRAM before applying the production half-free-memory rule:
+
+| Restart | Projected 1025 reserved increment | 1025 GMRES workspace estimate | Half projected free VRAM | Admission margin |
+| ---: | ---: | ---: | ---: | ---: |
+| 20 | 1,289,328,641 B | 837,237,712 B | 1,083,231,641 B | +245,993,929 B |
+| 30 | 1,289,328,641 B | 1,172,143,792 B | 1,059,114,393 B | -113,029,399 B |
+| 40 | 1,456,773,919 B | 1,507,056,272 B | 975,391,754 B | -531,664,518 B |
+
+Restart 20 is therefore the only tested configuration with positive
+conservative admission headroom. It was selected despite being about 6.8%
+slower per saved 513 correction than restart 30. The unchanged `1e-9`
+Krylov tolerance and all true-residual/parity gates are retained.
+
+The first 1025x1025 hybrid setup used the accepted 513x513 seed, restart 20,
+a 1536-MiB FFT/workspace cap and the explicit 1,100,000-node budget. Its output
+directory, including its initial checkpoint and failure summary, is
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap/`; it has been
+preserved. The setup stopped before the first Newton correction because the
+nested `LimitedLoadLinearization` probe constructed a CPU DC-FFT operator
+without receiving the configured workspace limit, and therefore used the
+1-GiB default. This was an internal resource-plumbing defect rather than an
+admission or equation failure. The limit is now propagated through that
+constructor and the targeted regression set passes (85 tests with
+`MPLBACKEND=Agg`; three existing PyTorch warnings). The retry must use a fresh
+output directory. A retry is now running in
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/`;
+its status is `running` at iteration 0. No accepted 1025 solution, final
+audits, outlet-feature analysis or 513-to-1025 field comparison exist yet.
+The full Windows-compatible suite excluding `tests/test_joint_refinement.py`
+passes (855 passed, 1 skipped, three existing PyTorch warnings). The excluded
+module imports the Unix-only `resource` package during collection. Scoped
+Ruff (`ruff check docs examples src tests`) passes; repository-wide
+`ruff check .` reports one pre-existing 101-character line in the unrelated,
+untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`. Pylance
+reports no syntax errors and confirms all 70
+`LimitedLoadLinearization` and 39 `solve_limited_load` call sites remain
+signature-compatible. Resource projections are not measured 1025 usage and
+must not be reported as mesh convergence.

@@ -54,10 +54,12 @@ def test_optional_correction_solver_hook_records_timing(donor_root):
         initial_state=initial,
         transport_fraction=0.0,
         correction_solver=correction_solver,
+        gmres_restart=30,
     )
     assert result.audit["numerically_accepted"]
     assert calls
     assert calls[0]["krylov_rtol"] == 1e-9
+    assert calls[0]["gmres_restart"] == 30
     assert any(
         model["linear_solver_timings"] == {"bridge_seconds": 0.125}
         for record in result.history
@@ -242,6 +244,11 @@ def test_partial_transport_root_is_not_promoted_to_full_limited(donor_root):
         {"maximum_iterations": 31},
         {"maximum_iterations": True},
         {"maximum_krylov_cycles": 11},
+        {"gmres_restart": 0},
+        {"gmres_restart": 61},
+        {"gmres_restart": True},
+        {"workspace_limit_bytes": 0},
+        {"workspace_limit_bytes": True},
         {"transport_fraction": 1.1},
         {"transport_fraction": True},
         {"local_balance_tolerance": 1e-9},

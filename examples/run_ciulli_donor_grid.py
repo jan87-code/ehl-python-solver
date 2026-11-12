@@ -328,6 +328,8 @@ def run(
     seed=None,
     maximum_physical_nodes=None,
     linear_backend="cpu",
+    gmres_restart=60,
+    fft_workspace_limit_mib=1024,
 ):
     started = time.perf_counter()
     output = Path(output)
@@ -336,6 +338,13 @@ def run(
     base = PointContactCase(**json.loads(Path(case_path).read_text()))
     if base.transport != "donor" or grid < 5 or grid % 2 == 0:
         raise ValueError("A donor case and an odd grid >=5 are required")
+    if linear_backend not in ("cpu", "hybrid-cuda"):
+        raise ValueError("linear_backend must be 'cpu' or 'hybrid-cuda'")
+    if type(gmres_restart) is not int or not 1 <= gmres_restart <= 60:
+        raise ValueError("gmres_restart must be an integer from 1 to 60")
+    if type(fft_workspace_limit_mib) is not int or not 1 <= fft_workspace_limit_mib <= 4096:
+        raise ValueError("fft_workspace_limit_mib must be an integer from 1 to 4096")
+    workspace_limit_bytes = fft_workspace_limit_mib * 1024**2
     half_width_m = half_width_mm * 1e-3
     case = replace(
         base,
@@ -349,14 +358,16 @@ def run(
             else maximum_physical_nodes
         ),
     )
-    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    probe = LimitedLoadProbe(
+        case,
+        transport_fraction=0.0,
+        workspace_limit_bytes=workspace_limit_bytes,
+    )
     initial_state, seed_provenance = (
         _seed_state(seed, case, probe)
         if seed is not None
         else (None, {"kind": "Hertz initial guess; not a solution"})
     )
-    if linear_backend not in ("cpu", "hybrid-cuda"):
-        raise ValueError("linear_backend must be 'cpu' or 'hybrid-cuda'")
     correction_solver = None
     device_backend = None
     backend_label = "CPU (NumPy/SciPy)"
@@ -370,7 +381,11 @@ def run(
         from ehl_solver.hybrid_jfo import HybridJFOCorrectionSolver
 
         device_backend = make_backend("torch", "cuda")
-        correction_solver = HybridJFOCorrectionSolver(case, device_backend)
+        correction_solver = HybridJFOCorrectionSolver(
+            case,
+            device_backend,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
         import torch
 
         gpu_name = torch.cuda.get_device_name(device_backend.device)
@@ -397,6 +412,8 @@ def run(
         command.extend(("--seed", str(seed)))
     if maximum_physical_nodes is not None:
         command.extend(("--maximum-physical-nodes", str(maximum_physical_nodes)))
+    command.extend(("--gmres-restart", str(gmres_restart)))
+    command.extend(("--fft-workspace-limit-mib", str(fft_workspace_limit_mib)))
     if linear_backend != "cpu":
         command.extend(("--linear-backend", linear_backend))
     metadata = dict(
@@ -432,7 +449,11 @@ def run(
         maximum_corrections=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
-        gmres_restart=60,
+        gmres_restart=gmres_restart,
+        fft_workspace_limit_bytes=workspace_limit_bytes,
+        hybrid_workspace_limit_bytes=(
+            workspace_limit_bytes if linear_backend == "hybrid-cuda" else None
+        ),
         seed=seed_provenance,
         field_archive_keys=[
             "pressure_pa",
@@ -458,7 +479,7 @@ def run(
                 correction_solver.initialization_seconds
             ),
             hybrid_operator_memory_limit_bytes=(
-                correction_solver.memory_limit_bytes
+                correction_solver.workspace_limit_bytes
             ),
         )
     source_files = [
@@ -515,6 +536,8 @@ def run(
             initial_state=initial_state,
             transport_fraction=0.0,
             correction_solver=correction_solver,
+            gmres_restart=gmres_restart,
+            workspace_limit_bytes=workspace_limit_bytes,
             state_observer=observe,
             diagnostic_observer=observe_diagnostics,
         )
@@ -660,6 +683,10 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=Path)
     parser.add_argument("--maximum-physical-nodes", type=int)
+    parser.add_argument("--gmres-restart", type=int, default=60)
+    parser.add_argument(
+        "--fft-workspace-limit-mib", type=int, default=1024
+    )
     parser.add_argument(
         "--linear-backend", choices=("cpu", "hybrid-cuda"), default="cpu"
     )
@@ -672,6 +699,8 @@ def main(argv=None):
         seed=args.seed,
         maximum_physical_nodes=args.maximum_physical_nodes,
         linear_backend=args.linear_backend,
+        gmres_restart=args.gmres_restart,
+        fft_workspace_limit_mib=args.fft_workspace_limit_mib,
     )
     audit = report["audit"]
     print(

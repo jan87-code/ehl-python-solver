@@ -794,6 +794,137 @@ def three_grid_convergence(mesh_runs):
     }
 
 
+def pairwise_513_to_1025_convergence(mesh_runs):
+    """Compare the accepted 513 and 1025 roots without extrapolating."""
+    runs = sorted(mesh_runs, key=lambda run: run["case"]["nx"])
+    grids = [run["case"]["nx"] for run in runs]
+    if grids != [513, 1025]:
+        raise ValueError("Accepted nested 513x513 and 1025x1025 roots required")
+    coarse, fine = runs
+    if any(
+        run["case"]["ny"] != run["case"]["nx"]
+        or run["case"]["transport"] != "donor"
+        or run["case"]["domain_half_width_x_m"]
+        != coarse["case"]["domain_half_width_x_m"]
+        or run["case"]["domain_half_width_y_m"]
+        != coarse["case"]["domain_half_width_y_m"]
+        for run in runs
+    ):
+        raise ValueError("Runs must be square donor grids on one physical domain")
+    if (fine["case"]["nx"] - 1) != 2 * (coarse["case"]["nx"] - 1):
+        raise ValueError("The 513-to-1025 refinement ratio must be two")
+
+    scalar_values = {
+        "h_min_nm": [float(np.min(run["film_m"]) * 1e9) for run in runs],
+        "h_c_nm": [
+            float(
+                run["film_m"][len(run["y_m"]) // 2, len(run["x_m"]) // 2]
+                * 1e9
+            )
+            for run in runs
+        ],
+        "p_max_mpa": [
+            float(np.max(run["pressure_pa"]) / 1e6) for run in runs
+        ],
+        "integrated_load_n": [
+            float(run["audit"]["force_n"]) for run in runs
+        ],
+    }
+    scalar_changes = {}
+    for name, values in scalar_values.items():
+        difference = values[1] - values[0]
+        scalar_changes[name] = {
+            "513x513": values[0],
+            "1025x1025": values[1],
+            "absolute_change": difference,
+            "relative_change_percent": 100 * difference / values[0],
+        }
+
+    region_comparison = regional_mesh_comparison(coarse, fine)
+    structure_comparison = main_contact_structure_comparison(coarse, fine)
+    outlet_spikes = {}
+    for run in runs:
+        x, pressure = centerline_pressure_profile(
+            run["x_m"], run["y_m"], run["pressure_pa"]
+        )
+        outlet_spikes[f"{run['case']['nx']}x{run['case']['ny']}"] = (
+            outlet_spike_diagnostics(x, pressure, window_m=OUTLET_WINDOW_M)
+        )
+
+    root_audits = []
+    scalar_locations = []
+    for run in runs:
+        j_min, i_min = np.unravel_index(
+            int(np.argmin(run["film_m"])), run["film_m"].shape
+        )
+        j_max, i_max = np.unravel_index(
+            int(np.argmax(run["pressure_pa"])), run["pressure_pa"].shape
+        )
+        audit = run["audit"]
+        root_audits.append({
+            "grid": [run["case"]["ny"], run["case"]["nx"]],
+            "numerically_accepted": audit["numerically_accepted"],
+            "force_n": audit["force_n"],
+            "force_relative_error": audit["force_relative_error"],
+            "relative_local_balance": audit["mass"]["relative_local_balance"],
+            "relative_global_balance": audit["mass"]["relative_global_balance"],
+            "maximum_si_mass_divergence_kg_m2_s": audit["mass"][
+                "maximum_si_mass_divergence_kg_m2_s"
+            ],
+            "maximum_complementarity": audit["mass"]["maximum_complementarity"],
+            "film_reconstruction_error_m": audit["film_reconstruction_error_m"],
+            "direct_elasticity_checked": audit["direct_elasticity_checked"],
+        })
+        scalar_locations.append({
+            "grid": [run["case"]["ny"], run["case"]["nx"]],
+            "h_min_xy_um": [
+                float(run["x_m"][i_min] * 1e6),
+                float(run["y_m"][j_min] * 1e6),
+            ],
+            "p_max_xy_um": [
+                float(run["x_m"][i_max] * 1e6),
+                float(run["y_m"][j_max] * 1e6),
+            ],
+        })
+
+    return {
+        "equation": "donor-flux JFO/Elrod-Adams",
+        "grids_ny_nx": [[513, 513], [1025, 1025]],
+        "domain_half_width_mm": [
+            coarse["case"]["domain_half_width_x_m"] * 1e3,
+            coarse["case"]["domain_half_width_y_m"] * 1e3,
+        ],
+        "scalar_changes": scalar_changes,
+        "scalar_locations": scalar_locations,
+        "independent_root_audits": root_audits,
+        "common_grid_field_comparison": _field_comparison(coarse, fine),
+        "regional_comparison": {
+            "regions": region_comparison["regions"],
+            "contact_pressure_error_energy_share":
+                region_comparison["contact_pressure_error_energy_share"],
+        },
+        "main_contact_structure": {
+            "hertz_core_partition": structure_comparison["regions"],
+            "hotspot_and_cavitation": structure_comparison[
+                "hotspot_and_cavitation"
+            ],
+            "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate":
+                structure_comparison[
+                    "pressure_ridge_maxima_x_0_to_60_um_by_lateral_coordinate"
+                ],
+        },
+        "midplane_profile_differences": _midplane_comparison(coarse, fine),
+        "outlet_spikes": outlet_spikes,
+        "interpretation": (
+            "This single adjacent-grid pair measures contraction only; it "
+            "cannot establish an observed order, Richardson extrapolation, "
+            "or GCI. p_max is reported as a diagnostic, not a convergence "
+            "criterion. Pressure and film differences use common physical "
+            "coordinates and separately defined contact/outlet regions."
+        ),
+    }
+
+
 def _pairwise_field_archive(runs):
     fields = {}
     for coarse, fine in zip(runs, runs[1:], strict=False):
@@ -897,7 +1028,13 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     if args.mesh_only:
-        result = three_grid_convergence([_load_run(path) for path in args.mesh])
+        mesh_runs = [_load_run(path) for path in args.mesh]
+        if [run["case"]["nx"] for run in sorted(
+            mesh_runs, key=lambda run: run["case"]["nx"]
+        )] == [513, 1025]:
+            result = pairwise_513_to_1025_convergence(mesh_runs)
+        else:
+            result = three_grid_convergence(mesh_runs)
     else:
         if len(args.mesh) != 3 or args.domain is None:
             parser.error("standard analysis requires three --mesh roots and three --domain roots")

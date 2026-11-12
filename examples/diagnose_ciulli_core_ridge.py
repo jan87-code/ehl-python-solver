@@ -830,6 +830,7 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
     film_x = np.asarray([row["film_minimum_x_um"] for row in film_rows])
     film_y = np.asarray([row["y_um"] for row in film_rows])
     pmax_xy = np.asarray(locus["global_pmax_locations_xy_um"])
+    grid_ny, grid_nx = p.shape
     feature_json = output / "outlet_feature_locus.json"
     feature_csv = output / "outlet_feature_locus.csv"
     feature_json.write_text(json.dumps(locus, indent=2, allow_nan=False))
@@ -875,7 +876,12 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
         status=run["summary"]["status"],
         force_audit=run["summary"].get("audit"),
         newton_corrections=run["summary"].get("newton_corrections"),
-        backend="CPU (NumPy/SciPy)",
+        backend=(
+            "Hybrid CUDA operator / CPU SuperLU "
+            f"({run['summary'].get('runtime', {}).get('gpu', 'CUDA device')})"
+            if run["summary"].get("linear_backend") == "hybrid-cuda"
+            else "CPU (NumPy/SciPy)"
+        ),
         runtime_seconds=run["summary"].get("elapsed_seconds"),
         film_display_range_nm=film_range_nm,
         field_archive_path=Path(run["directory"]) / "state.npz",
@@ -961,7 +967,10 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
     axes[0].set(
         xlabel="x [mm]",
         ylabel="y [mm]",
-        title="Pressure maximum locus; theta=1 boundary (white)",
+        title=(
+            f"{grid_nx}x{grid_ny} pressure maximum locus; "
+            "theta=1 boundary (white)"
+        ),
         xlim=(-0.12, 0.15),
         ylim=(-0.12, 0.12),
     )
@@ -1032,7 +1041,9 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
         ylim=(-0.12, 0.12),
     )
     axes[1].legend(loc="lower right", fontsize=7)
-    overlay_png = output / "ciulli_15n_513_donor_outlet_locus_overlay.png"
+    overlay_png = output / (
+        f"ciulli_15n_{grid_nx}x{grid_ny}_donor_outlet_locus_overlay.png"
+    )
     figure.savefig(overlay_png, dpi=240)
     plt.close(figure)
     return {

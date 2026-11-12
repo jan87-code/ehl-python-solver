@@ -64,11 +64,20 @@ class PointContactCase:
         if (
             type(self.maximum_physical_nodes) is not int
             or self.maximum_physical_nodes
-            not in (20000, 30000, 40000, 50000, 70000, 100000, 300000)
+            not in (
+                20000,
+                30000,
+                40000,
+                50000,
+                70000,
+                100000,
+                300000,
+                1100000,
+            )
         ):
             raise ValueError(
                 "maximum_physical_nodes must be one of the explicitly supported budgets: "
-                "20000, 30000, 40000, 50000, 70000, 100000, or 300000"
+                "20000, 30000, 40000, 50000, 70000, 100000, 300000, or 1100000"
             )
         if self.ny * self.nx > self.maximum_physical_nodes:
             raise ValueError(
@@ -123,7 +132,7 @@ class PointContactCase:
             parameter,
         )
 
-    def system(self):
+    def system(self, *, workspace_limit_bytes=2**30):
         factory = DonorLoadSystem if self.transport == "donor" else PropertyLoadSystem
         return factory(
             self.problem(),
@@ -133,6 +142,7 @@ class PointContactCase:
             preconditioner="local",
             elasticity_mode="cached",
             maximum_physical_nodes=self.maximum_physical_nodes,
+            workspace_limit_bytes=workspace_limit_bytes,
         )
 
     def correlation(self):

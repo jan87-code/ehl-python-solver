@@ -19,13 +19,25 @@ from ehl_solver.property_reynolds import admissible, mass_audit, mass_fluxes
 
 class PropertyWarmSystem(CavitatingNewtonSystem):
     def __init__(self, problem, fluid, speed_m_s, offset_m, *, maximum_interior_nodes=400,
-                 elasticity_mode="reference"):
+                 elasticity_mode="reference", workspace_limit_bytes=2**30):
         super().__init__(problem)
         if elasticity_mode not in ("reference", "cached"):
             raise ValueError("elasticity_mode must be reference or cached (CPU only)")
+        if type(workspace_limit_bytes) is not int or workspace_limit_bytes < 1:
+            raise ValueError("workspace_limit_bytes must be a positive integer")
         if (
             maximum_interior_nodes
-            not in (400, 20000, 30000, 40000, 50000, 70000, 100000, 300000)
+            not in (
+                400,
+                20000,
+                30000,
+                40000,
+                50000,
+                70000,
+                100000,
+                300000,
+                1100000,
+            )
             or self.n > maximum_interior_nodes
         ):
             raise ValueError(f"warm system limited to {maximum_interior_nodes} interior nodes")
@@ -43,7 +55,13 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
         self.fluid, self.speed, self.offset = fluid, speed_m_s, float(offset_m)
         self.elasticity_mode = elasticity_mode
         self.elastic_operator = (
-            ElasticityOperator(problem.shape, problem.dx_m, problem.dy_m, problem.e_star_pa)
+            ElasticityOperator(
+                problem.shape,
+                problem.dx_m,
+                problem.dy_m,
+                problem.e_star_pa,
+                memory_limit_bytes=workspace_limit_bytes,
+            )
             if elasticity_mode == "cached" else None
         )
         self.flux_scale = (

@@ -24,15 +24,17 @@ from ehl_solver.transport_candidate import donor_flux_direction, donor_fluxes
 class LimitedLoadProbe:
     """Read-only mathematical residual and derivative adapter; not a solver."""
 
-    def __init__(self, case, *, transport_fraction=1.0):
+    def __init__(self, case, *, transport_fraction=1.0, workspace_limit_bytes=2**30):
         if (
             isinstance(transport_fraction, bool)
             or not np.isfinite(transport_fraction)
             or not 0 <= transport_fraction <= 1
         ):
             raise ValueError("transport_fraction must be finite in [0,1]")
+        if type(workspace_limit_bytes) is not int or workspace_limit_bytes < 1:
+            raise ValueError("workspace_limit_bytes must be a positive integer")
         self.transport_fraction = float(transport_fraction)
-        self.system = case.system()
+        self.system = case.system(workspace_limit_bytes=workspace_limit_bytes)
         self.case = case
         self.n = self.system.n
         self.size = self.system.size
@@ -297,10 +299,15 @@ class LimitedLoadLinearization:
         active_full=None,
         transport_fraction=1.0,
         reference_state=None,
+        workspace_limit_bytes=2**30,
     ):
         if preconditioner not in ("material", "local"):
             raise ValueError("preconditioner must be material or local")
-        self.probe = LimitedLoadProbe(case, transport_fraction=transport_fraction)
+        self.probe = LimitedLoadProbe(
+            case,
+            transport_fraction=transport_fraction,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
         self.problem = self.probe.system.problem
         self.n, self.size = self.probe.n, self.probe.size
         self.target_load_n = case.load_n

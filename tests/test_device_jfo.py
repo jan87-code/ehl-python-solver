@@ -44,6 +44,14 @@ def _directions(probe):
     return random, localized_pressure, localized_content, offset
 
 
+@pytest.mark.parametrize("workspace_limit_bytes", [0, -1, True, 1.0])
+def test_hybrid_workspace_limit_must_be_a_positive_integer(workspace_limit_bytes):
+    with pytest.raises(ValueError, match="workspace_limit_bytes"):
+        HybridJFOCorrectionSolver(
+            PointContactCase(), workspace_limit_bytes=workspace_limit_bytes
+        )
+
+
 def test_complete_donor_residual_and_jvp_with_finite_differences(backend):
     case, cpu, state = _case_state()
     device = DeviceDonorJFO(case, backend)

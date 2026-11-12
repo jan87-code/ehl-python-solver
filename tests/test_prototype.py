@@ -75,6 +75,22 @@ def test_point_contact_accepts_513_grid_budget():
     assert case.ny * case.nx <= case.maximum_physical_nodes
 
 
+def test_point_contact_accepts_explicit_1025_grid_budget():
+    case = PointContactCase(ny=1025, nx=1025, maximum_physical_nodes=1100000)
+    assert case.ny * case.nx == 1050625
+    assert case.ny * case.nx <= case.maximum_physical_nodes
+    small_case = PointContactCase(
+        ny=5, nx=5, maximum_physical_nodes=1100000
+    )
+    assert small_case.system().base.n <= small_case.maximum_physical_nodes
+
+
+def test_point_contact_forwards_fft_workspace_limit():
+    case = PointContactCase(ny=5, nx=5)
+    with pytest.raises(MemoryError, match="DC-FFT workspace estimate"):
+        case.system(workspace_limit_bytes=1)
+
+
 def test_real_standalone_run_and_reaudited_portable_seed(solved):
     folder, case, report = solved
     assert report["independent_audit"]["numerically_accepted"]

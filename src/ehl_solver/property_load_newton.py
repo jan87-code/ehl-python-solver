@@ -25,9 +25,11 @@ class PropertyLoadSystem:
 
     def __init__(self, problem, fluid, speed_m_s, target_load_n, *, preconditioner="frozen",
                  elasticity_mode="reference", maximum_physical_nodes=20000,
-                 field_factorization="full"):
+                 field_factorization="full", workspace_limit_bytes=2**30):
         if preconditioner not in ("frozen", "material", "local"):
             raise ValueError("preconditioner must be frozen, material or local")
+        if type(workspace_limit_bytes) is not int or workspace_limit_bytes < 1:
+            raise ValueError("workspace_limit_bytes must be a positive integer")
         self.preconditioner = preconditioner
         if field_factorization not in ("full", "reduced"):
             raise ValueError("field_factorization must be full or reduced")
@@ -36,10 +38,19 @@ class PropertyLoadSystem:
             raise ValueError("positive finite SI target load required")
         if (type(maximum_physical_nodes) is not int
                 or maximum_physical_nodes
-                not in (20000, 30000, 40000, 50000, 70000, 100000, 300000)):
+                not in (
+                    20000,
+                    30000,
+                    40000,
+                    50000,
+                    70000,
+                    100000,
+                    300000,
+                    1100000,
+                )):
             raise ValueError(
                 "physical node budget must be one of the explicitly supported budgets: "
-                "20000, 30000, 40000, 50000, 70000, 100000, or 300000"
+                "20000, 30000, 40000, 50000, 70000, 100000, 300000, or 1100000"
             )
         if np.prod(problem.shape) > maximum_physical_nodes:
             raise ValueError(f"physical node budget exceeds {maximum_physical_nodes}")
@@ -48,6 +59,7 @@ class PropertyLoadSystem:
             problem, fluid, speed_m_s, problem.central_film_offset_m,
             maximum_interior_nodes=maximum_physical_nodes,
             elasticity_mode=elasticity_mode,
+            workspace_limit_bytes=workspace_limit_bytes,
         )
         self.n = self.base.n
         self.size = 2 * self.n + 1

@@ -76,7 +76,7 @@ class _ConstitutiveCase:
     def fluid(self):
         return self._fluid
 
-    def system(self):
+    def system(self, *, workspace_limit_bytes=2**30):
         return DonorLoadSystem(
             self._base.problem(),
             self._fluid,
@@ -85,6 +85,7 @@ class _ConstitutiveCase:
             preconditioner="local",
             elasticity_mode="cached",
             maximum_physical_nodes=self._base.maximum_physical_nodes,
+            workspace_limit_bytes=workspace_limit_bytes,
         )
 
 

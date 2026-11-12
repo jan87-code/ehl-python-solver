@@ -16,6 +16,7 @@ from examples.analyze_ciulli_donor_grid import (
     _pairwise_field_archive,
     _scalar_refinement,
     main_contact_structure_comparison,
+    pairwise_513_to_1025_convergence,
     profile_error_metrics,
     regional_mesh_comparison,
 )
@@ -176,6 +177,12 @@ def test_scalar_refinement_reports_order_only_for_monotone_contraction():
     )
     assert not four_grid_oscillatory["monotone_contraction"]
     assert four_grid_oscillatory["observed_order"] is None
+
+
+def test_513_to_1025_analysis_rejects_other_grid_pairs():
+    runs = [{"case": {"nx": 257}}, {"case": {"nx": 513}}]
+    with pytest.raises(ValueError, match="513x513 and 1025x1025"):
+        pairwise_513_to_1025_convergence(runs)
 
 
 def test_outlet_integral_reports_absolute_and_baseline_subtracted_pressure():

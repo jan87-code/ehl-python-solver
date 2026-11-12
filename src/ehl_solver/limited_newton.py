@@ -117,6 +117,8 @@ def solve_limited_load(
     *,
     maximum_iterations=30,
     maximum_krylov_cycles=10,
+    gmres_restart=60,
+    workspace_limit_bytes=2**30,
     active_recovery=True,
     preconditioner="local",
     state_observer=None,
@@ -129,8 +131,8 @@ def solve_limited_load(
     """Experimental bounded solve from an explicitly unaccepted ND guess.
 
     At most 30 corrections, 8 frozen models/correction, 10 GMRES cycles
-    with restart 60 and 24 full/affine line-search trials. Original min/force
-    residuals and the true one-sided derivative govern all nonlinear merit
+    with a restart length from 1 to 60 and 24 full/affine line-search trials.
+    Original min/force residuals and the true one-sided derivative govern all nonlinear merit
     checks, even when a recovery model selects different complementary rows.
     An optional correction callback replaces only the linear solve; its
     returned timings are retained with that frozen-model attempt.
@@ -140,6 +142,10 @@ def solve_limited_load(
         or not 0 <= maximum_iterations <= 30
         or type(maximum_krylov_cycles) is not int
         or not 1 <= maximum_krylov_cycles <= 10
+        or type(gmres_restart) is not int
+        or not 1 <= gmres_restart <= 60
+        or type(workspace_limit_bytes) is not int
+        or workspace_limit_bytes < 1
         or isinstance(local_balance_tolerance, bool)
         or not np.isfinite(local_balance_tolerance)
         or not 0 < local_balance_tolerance <= 1e-10
@@ -151,7 +157,11 @@ def solve_limited_load(
         or (correction_solver is not None and not callable(correction_solver))
     ):
         raise ValueError("Invalid bounded Newton/Krylov/recovery/observer options")
-    probe = LimitedLoadProbe(case, transport_fraction=transport_fraction)
+    probe = LimitedLoadProbe(
+        case,
+        transport_fraction=transport_fraction,
+        workspace_limit_bytes=workspace_limit_bytes,
+    )
     state = (
         hertz_guess(case, probe.system)[0]
         if initial_state is None
@@ -227,6 +237,7 @@ def solve_limited_load(
                     active_full=full,
                     transport_fraction=probe.transport_fraction,
                     reference_state=reference,
+                    workspace_limit_bytes=workspace_limit_bytes,
                 )
                 key = model.signature()
                 if key in seen:
@@ -246,7 +257,7 @@ def solve_limited_load(
                     correction_options = dict(
                         krylov_rtol=1e-9,
                         maximum_krylov_cycles=maximum_krylov_cycles,
-                        gmres_restart=60,
+                        gmres_restart=gmres_restart,
                         schur_tolerance=1e-10,
                     )
                     if correction_solver is None:

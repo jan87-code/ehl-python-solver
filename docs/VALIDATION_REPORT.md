@@ -6130,19 +6130,45 @@ nested `LimitedLoadLinearization` probe constructed a CPU DC-FFT operator
 without receiving the configured workspace limit, and therefore used the
 1-GiB default. This was an internal resource-plumbing defect rather than an
 admission or equation failure. The limit is now propagated through that
-constructor and the targeted regression set passes (85 tests with
-`MPLBACKEND=Agg`; three existing PyTorch warnings). The retry must use a fresh
-output directory. A retry is now running in
-`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/`;
-its status is `running` at iteration 0. No accepted 1025 solution, final
-audits, outlet-feature analysis or 513-to-1025 field comparison exist yet.
-The full Windows-compatible suite excluding `tests/test_joint_refinement.py`
-passes (855 passed, 1 skipped, three existing PyTorch warnings). The excluded
-module imports the Unix-only `resource` package during collection. Scoped
-Ruff (`ruff check docs examples src tests`) passes; repository-wide
-`ruff check .` reports one pre-existing 101-character line in the unrelated,
-untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`. Pylance
-reports no syntax errors and confirms all 70
-`LimitedLoadLinearization` and 39 `solve_limited_load` call sites remain
-signature-compatible. Resource projections are not measured 1025 usage and
-must not be reported as mesh convergence.
+constructor. A retry in
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/` was
+then stopped cleanly during the correction following checkpoint 6. The
+checkpoint is the latest completed Newton state, not an accepted solution;
+the in-progress correction was discarded. Checkpoint 6 was preserved with
+SHA-256
+`42F4EAFE1EBFAAE38EC22CB07B445A9A399D0D1679E9E2F4FC45E0CCDFA2BE89`, as
+were prior logs and a pre-interruption summary. The run summary now marks the
+attempt `interrupted`. Its last complete diagnostic is iteration 5; no final
+audit, outlet-feature analysis or 513-to-1025 field comparison exists.
+
+The runner and hybrid correction now support scalar-only live heartbeats in
+stdout and `heartbeat.jsonl`. During a correction they report Newton
+iteration, correction/stage elapsed time, stage, GMRES iteration and restart
+counts, estimated and most recently recomputed true residuals, cumulative
+JVP, preconditioner/SuperLU, GPU and host-device transfer times, and the
+complete correction timing once available. Heartbeats flush immediately and
+are emitted at least every 30 seconds; GMRES also reports at five-iteration
+intervals and restart boundaries. Diagnostics flag three weak consecutive
+restarts, a long correction/setup/application/audit, and approach to existing
+Newton/GMRES iteration limits. A `cpu_stage_without_recent_cuda_jvp` warning
+is an inference from instrumented calls, not a sample of actual GPU
+utilization. The solver has no global wall-time limit; no new one was added.
+These changes do not alter equations, Krylov convergence checks, tolerances,
+preconditioner mathematics or acceptance gates.
+
+After the final active-SuperLU timing refinement, the focused heartbeat,
+device JFO and limited-Newton tests pass (49 passed, three existing PyTorch
+warnings). The Windows-compatible suite, excluding
+`tests/test_joint_refinement.py`, passed 859 tests with one skip immediately
+before that timing-only refinement; that excluded module imports the Unix-only
+`resource` package. A full `pytest -q` collection on Windows therefore stops
+at that module. Scoped Ruff (`ruff check docs examples src tests`) passes;
+repository-wide `ruff check .` reports one pre-existing 101-character line in
+the unrelated, untracked
+`.kilo/skills/jupyter-notebook/scripts/new_notebook.py`. Pylance reports no
+syntax errors and confirms all 39 `solve_limited_load` call sites remain
+signature-compatible. The follow-up must use a fresh output directory and
+seed from checkpoint 6; it is a new bounded Newton solve and may repeat work.
+Resource projections remain estimates, not measured 1025 usage, and one
+513-to-1025 pair cannot establish Richardson/GCI mesh convergence or physical
+EHL validation.

@@ -2904,10 +2904,24 @@ resource-plumbing failure, not a nonlinear or physical rejection. The cap is
 now propagated into that nested probe, and the focused regression set passes
 (85 tests with `MPLBACKEND=Agg`; three existing PyTorch warnings). The failed
 setup/checkpoint has been preserved and will not be overwritten. No 1025
-solution is accepted yet. A retry is now running in the fresh directory
-`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/`;
-its summary is still at iteration 0, so no nonlinear acceptance or final
-audits are available. Host free RAM and disk preflights remain safe estimates,
-but projected runtime and GPU memory are not measured 1025 usage. Even if
-accepted, one 513-to-1025 pair supports only a comparison of changes, not
-Richardson extrapolation, GCI, or physical EHL validation.
+solution is accepted yet. The retry in
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/` was
+cleanly interrupted at the user's request. Its checkpoint 6 and all logs were
+preserved; the in-progress correction was not accepted, and the summary marks
+the run interrupted. No nonlinear acceptance or final audits are available.
+Before a new retry, scalar-only live heartbeats were added for Newton/Krylov
+stages, residuals, restart counts, cumulative JVP/preconditioner/SuperLU/GPU/
+transfer timings, elapsed time, and stagnation/resource warnings. The final
+focused heartbeat/device-JFO/limited-Newton set passes (49 tests, three
+existing PyTorch warnings); the full Windows-compatible suite passed 859
+tests and one skip before the final timing-only refinement. The full
+`pytest -q` collection is blocked on Windows by the POSIX-only `resource`
+import in `tests/test_joint_refinement.py`. Scoped Ruff passes; repository-
+wide Ruff still flags one unrelated pre-existing line in untracked `.kilo/`.
+The heartbeat does not change equations, tolerances or acceptance gates.
+Restart only in a fresh output directory, seeded from checkpoint 6; this is
+a new bounded Newton solve and may repeat work. Host free RAM and disk
+preflights remain estimates, and projected runtime and GPU memory are not
+measured 1025 usage. Even if accepted, one 513-to-1025 pair supports only a
+comparison of changes, not Richardson extrapolation, GCI, or physical EHL
+validation.

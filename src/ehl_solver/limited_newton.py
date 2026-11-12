@@ -123,6 +123,7 @@ def solve_limited_load(
     preconditioner="local",
     state_observer=None,
     diagnostic_observer=None,
+    heartbeat_observer=None,
     correction_solver=None,
     transport_fraction=1.0,
     reference_recovery=False,
@@ -154,6 +155,7 @@ def solve_limited_load(
         or preconditioner not in ("material", "local")
         or (state_observer is not None and not callable(state_observer))
         or (diagnostic_observer is not None and not callable(diagnostic_observer))
+        or (heartbeat_observer is not None and not callable(heartbeat_observer))
         or (correction_solver is not None and not callable(correction_solver))
     ):
         raise ValueError("Invalid bounded Newton/Krylov/recovery/observer options")
@@ -172,8 +174,28 @@ def solve_limited_load(
     history = []
     audit = None
     guide = np.zeros_like(state)
+
+    def report_heartbeat(stage, iteration, *, emit=True, **metrics):
+        if heartbeat_observer is None:
+            return
+        try:
+            heartbeat_observer(
+                stage=stage, iteration=iteration, emit=emit, **metrics
+            )
+        except Exception as exc:
+            raise LimitedObserverError(
+                "Heartbeat observer failed; numerical solve not continued"
+            ) from exc
+
     try:
         for iteration in range(maximum_iterations + 1):
+            report_heartbeat(
+                "correction_start",
+                iteration,
+                maximum_newton_iterations=maximum_iterations,
+                maximum_gmres_iterations=maximum_krylov_cycles * gmres_restart,
+            )
+            report_heartbeat("audit", iteration)
             if not probe.feasible(state):
                 raise RuntimeError("Initial/current state violates original feasibility")
             audit = audit_limited_state(probe, state)
@@ -181,7 +203,18 @@ def solve_limited_load(
             audit["requested_tolerance_satisfied"] = (
                 audit["mass"]["relative_local_balance"] <= local_balance_tolerance
             )
+            report_heartbeat(
+                "audit_complete",
+                iteration,
+                audit_mass_maximum=audit["mass"]["mass_maximum"],
+                relative_local_balance=audit["mass"]["relative_local_balance"],
+                force_relative_error=audit["force_relative_error"],
+                requested_tolerance_satisfied=audit[
+                    "requested_tolerance_satisfied"
+                ],
+            )
             if state_observer is not None:
+                report_heartbeat("checkpoint", iteration)
                 snapshot = state.copy()
                 snapshot.setflags(write=False)
                 try:
@@ -190,7 +223,9 @@ def solve_limited_load(
                     raise LimitedObserverError(
                         "State observer failed; numerical solve not continued"
                     ) from exc
+                report_heartbeat("checkpoint_complete", iteration)
             if audit["numerically_accepted"] and audit["requested_tolerance_satisfied"]:
+                report_heartbeat("final_audit", iteration)
                 final = audit_limited_state(probe, state, direct=True)
                 final["requested_local_balance_tolerance"] = local_balance_tolerance
                 final["requested_tolerance_satisfied"] = (
@@ -199,6 +234,7 @@ def solve_limited_load(
                 audit = final
                 if not final["numerically_accepted"] or not final["requested_tolerance_satisfied"]:
                     raise RuntimeError("Independent direct elastic/final SI audit disagrees")
+                report_heartbeat("accepted", iteration, emit=True)
                 snapshot = state.copy()
                 snapshot.setflags(write=False)
                 return LimitedNewtonResult(
@@ -222,6 +258,12 @@ def solve_limited_load(
                 models=[],
             )
             history.append(record)
+            report_heartbeat(
+                "setup",
+                iteration,
+                nonlinear_residual_l2=record["nonlinear_residual_l2"],
+                nonlinear_residual_linf=record["nonlinear_residual_linf"],
+            )
             full = (state[: probe.n] >= state[probe.n : 2 * probe.n]).copy()
             seen = set()
             best = None
@@ -229,6 +271,7 @@ def solve_limited_load(
             reference = None
             reference_alpha = 0.0
             for recovery in range(8 if active_recovery else 1):
+                report_heartbeat("model_setup", iteration, recovery=recovery)
                 model = LimitedLoadLinearization(
                     case,
                     state,
@@ -261,16 +304,35 @@ def solve_limited_load(
                         schur_tolerance=1e-10,
                     )
                     if correction_solver is None:
+                        report_heartbeat("linear_solve", iteration, recovery=recovery)
                         linear = solve_cavitating_correction(
                             model, state, **correction_options
                         )
                     else:
+                        def correction_progress(_iteration=iteration, **progress):
+                            stage = progress.pop("stage", "gmres")
+                            emit = progress.pop("emit", False)
+                            report_heartbeat(
+                                stage, _iteration, emit=emit, **progress
+                            )
+
+                        if heartbeat_observer is not None:
+                            correction_options["progress_callback"] = (
+                                correction_progress
+                            )
+                        report_heartbeat("linear_solve", iteration, recovery=recovery)
                         linear = correction_solver(
                             model, state, **correction_options
                         )
                 except CavitatingLinearError as exc:
                     entry.update(
                         status="linear_rejected", reason=str(exc), diagnostics=exc.diagnostics
+                    )
+                    report_heartbeat(
+                        "linear_rejected",
+                        iteration,
+                        recovery=recovery,
+                        warning=str(exc),
                     )
                     pivots = (
                         _structural_content_pivots(model, full)
@@ -309,7 +371,18 @@ def solve_limited_load(
                     )
                     mode = "material" if mode == "local" else "local"
                     continue
+                report_heartbeat(
+                    "line_search",
+                    iteration,
+                    recovery=recovery,
+                    linear_iterations=linear.linear_iterations,
+                    linear_true_residual=measured,
+                    correction_norm_l2=float(np.linalg.norm(direction)),
+                )
                 slope = float(residual @ probe.derivative(state, direction) / probe.size)
+                report_heartbeat(
+                    "line_search_trials", iteration, recovery=recovery, emit=False
+                )
                 entry["slope"] = slope
                 trial, trials, bound = _line_search(probe, state, direction, merit, slope)
                 entry.update(trials=trials, fraction_to_boundary=bound)
@@ -347,12 +420,19 @@ def solve_limited_load(
                         reference_alpha = 0.0
             if best is None:
                 if diagnostic_observer is not None:
+                    report_heartbeat("diagnostic_checkpoint", iteration)
                     try:
                         diagnostic_observer(iteration, record)
                     except Exception as exc:
                         raise LimitedObserverError(
                             "Diagnostic observer failed; numerical solve not continued"
                         ) from exc
+                report_heartbeat(
+                    "correction_failed",
+                    iteration,
+                    recovery_models=len(record["models"]),
+                    warning="all_bounded_recovery_models_exhausted",
+                )
                 raise RuntimeError("All bounded limited/active recovery models exhausted")
             trial, entry, candidate = best
             candidate.update(
@@ -364,12 +444,22 @@ def solve_limited_load(
             guide = trial - state
             state = trial
             if diagnostic_observer is not None:
+                report_heartbeat("diagnostic_checkpoint", iteration)
                 try:
                     diagnostic_observer(iteration, record)
                 except Exception as exc:
                     raise LimitedObserverError(
                         "Diagnostic observer failed; numerical solve not continued"
                     ) from exc
+            report_heartbeat(
+                "correction_complete",
+                iteration,
+                accepted_recovery=entry["recovery"],
+                accepted_step_alpha=candidate["alpha"],
+                nonlinear_residual_l2=record["nonlinear_residual_l2"],
+                nonlinear_residual_linf=record["nonlinear_residual_linf"],
+                correction_norm_l2=float(np.linalg.norm(entry["direction"])),
+            )
     except (RuntimeError, ValueError, FloatingPointError) as exc:
         if isinstance(exc, LimitedObserverError):
             raise

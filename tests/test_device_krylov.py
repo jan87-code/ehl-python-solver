@@ -102,6 +102,33 @@ def test_failures_and_true_residual_not_preconditioned_surrogate(torch_device):
         device_gmres(lambda x: x, b, restart=0)
 
 
+def test_progress_callback_reports_restarts_and_stagnation(torch_device):
+    torch, device = torch_device
+    rotation = torch.tensor([[0., -1.], [1., 0.]], dtype=torch.float64, device=device)
+    rhs = torch.tensor([1., 0.], dtype=torch.float64, device=device)
+    progress = []
+    result = device_gmres(
+        lambda value: rotation @ value,
+        rhs,
+        restart=1,
+        max_iterations=4,
+        rtol=1e-14,
+        progress_callback=lambda **event: progress.append(event),
+    )
+
+    assert not result.converged
+    assert result.reason == "iteration_limit"
+    assert result.iterations == 4
+    assert result.restart_count == 3
+    assert result.stagnation_restarts == 3
+    restart_events = [event for event in progress if event["stage"] == "gmres_restart"]
+    assert len(restart_events) == 3
+    assert restart_events[-1]["warning"] == (
+        "gmres_restarts_without_meaningful_reduction"
+    )
+    assert restart_events[-1]["gmres_true_relative_residual"] == pytest.approx(1.0)
+
+
 def test_resident_basis_no_exports_and_runtime_error_not_hidden(torch_device, monkeypatch):
     torch, device = torch_device
     b = torch.ones(5, dtype=torch.float64, device=device)

@@ -195,6 +195,8 @@ def test_cpu_schur_preconditioner_applies_full_frozen_border(backend):
     actual = inverse(as_float64(rhs, backend)).cpu().numpy()
     np.testing.assert_allclose(matrix @ actual, rhs, rtol=2e-10, atol=2e-10)
     assert inverse.application_count == 1
+    assert inverse.superlu_setup_seconds > 0
+    assert inverse.superlu_solve_seconds > 0
     assert inverse.device_to_host_bytes == rhs.nbytes
     assert inverse.host_to_device_bytes == rhs.nbytes
     fallback = CPUBlockSchurPreconditioner(
@@ -220,7 +222,10 @@ def test_hybrid_cuda_operator_cpu_schur_correction_matches_reference(backend):
         model, state, maximum_krylov_cycles=10, gmres_restart=60, krylov_rtol=1e-9
     )
     hybrid = HybridJFOCorrectionSolver(case, backend)
-    actual = hybrid(model, state)
+    progress = []
+    actual = hybrid(
+        model, state, progress_callback=lambda **event: progress.append(event)
+    )
     relative = np.linalg.norm(actual.direction - reference.direction) / np.linalg.norm(
         reference.direction
     )
@@ -228,7 +233,22 @@ def test_hybrid_cuda_operator_cpu_schur_correction_matches_reference(backend):
     assert actual.linear_iterations <= 600
     assert relative < 5e-7
     assert actual.timings["cpu_preconditioner_applications"] > 0
+    assert actual.timings["gmres_iterations"] == actual.linear_iterations
+    assert actual.timings["gmres_restart_count"] >= 0
+    assert actual.timings["cpu_superlu_setup_seconds"] > 0
+    assert actual.timings["cpu_superlu_solve_seconds"] > 0
     assert actual.timings["linear_rhs_h2d_bytes"] == model.size * 8
     assert actual.timings["cpu_residual_parity_linf"] <= 1e-10
+    assert any(event["stage"] == "preconditioner_setup" for event in progress)
+    assert any(event["stage"] == "superlu_factorization" for event in progress)
+    assert any(event["stage"] == "superlu_solve" for event in progress)
+    ready = next(event for event in progress if event["stage"] == "preconditioner_ready")
+    assert ready["cumulative_preconditioner_seconds"] >= 0
+    assert ready["cumulative_superlu_seconds"] > 0
+    validation = next(
+        event for event in progress if event["stage"] == "linear_validation"
+    )
+    assert validation["gmres_iterations"] == actual.linear_iterations
+    assert "gmres_restart_count" in validation
     with pytest.raises(ValueError, match="tolerance or iteration budget"):
         hybrid(model, state, schur_tolerance=0.0)

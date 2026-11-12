@@ -7,6 +7,7 @@ Arnoldi steps, NOT restart cycles. No CPU or alternate-solver fallback occurs.
 """
 
 import math
+import time
 from dataclasses import dataclass
 
 
@@ -20,11 +21,14 @@ class DeviceGMRESResult:
     true_relative_residual: float
     true_residual_history: tuple[float, ...]
     estimated_preconditioned_history: tuple[float, ...]
+    restart_count: int = 0
+    stagnation_restarts: int = 0
 
 
 def device_gmres(
     matvec, rhs, *, preconditioner=None, initial=None, rtol=1e-8, atol=0.,
     restart=40, max_iterations=400, memory_limit_bytes=2**30,
+    progress_callback=None,
 ):
     """Solve Ax=b with explicit termination and independent unpreconditioned checks.
 
@@ -46,6 +50,8 @@ def device_gmres(
     if any(not isinstance(k, int) or isinstance(k, bool) or k < 1
            for k in (restart, max_iterations, memory_limit_bytes)):
         raise ValueError("restart, max_iterations and memory budget must be positive integers")
+    if progress_callback is not None and not callable(progress_callback):
+        raise ValueError("progress_callback must be callable")
     n = rhs.numel()
     m = min(n, restart, max_iterations)
     estimate = 16 * n * (m + 5) + 32 * (m + 1)**2
@@ -64,6 +70,9 @@ def device_gmres(
     tiny = torch.finfo(rhs.dtype).tiny
     true_history, estimated_history = [], []
     iterations = 0
+    restart_count = 0
+    stagnation_restarts = 0
+    last_progress_time = time.perf_counter()
 
     def checked(call, vector):
         value = call(vector)
@@ -76,6 +85,28 @@ def device_gmres(
         return DeviceGMRESResult(
             x, reason == "converged", reason, iterations, norm,
             norm / max(norm_b, tiny), tuple(true_history), tuple(estimated_history),
+            restart_count, stagnation_restarts,
+        )
+
+    def report(stage, norm, *, estimated=None, emit=False, warning=None):
+        if progress_callback is None:
+            return
+        true_norm = norm if math.isfinite(norm) else None
+        estimate = (
+            estimated if estimated is None or math.isfinite(estimated) else None
+        )
+        progress_callback(
+            stage=stage,
+            emit=emit,
+            gmres_iterations=iterations,
+            gmres_restart_count=restart_count,
+            gmres_stagnation_restarts=stagnation_restarts,
+            gmres_residual_estimate=estimate,
+            gmres_true_residual_norm=true_norm,
+            gmres_true_relative_residual=(
+                true_norm / max(norm_b, tiny) if true_norm is not None else None
+            ),
+            warning=warning,
         )
 
     def precondition(vector):
@@ -84,6 +115,7 @@ def device_gmres(
     residual = rhs - checked(matvec, x)
     norm = float(torch.linalg.vector_norm(residual))
     true_history.append(norm)
+    report("gmres", norm, emit=True)
     if not math.isfinite(norm):
         return result("nonfinite_operator", norm)
     if norm <= threshold:
@@ -93,6 +125,7 @@ def device_gmres(
     rotations = torch.eye(m + 1, dtype=rhs.dtype, device=rhs.device)
     g = rhs.new_zeros(m + 1)
     while iterations < max_iterations:
+        cycle_residual = norm
         r = precondition(residual)
         beta = torch.linalg.vector_norm(r)
         if not math.isfinite(float(beta)):
@@ -140,6 +173,13 @@ def device_gmres(
             g[j] = cosine * g[j]
             estimated = abs(float(g[j+1]))
             estimated_history.append(estimated)
+            now = time.perf_counter()
+            if (
+                iterations % 5 == 0
+                or now - last_progress_time >= 30.0
+            ):
+                report("gmres", norm, estimated=estimated, emit=True)
+                last_progress_time = now
             # Estimate only triggers a true check, never establishes convergence.
             if (estimated <= rtol * float(beta) or breakdown or j == m - 1
                     or iterations == max_iterations):
@@ -151,11 +191,33 @@ def device_gmres(
                 norm = float(torch.linalg.vector_norm(residual))
                 true_history.append(norm)
                 if not math.isfinite(norm):
+                    report("gmres", norm, estimated=estimated, emit=True)
                     return result("nonfinite_true_residual", norm)
                 if norm <= threshold:
+                    report("gmres", norm, estimated=estimated, emit=True)
                     return result("converged", norm)
                 if breakdown:
+                    report("gmres", norm, estimated=estimated, emit=True)
                     return result("arnoldi_breakdown", norm)
+                if iterations < max_iterations:
+                    reduction = norm / max(cycle_residual, tiny)
+                    if reduction >= 0.99:
+                        stagnation_restarts += 1
+                    else:
+                        stagnation_restarts = 0
+                    restart_count += 1
+                    warning = (
+                        "gmres_restarts_without_meaningful_reduction"
+                        if stagnation_restarts >= 3
+                        else None
+                    )
+                    report(
+                        "gmres_restart",
+                        norm,
+                        estimated=estimated,
+                        emit=True,
+                        warning=warning,
+                    )
                 # Restart from the independently recomputed residual.
                 break
     return result("iteration_limit", norm)

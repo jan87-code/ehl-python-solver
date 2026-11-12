@@ -16,6 +16,7 @@ import numpy as np
 import scipy
 from scipy.interpolate import RegularGridInterpolator
 
+from ehl_solver.heartbeat import SolverHeartbeat
 from ehl_solver.limited_audit import audit_limited_state
 from ehl_solver.limited_newton import (
     LimitedNewtonError,
@@ -465,6 +466,9 @@ def run(
         ],
         history_directory="diagnostics",
         checkpoint_directory="checkpoints",
+        heartbeat_file="heartbeat.jsonl",
+        heartbeat_interval_seconds=30,
+        heartbeat_scalar_only=True,
         termination_reason=None,
     )
     metadata["case_sha256"] = _digest(case_path)
@@ -487,6 +491,7 @@ def run(
         Path(__import__("ehl_solver.limited_newton", fromlist=["__file__"]).__file__),
         Path(__import__("ehl_solver.limited_system", fromlist=["__file__"]).__file__),
         Path(__import__("ehl_solver.limited_audit", fromlist=["__file__"]).__file__),
+        Path(__import__("ehl_solver.heartbeat", fromlist=["__file__"]).__file__),
     ]
     if linear_backend == "hybrid-cuda":
         source_files.extend(
@@ -506,9 +511,60 @@ def run(
         summary_path.write_text(json.dumps(clean_json(metadata), indent=2, allow_nan=False))
 
     write_summary()
+    heartbeat = SolverHeartbeat(
+        output / "heartbeat.jsonl", interval_seconds=30
+    )
+
+    def observe_heartbeat(**event):
+        stage = event.pop("stage")
+        iteration = event.pop("iteration", None)
+        emit = event.pop("emit", False)
+        if stage == "correction_start":
+            heartbeat.begin_correction(
+                iteration,
+                maximum_newton_iterations=event.pop(
+                    "maximum_newton_iterations"
+                ),
+                maximum_gmres_iterations=event.pop("maximum_gmres_iterations"),
+            )
+            if event:
+                heartbeat.update(
+                    stage="audit", iteration=iteration, emit=emit, **event
+                )
+            return
+        if stage == "linear_solve":
+            heartbeat.update(
+                stage=stage,
+                iteration=iteration,
+                emit=True,
+                gmres_iterations=0,
+                gmres_restart_count=0,
+                gmres_stagnation_restarts=0,
+                gmres_residual_estimate=None,
+                gmres_true_residual_norm=None,
+                gmres_true_relative_residual=None,
+                cumulative_jvp_seconds=0.0,
+                cumulative_preconditioner_seconds=0.0,
+                cumulative_preconditioner_wall_seconds=0.0,
+                cumulative_superlu_seconds=0.0,
+                cumulative_gpu_seconds=0.0,
+                cumulative_transfer_seconds=0.0,
+                **event,
+            )
+            return
+        heartbeat.update(
+            stage=stage, iteration=iteration, emit=emit, **event
+        )
+
     latest = {}
 
     def observe(iteration, state, audit):
+        heartbeat.update(
+            stage="checkpoint",
+            iteration=iteration,
+            emit=True,
+            checkpoint_kind="latest_valid_state",
+        )
         latest["state"] = state.copy()
         metadata["latest_iteration"] = iteration
         metadata["latest_audit"] = audit
@@ -518,6 +574,12 @@ def run(
         _save_state(checkpoint, probe, state, case)
         metadata["latest_checkpoint"] = str(checkpoint)
         write_summary()
+        heartbeat.update(
+            stage="checkpoint_complete",
+            iteration=iteration,
+            emit=True,
+            checkpoint_kind="latest_valid_state",
+        )
 
     previous_active = None
     diagnostic_paths = []
@@ -529,75 +591,140 @@ def run(
         metadata["latest_diagnostic_record"] = path
         metadata["diagnostic_record_count"] = len(diagnostic_paths)
         write_summary()
+        selected = next(
+            (
+                model
+                for model in record["models"]
+                if model.get("recovery") == record.get("accepted_recovery")
+            ),
+            record["models"][-1] if record["models"] else {},
+        )
+        timings = selected.get("linear_solver_timings") or {}
+        heartbeat.update(
+            stage="diagnostic_write_complete",
+            iteration=iteration,
+            emit=True,
+            nonlinear_residual_l2=record["nonlinear_residual_l2"],
+            nonlinear_residual_linf=record["nonlinear_residual_linf"],
+            gmres_iterations=selected.get("linear_iterations", 0),
+            gmres_restart_count=timings.get("gmres_restart_count", 0),
+            cumulative_jvp_seconds=timings.get("cuda_jvp_seconds", 0.0),
+            cumulative_preconditioner_seconds=timings.get(
+                "cpu_preconditioner_setup_seconds", 0.0
+            )
+            + timings.get("cpu_preconditioner_apply_seconds", 0.0),
+            cumulative_preconditioner_wall_seconds=timings.get(
+                "cpu_preconditioner_setup_seconds", 0.0
+            )
+            + timings.get("cpu_preconditioner_apply_wall_seconds", 0.0),
+            cumulative_superlu_seconds=timings.get(
+                "cpu_superlu_setup_seconds", 0.0
+            )
+            + timings.get("cpu_superlu_solve_seconds", 0.0),
+            cumulative_gpu_seconds=timings.get(
+                "cuda_residual_seconds", 0.0
+            )
+            + timings.get("cuda_linearization_setup_seconds", 0.0)
+            + timings.get("cuda_jvp_seconds", 0.0),
+            cumulative_transfer_seconds=timings.get(
+                "state_guide_h2d_seconds", 0.0
+            )
+            + timings.get("linear_rhs_h2d_seconds", 0.0)
+            + timings.get("d2h_seconds", 0.0)
+            + timings.get("h2d_preconditioner_seconds", 0.0)
+            + timings.get("correction_d2h_seconds", 0.0),
+            linear_correction_seconds=timings.get(
+                "total_correction_seconds", 0.0
+            ),
+        )
 
     try:
-        root = solve_limited_load(
-            case,
-            initial_state=initial_state,
-            transport_fraction=0.0,
-            correction_solver=correction_solver,
-            gmres_restart=gmres_restart,
-            workspace_limit_bytes=workspace_limit_bytes,
-            state_observer=observe,
-            diagnostic_observer=observe_diagnostics,
-        )
-        audit = audit_limited_state(probe, root.state, direct=True)
-        if not audit["numerically_accepted"]:
+        try:
+            root = solve_limited_load(
+                case,
+                initial_state=initial_state,
+                transport_fraction=0.0,
+                correction_solver=correction_solver,
+                gmres_restart=gmres_restart,
+                workspace_limit_bytes=workspace_limit_bytes,
+                state_observer=observe,
+                diagnostic_observer=observe_diagnostics,
+                heartbeat_observer=observe_heartbeat,
+            )
+        except KeyboardInterrupt:
+            metadata.update(
+                status="interrupted",
+                failure_reason="Interrupted by user; in-progress correction is unaccepted",
+                termination_reason=(
+                    "interrupted; latest completed Newton checkpoint preserved"
+                ),
+                elapsed_seconds=time.perf_counter() - started,
+            )
+            write_summary()
+            root = None
+        if root is not None:
+            heartbeat.update(stage="final_audit", emit=True)
+            audit = audit_limited_state(probe, root.state, direct=True)
+        if root is not None and not audit["numerically_accepted"]:
             raise RuntimeError("Independent direct endpoint audit rejected the donor root")
-        _save_state(output / "state.npz", probe, root.state, case)
-        metadata.update(
-            status="accepted_numerical_root",
-            termination_reason="independent direct endpoint audit accepted",
-            audit=audit,
-            newton_corrections=len(root.history),
-            diagnostic_records=diagnostic_paths,
-            elapsed_seconds=time.perf_counter() - started,
-            history=[
-                {
-                    "iteration": record["iteration"],
-                    "merit": record["merit"],
-                    "nonlinear_residual_l2": record["nonlinear_residual_l2"],
-                    "nonlinear_residual_linf": record["nonlinear_residual_linf"],
-                    "force_residual": record["force_residual"],
-                    "mass_residual_linf": record["mass_residual_linf"],
-                    "complementarity_residual_linf": record[
-                        "complementarity_residual_linf"
-                    ],
-                    "models": [
-                        {
-                            "recovery": model.get("recovery"),
-                            "status": model.get("status"),
-                            "reason": model.get("reason"),
-                            "linear_true_residual": model.get("linear_true_residual"),
-                            "linear_iterations": model.get("linear_iterations"),
-                            "krylov_histories": model.get("krylov_histories"),
-                            "linear_solver_timings": model.get(
-                                "linear_solver_timings"
-                            ),
-                            "correction_norm_l2": (
-                                float(np.linalg.norm(model["direction"]))
-                                if isinstance(model.get("direction"), np.ndarray)
-                                else None
-                            ),
-                            "accepted_step": next(
-                                (
-                                    trial.get("alpha")
-                                    for trial in model.get("trials", [])
-                                    if trial.get("accepted")
+        if root is not None:
+            heartbeat.update(stage="final_audit_complete", emit=True)
+            _save_state(output / "state.npz", probe, root.state, case)
+            metadata.update(
+                status="accepted_numerical_root",
+                termination_reason="independent direct endpoint audit accepted",
+                audit=audit,
+                newton_corrections=len(root.history),
+                diagnostic_records=diagnostic_paths,
+                elapsed_seconds=time.perf_counter() - started,
+                history=[
+                    {
+                        "iteration": record["iteration"],
+                        "merit": record["merit"],
+                        "nonlinear_residual_l2": record["nonlinear_residual_l2"],
+                        "nonlinear_residual_linf": record["nonlinear_residual_linf"],
+                        "force_residual": record["force_residual"],
+                        "mass_residual_linf": record["mass_residual_linf"],
+                        "complementarity_residual_linf": record[
+                            "complementarity_residual_linf"
+                        ],
+                        "models": [
+                            {
+                                "recovery": model.get("recovery"),
+                                "status": model.get("status"),
+                                "reason": model.get("reason"),
+                                "linear_true_residual": model.get(
+                                    "linear_true_residual"
                                 ),
-                                None,
-                            ),
-                        }
-                        for model in record["models"]
-                    ],
-                }
-                for record in root.history
-            ],
-            state_sha256=_digest(output / "state.npz"),
-        )
-        metadata["diagnostic_records"] = _reconcile_persisted_history(
-            output, metadata["history"]
-        )
+                                "linear_iterations": model.get("linear_iterations"),
+                                "krylov_histories": model.get("krylov_histories"),
+                                "linear_solver_timings": model.get(
+                                    "linear_solver_timings"
+                                ),
+                                "correction_norm_l2": (
+                                    float(np.linalg.norm(model["direction"]))
+                                    if isinstance(model.get("direction"), np.ndarray)
+                                    else None
+                                ),
+                                "accepted_step": next(
+                                    (
+                                        trial.get("alpha")
+                                        for trial in model.get("trials", [])
+                                        if trial.get("accepted")
+                                    ),
+                                    None,
+                                ),
+                            }
+                            for model in record["models"]
+                        ],
+                    }
+                    for record in root.history
+                ],
+                state_sha256=_digest(output / "state.npz"),
+            )
+            metadata["diagnostic_records"] = _reconcile_persisted_history(
+                output, metadata["history"]
+            )
     except (LimitedNewtonError, LimitedObserverError, RuntimeError, ValueError) as exc:
         candidate = latest.get("state")
         if isinstance(exc, LimitedNewtonError):
@@ -619,6 +746,8 @@ def run(
         )
         if isinstance(exc, LimitedNewtonError):
             metadata["failure_audit"] = exc.audit
+    finally:
+        heartbeat.close(status=metadata["status"])
     if device_backend is not None:
         import torch
 

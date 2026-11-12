@@ -41,9 +41,18 @@ def donor_root():
 
 def test_optional_correction_solver_hook_records_timing(donor_root):
     calls = []
+    progress_events = []
 
     def correction_solver(model, state, **options):
         calls.append(options.copy())
+        progress = options.pop("progress_callback")
+        progress(
+            stage="gmres",
+            emit=True,
+            gmres_iterations=5,
+            gmres_restart_count=1,
+            gmres_true_relative_residual=1e-4,
+        )
         correction = solve_cavitating_correction(model, state, **options)
         return SimpleNamespace(**vars(correction), timings={"bridge_seconds": 0.125})
 
@@ -55,6 +64,7 @@ def test_optional_correction_solver_hook_records_timing(donor_root):
         transport_fraction=0.0,
         correction_solver=correction_solver,
         gmres_restart=30,
+        heartbeat_observer=lambda **event: progress_events.append(event),
     )
     assert result.audit["numerically_accepted"]
     assert calls
@@ -66,6 +76,13 @@ def test_optional_correction_solver_hook_records_timing(donor_root):
         for model in record["models"]
         if model["status"] == "linear_solved"
     )
+    assert progress_events[0]["stage"] == "correction_start"
+    assert any(event["stage"] == "audit_complete" for event in progress_events)
+    assert any(
+        event["stage"] == "gmres" and event["gmres_iterations"] == 5
+        for event in progress_events
+    )
+    assert any(event["stage"] == "correction_complete" for event in progress_events)
 
 
 def mathematical_state():

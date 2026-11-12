@@ -16,7 +16,9 @@ from ehl_solver.device_krylov import device_gmres
 class CPUBlockSchurPreconditioner:
     """Apply the existing frozen local CPU preconditioner to a device vector."""
 
-    def __init__(self, matrix, n, device, *, schur_tolerance=1e-10):
+    def __init__(
+        self, matrix, n, device, *, schur_tolerance=1e-10, progress_callback=None
+    ):
         import torch
 
         if not math.isfinite(schur_tolerance) or schur_tolerance <= 0:
@@ -38,14 +40,52 @@ class CPUBlockSchurPreconditioner:
         self.synchronization_seconds = 0.0
         self.device_to_host_bytes = 0
         self.host_to_device_bytes = 0
+        self.setup_seconds = 0.0
+        self.superlu_setup_seconds = 0.0
+        self.superlu_solve_seconds = 0.0
         self._torch = torch
+        self.progress_callback = progress_callback
+        self._report_progress(
+            "preconditioner_setup",
+            emit=True,
+            cumulative_preconditioner_seconds=time.perf_counter() - started,
+            cumulative_superlu_seconds=0.0,
+        )
+
+        def factorize(matrix_to_factor):
+            self._report_progress(
+                "superlu_factorization",
+                emit=True,
+                cumulative_preconditioner_seconds=time.perf_counter() - started,
+                cumulative_superlu_seconds=(
+                    self.superlu_setup_seconds + self.superlu_solve_seconds
+                ),
+            )
+            factor_started = time.perf_counter()
+            try:
+                return splu(matrix_to_factor)
+            finally:
+                self.superlu_setup_seconds += time.perf_counter() - factor_started
+                self._report_progress(
+                    "superlu_factorization_complete",
+                    emit=True,
+                    cumulative_preconditioner_seconds=(
+                        time.perf_counter() - started
+                    ),
+                    cumulative_superlu_seconds=(
+                        self.superlu_setup_seconds + self.superlu_solve_seconds
+                    ),
+                    superlu_factorization_seconds=self.superlu_setup_seconds,
+                )
 
         field_matrix = matrix[:2 * n, :2 * n].tocsc()
         try:
-            self.field_factor = splu(field_matrix)
+            self.field_factor = factorize(field_matrix)
             load_column = matrix[:2 * n, -1].toarray().ravel()
             self.load_row = matrix[-1, :2 * n].toarray().ravel()
-            self.load_response = self.field_factor.solve(load_column)
+            self.load_response = self._solve_factor(
+                self.field_factor, load_column, setup_started=started
+            )
             denominator = -float(self.load_row @ self.load_response)
             scale = float(
                 np.linalg.norm(self.load_row) * np.linalg.norm(self.load_response)
@@ -62,12 +102,64 @@ class CPUBlockSchurPreconditioner:
         except (RuntimeError, ArithmeticError, ValueError) as exc:
             self.field_setup_failures.append(str(exc))
             self.field_factor = None
-            self.full_factor = splu(matrix)
+            self.full_factor = factorize(matrix)
             self.used_bordered_fallback = True
             self.load_row = None
             self.load_response = None
             self.load_denominator = None
         self.setup_seconds = time.perf_counter() - started
+        self._report_progress(
+            "preconditioner_setup_complete",
+            emit=True,
+            preconditioner_setup_seconds=self.setup_seconds,
+            superlu_setup_seconds=self.superlu_setup_seconds,
+            superlu_setup_and_solve_seconds=(
+                self.superlu_setup_seconds + self.superlu_solve_seconds
+            ),
+        )
+
+    def _report_progress(self, stage, *, emit=False, **metrics):
+        if self.progress_callback is None:
+            return
+        self.progress_callback(
+            stage=stage,
+            emit=emit,
+            **metrics,
+        )
+
+    def _solve_factor(self, factor, rhs, *, setup_started=None):
+        setup_elapsed = (
+            time.perf_counter() - setup_started
+            if setup_started is not None
+            else self.setup_seconds + self.cpu_application_seconds
+        )
+        self._report_progress(
+            "superlu_solve",
+            cumulative_preconditioner_seconds=setup_elapsed,
+            cumulative_superlu_seconds=(
+                self.superlu_setup_seconds + self.superlu_solve_seconds
+            ),
+        )
+        solve_started = time.perf_counter()
+        try:
+            return factor.solve(rhs)
+        finally:
+            solve_seconds = time.perf_counter() - solve_started
+            self.superlu_solve_seconds += solve_seconds
+            cumulative_setup = (
+                time.perf_counter() - setup_started
+                if setup_started is not None
+                else self.setup_seconds + self.cpu_application_seconds
+            )
+            self._report_progress(
+                "superlu_solve_complete",
+                emit=solve_seconds >= 10,
+                cumulative_preconditioner_seconds=cumulative_setup,
+                cumulative_superlu_seconds=(
+                    self.superlu_setup_seconds + self.superlu_solve_seconds
+                ),
+                superlu_solve_seconds=solve_seconds,
+            )
 
     def _synchronize(self):
         if self.device.type == "cuda":
@@ -86,6 +178,9 @@ class CPUBlockSchurPreconditioner:
             raise ValueError("bordered float64 rhs must match the preconditioner device")
 
         wall_started = time.perf_counter()
+        self._report_progress(
+            "preconditioner_apply", preconditioner_application_seconds=0.0
+        )
         self._synchronize()
         transfer_started = time.perf_counter()
         host_rhs = rhs.detach().cpu().numpy()
@@ -94,9 +189,11 @@ class CPUBlockSchurPreconditioner:
 
         cpu_started = time.perf_counter()
         if self.used_bordered_fallback:
-            host_solution = self.full_factor.solve(host_rhs)
+            host_solution = self._solve_factor(self.full_factor, host_rhs)
         else:
-            field_solution = self.field_factor.solve(host_rhs[:2 * self.n])
+            field_solution = self._solve_factor(
+                self.field_factor, host_rhs[:2 * self.n]
+            )
             h0_direction = (
                 host_rhs[-1] - self.load_row @ field_solution
             ) / self.load_denominator
@@ -116,6 +213,12 @@ class CPUBlockSchurPreconditioner:
         self.host_to_device_bytes += int(host_solution.nbytes)
         self.application_wall_seconds += time.perf_counter() - wall_started
         self.application_count += 1
+        application_seconds = time.perf_counter() - wall_started
+        self._report_progress(
+            "preconditioner_apply_complete",
+            emit=application_seconds >= 10,
+            preconditioner_application_seconds=application_seconds,
+        )
         return result
 
 
@@ -176,6 +279,7 @@ class HybridJFOCorrectionSolver:
         maximum_krylov_cycles=10,
         gmres_restart=60,
         schur_tolerance=1e-10,
+        progress_callback=None,
     ):
         import torch
 
@@ -197,11 +301,87 @@ class HybridJFOCorrectionSolver:
             or not 1 <= gmres_restart <= 60
             or not math.isfinite(schur_tolerance)
             or schur_tolerance <= 0
+            or (
+                progress_callback is not None
+                and not callable(progress_callback)
+            )
         ):
             raise ValueError("invalid hybrid GMRES tolerance or iteration budget")
 
         device = torch.empty((), device=self.backend.device).device
         synchronization_seconds = 0.0
+        operator_seconds = 0.0
+        operator_applications = 0
+        preconditioner = None
+        residual_seconds = 0.0
+        linearization_setup_seconds = 0.0
+        state_transfer_seconds = 0.0
+        right_hand_side_transfer_seconds = 0.0
+
+        def report_progress(stage, *, emit=False, **metrics):
+            if progress_callback is None:
+                return
+            preconditioner_metrics = {}
+            if preconditioner is not None:
+                preconditioner_metrics = {
+                    "preconditioner_applications": preconditioner.application_count,
+                    "cumulative_preconditioner_seconds": (
+                        preconditioner.setup_seconds
+                        + preconditioner.cpu_application_seconds
+                    ),
+                    "cumulative_preconditioner_wall_seconds": (
+                        preconditioner.setup_seconds
+                        + preconditioner.application_wall_seconds
+                    ),
+                    "cumulative_superlu_seconds": (
+                        preconditioner.superlu_setup_seconds
+                        + preconditioner.superlu_solve_seconds
+                    ),
+                    "cumulative_superlu_setup_seconds": (
+                        preconditioner.superlu_setup_seconds
+                    ),
+                    "cumulative_superlu_apply_seconds": (
+                        preconditioner.superlu_solve_seconds
+                    ),
+                    "preconditioner_setup_seconds": (
+                        preconditioner.setup_seconds
+                    ),
+                    "cumulative_preconditioner_apply_cpu_seconds": (
+                        preconditioner.cpu_application_seconds
+                    ),
+                    "cumulative_transfer_seconds": (
+                        state_transfer_seconds
+                        + right_hand_side_transfer_seconds
+                        + preconditioner.device_to_host_seconds
+                        + preconditioner.host_to_device_seconds
+                    ),
+                }
+            else:
+                preconditioner_metrics = {
+                    "cumulative_preconditioner_seconds": 0.0,
+                    "cumulative_preconditioner_wall_seconds": 0.0,
+                    "cumulative_superlu_seconds": 0.0,
+                    "cumulative_superlu_setup_seconds": 0.0,
+                    "cumulative_superlu_apply_seconds": 0.0,
+                    "preconditioner_setup_seconds": 0.0,
+                    "cumulative_preconditioner_apply_cpu_seconds": 0.0,
+                    "cumulative_transfer_seconds": (
+                        state_transfer_seconds + right_hand_side_transfer_seconds
+                    ),
+                }
+            event = {
+                "stage": stage,
+                "emit": emit,
+                "cumulative_jvp_seconds": operator_seconds,
+                "cumulative_gpu_seconds": (
+                    residual_seconds
+                    + linearization_setup_seconds
+                    + operator_seconds
+                ),
+                **preconditioner_metrics,
+                **metrics,
+            }
+            progress_callback(**event)
 
         def synchronize():
             nonlocal synchronization_seconds
@@ -222,15 +402,18 @@ class HybridJFOCorrectionSolver:
         state_transfer_seconds = time.perf_counter() - transfer_started
         state_transfer_bytes = int((z.numel() + guide.numel()) * z.element_size())
         active_transfer_bytes = int(active.numel())
+        report_progress("setup", emit=True)
 
         residual_started = time.perf_counter()
         residual = self.evaluator.linear_residual(z, active)
         synchronize()
         residual_seconds = time.perf_counter() - residual_started
+        report_progress("cuda_residual", emit=True)
         linearization_started = time.perf_counter()
         operator = self.evaluator.linearize(z, guide, active_full=active)
         synchronize()
         linearization_setup_seconds = time.perf_counter() - linearization_started
+        report_progress("linearization_setup", emit=True)
 
         cpu_validation_started = time.perf_counter()
         cpu_residual = model.residual(state)
@@ -241,28 +424,40 @@ class HybridJFOCorrectionSolver:
         right_hand_side = as_float64(-cpu_residual, self.backend)
         synchronize()
         right_hand_side_transfer_seconds = time.perf_counter() - transfer_started
+        report_progress("right_hand_side_transfer", emit=True)
         matrix_started = time.perf_counter()
+        report_progress("matrix_assembly", emit=True)
         matrix = model.frozen_matrix(state)
         matrix_assembly_seconds = time.perf_counter() - matrix_started
-        preconditioner = CPUBlockSchurPreconditioner(
-            matrix, model.n, device, schur_tolerance=schur_tolerance
+        report_progress(
+            "matrix_assembly_complete",
+            emit=True,
+            cpu_matrix_assembly_seconds=matrix_assembly_seconds,
         )
-
-        operator_seconds = 0.0
-        operator_applications = 0
+        preconditioner = CPUBlockSchurPreconditioner(
+            matrix,
+            model.n,
+            device,
+            schur_tolerance=schur_tolerance,
+            progress_callback=report_progress,
+        )
+        report_progress("preconditioner_ready", emit=True)
 
         def timed_operator(vector):
             nonlocal operator_seconds, operator_applications
             synchronize()
+            report_progress("jvp")
             started = time.perf_counter()
             result = operator(vector)
             synchronize()
             operator_seconds += time.perf_counter() - started
             operator_applications += 1
+            report_progress("gmres")
             return result
 
         synchronize()
         gmres_started = time.perf_counter()
+        report_progress("gmres", emit=True)
         krylov = device_gmres(
             timed_operator,
             right_hand_side,
@@ -271,9 +466,19 @@ class HybridJFOCorrectionSolver:
             restart=gmres_restart,
             max_iterations=maximum_krylov_cycles * gmres_restart,
             memory_limit_bytes=self.workspace_limit_bytes,
+            progress_callback=report_progress,
         )
         synchronize()
         gmres_seconds = time.perf_counter() - gmres_started
+        report_progress(
+            "linear_validation",
+            emit=True,
+            gmres_iterations=krylov.iterations,
+            gmres_restart_count=krylov.restart_count,
+            gmres_stagnation_restarts=krylov.stagnation_restarts,
+            gmres_true_residual_norm=krylov.true_residual_norm,
+            gmres_true_relative_residual=krylov.true_relative_residual,
+        )
 
         true_residual = timed_operator(krylov.solution) - right_hand_side
         true_relative = float(
@@ -313,9 +518,13 @@ class HybridJFOCorrectionSolver:
             "linear_rhs_h2d_bytes": int(cpu_residual.nbytes),
             "cpu_matrix_assembly_seconds": matrix_assembly_seconds,
             "cpu_preconditioner_setup_seconds": preconditioner.setup_seconds,
+            "cpu_superlu_setup_seconds": preconditioner.superlu_setup_seconds,
+            "cpu_superlu_solve_seconds": preconditioner.superlu_solve_seconds,
             "cpu_preconditioner_applications": preconditioner.application_count,
             "cpu_preconditioner_apply_seconds":
                 preconditioner.cpu_application_seconds,
+            "cpu_preconditioner_apply_wall_seconds":
+                preconditioner.application_wall_seconds,
             "d2h_seconds": preconditioner.device_to_host_seconds,
             "d2h_bytes": preconditioner.device_to_host_bytes,
             "h2d_preconditioner_seconds": preconditioner.host_to_device_seconds,
@@ -323,6 +532,9 @@ class HybridJFOCorrectionSolver:
             "cuda_jvp_seconds": operator_seconds,
             "cuda_operator_applications": operator_applications,
             "gmres_wall_seconds": gmres_seconds,
+            "gmres_iterations": krylov.iterations,
+            "gmres_restart_count": krylov.restart_count,
+            "gmres_stagnation_restarts": krylov.stagnation_restarts,
             "gmres_vector_and_internal_seconds": max(
                 0.0,
                 gmres_seconds

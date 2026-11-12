@@ -147,6 +147,12 @@ def test_regional_comparison_separates_main_contact_and_outlet_error():
         for key in ("hertz_core", "transition")
     ) == pytest.approx(100.0)
     assert structure["hotspot_and_cavitation"]["cavitation_state_mismatch_percent_in_main"] == 0
+    hotspot = structure["hotspot_and_cavitation"]
+    assert hotspot["grids_ny_nx"] == [[5, 5], [9, 41]]
+    assert hotspot["cavitated_area_percent_by_grid_ny_nx"] == {
+        "5x5": 0.0,
+        "9x41": 0.0,
+    }
     pairwise_fields = _pairwise_field_archive([coarse, fine])
     assert pairwise_fields["5_to_41_pressure_difference_pa"].shape == (301, 551)
 

@@ -6204,9 +6204,133 @@ Applied to the saved 1025x1025 checkpoint state, the independent FFT audit
 completed in 2.16 s and reported `numerically_accepted=true`,
 `relative_local_balance=6.26e-12`, force relative error `2.22e-16`, and film
 reconstruction error `3.39e-21 m` versus the unchanged `1.94e-16 m` limit.
-This post-interruption audit is diagnostic evidence only: the interrupted
-run summary remains unaccepted. A fresh runner restart from the preserved
-checkpoint is still required to record solver acceptance and complete its
-normal finalization. The targeted audit/loader/runner regression set passes
+At this point in the timeline, this post-interruption audit was diagnostic
+evidence only and the interrupted run summary remained unaccepted. The later
+fresh runner restart and its accepted status are documented below. The
+targeted audit/loader/runner regression set passes
 (77 passed); the full suite was not rerun after this audit implementation
 change.
+
+### Retry 3: accepted 1025x1025 checkpoint re-audit and 513-to-1025 analysis
+
+The heartbeat-enabled retry 3 used a fresh output directory,
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry3/`, and
+preserved checkpoint 6. The checkpoint SHA-256 remained
+`42f4eafe1ebfaae38ec22cb07b445a9a399d0d1679e9e2f4fc45e0ccddfa2be89`.
+The runner completed in 30.49 s with `status=accepted_numerical_root` and
+zero new Newton corrections. It re-audited and accepted the saved checkpoint;
+it did not resume or accept the interrupted correction, and it was not a new
+1025 nonlinear solve. The run used hybrid CUDA JFO Jacobian-vector products
+and CPU residual/SuperLU work, GMRES restart 20, and a 1536 MiB FFT workspace
+cap.
+
+| Independent audit [SI unless noted] | 513x513 | 1025x1025 |
+| --- | ---: | ---: |
+| Numerically accepted | yes | yes |
+| Integrated force [N] | 15.000000000000002 | 15.000000000000002 |
+| Relative force error | 2.22e-16 | 2.22e-16 |
+| Relative local mass balance | 8.58e-14 | 6.26e-12 |
+| Relative global mass balance | 1.13e-16 | 9.39e-17 |
+| Maximum complementarity | 2.28e-27 | 6.07e-29 |
+| Film reconstruction error [m] | 5.46e-20 | 3.39e-21 |
+| Independent elasticity check | direct convolution | zero-padded `fftconvolve` |
+
+The 1025 audit reports `independent_elasticity_checked=true` and
+`direct_elasticity_checked=false`: its independent film reconstruction used
+the scalable zero-padded SciPy FFT method, not direct spatial convolution.
+The unchanged film reconstruction tolerance is `1.94e-16 m`.
+
+The accepted saved 513 and 1025 fields were compared on common physical
+coordinates using the existing pairwise mesh analysis; no solver was run for
+this post-processing. Scalar changes are:
+
+| Quantity | 513x513 | 1025x1025 | Change |
+| --- | ---: | ---: | ---: |
+| `h_min` [nm] | 278.512 | 276.288 | -0.80% |
+| `h_c` [nm] | 465.649 | 461.126 | -0.97% |
+| `p_max` [MPa] | 812.881 | 896.066 | +10.23% |
+| Integrated load [N] | 15.000 | 15.000 | 0% |
+
+The minima are at `(23.4375, +/-82.8125) um` and
+`(25.0000, +/-82.03125) um`, respectively. The maximum pressure moves from
+`(51.5625, +/-59.375) um` to `(53.125, +/-59.375) um`. Point `p_max` is only a
+diagnostic and is not used as a convergence pass criterion.
+
+| Common-coordinate region | Pressure relative L2 | Pressure RMS [MPa] | Film relative L2 | Film RMS [nm] |
+| --- | ---: | ---: | ---: | ---: |
+| Main contact, excluding outlet | 2.678% | 14.787 | 0.883% | 4.045 |
+| Outlet spike | 9.473% | 34.848 | 0.684% | 2.983 |
+| Full contact | 3.830% | 20.039 | 0.850% | 3.857 |
+
+The outlet region accounts for 55.55% of the full-contact squared pressure
+difference. The maximum common-coordinate pressure difference is 345.394 MPa
+at `(57,57) um`; this localized discrepancy is not a pressure-error estimate
+against Hertz. Both grids have zero cavitated area in the analyzed main-contact
+window, with zero cavitation-state mismatch. These are pairwise field changes,
+not an observed order, Richardson/GCI estimate or mesh-convergence result.
+
+The existing cut-wise outlet tracker was applied to the accepted 1025 field.
+It follows pressure maxima from the centerline to both symmetric global
+maxima over 153 transverse rows from `y=-59.375` to `+59.375 um`; the
+positive-branch maximum adjacent x step is 1.5625 um. The classification is
+one **sampled connected curved pressure-maximum locus**, rather than a
+separate centerline spike and off-axis core ridge. It does not prove a
+continuous physical feature. The tracked film-constriction locus remains
+downstream of the pressure locus: at `y=0`, the pressure maximum is at
+`x=86.71875 um` and the film minimum at `x=94.53125 um`; at
+`y=+/-59.375 um`, they are at `x=53.125 um` and `x=66.40625 um`.
+
+Using the same fixed-band half-prominence definition as the existing 513
+outlet-locus study:
+
+| Feature | 513x513 | 1025x1025 |
+| --- | ---: | ---: |
+| Centerline peak x [um] | 85.938 | 86.719 |
+| Centerline peak pressure [MPa] | 689.502 | 765.733 |
+| Centerline width [um] / cells | 2.094 / 1.34 | 1.366 / 1.75 |
+| Centerline +/-5 um pressure integral [N/m] | 4410.309 | 4164.425 |
+| Off-axis global peak pressure [MPa] | 812.881 | 896.066 |
+| Off-axis half-prominence width [um] / cells | 3.225 / 2.06 | 2.278 / 2.92 |
+| Off-axis +/-5 um pressure integral [N/m] | 5764.355 | 5357.296 |
+
+The widths use the 20-to-120 um fixed x-band and local-valley baseline from
+the outlet-locus tracker. They differ from the separate centerline
+75-to-175 um shoulder-window diagnostic elsewhere in this report. The
+narrower sampled widths and still-small cell counts mean the pressure feature
+remains under-resolved; its peak amplitude and continuum shape are not
+established. The global `h_min` locations are farther out in y than the
+pressure maxima and are not the outlet-constriction minima. This 1025
+comparison does not justify physical-parameter tuning or another uniform
+refinement by itself.
+
+The re-generated 2x2 summary and top-down pressure/film-locus overlay are in
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry3_outlet_locus/`.
+The film map is display-clipped from the global `h_min` (276.288 nm) to
+996 nm; raw numerical fields and exported profiles remain unchanged. The
+overlay marks the symmetric global pressure maxima, global film minimum,
+theta boundary, nominal Hertz boundary and +x entrainment. Raw locus outputs
+are `outlet_feature_locus.csv` and `outlet_feature_locus.json`; the common-
+coordinate comparison is
+`results/ciulli_20261112_hybrid_513_to_1025_analysis.json`.
+
+The pairwise analyzer previously hard-coded cavitated-area labels `65` and
+`129`; its output now keys those percentages by the actual `(ny,nx)` grids.
+The focused regression verifies nonstandard grid labels as well as the
+percentages.
+
+**Conclusion:** the 1025 state passes discrete load, local/global mass,
+complementarity, film and independent elasticity audits. This is an accepted
+equation-closure root by re-audit, not evidence that a fresh Newton run
+completed. The adjacent 513-to-1025 field changes and under-resolved outlet
+width preclude a mesh-convergence claim. Experimental/physical validation
+remains open; next work should target bounded local resolution or a
+discretization-error study, not another automatic uniform refinement.
+
+Verification for this analysis/documentation increment: the focused
+`tests/test_ciulli_grid_analysis.py` suite passes (12 passed), and the
+Windows-compatible full suite passes (862 passed, 1 skipped, 3 existing
+PyTorch warnings) when excluding `tests/test_joint_refinement.py`. Plain
+`pytest -q` still fails collection because that test imports the POSIX-only
+`resource` module on Windows. `ruff check docs examples src tests` passes;
+repository-wide `ruff check .` reports the existing E501 in the unrelated,
+untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`.

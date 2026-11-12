@@ -10,13 +10,14 @@ line contact, transient isothermal behavior, steady TEHL and combined transient
 TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
-The broad project priority remains **benchmark-led physical validation**,
-but the Ciulli 15 N donor case is not ready for a stronger physical claim:
-its accepted 513x513 refinement still shows a spatially shifting, sharply
-localized pressure maximum in the Hertz core. Main-field RMS differences
-contract on the last refinement, but pressure Linf and `p_max` do not
-stabilize, and film/scalar behavior is not uniformly asymptotic. Do not start
-another uniform refinement or redo the Figure 13 comparison automatically.
+The broad project priority remains **benchmark-led physical validation**.
+The Ciulli 15 N case now has an accepted 1025x1025 numerical root, recorded
+after a runner restart re-audited preserved checkpoint 6 with zero new Newton
+corrections; this was not a fresh nonlinear solve. Its adjacent 513-to-1025
+comparison shows continuing localized pressure and outlet-feature changes,
+so it does not establish asymptotic mesh convergence or justify a stronger
+physical claim. Do not start another uniform refinement or redo the Figure 13
+comparison automatically.
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but
 fixed-neighborhood pressure averages/integrals and the peak on a nested
@@ -2940,8 +2941,46 @@ and uses zero-padded `scipy.signal.fftconvolve` above that threshold. Direct
 versus FFT parity (including boundary behavior) and affected audit/load
 paths pass 77 targeted tests. Applying the new FFT audit to the saved 1025
 state took 2.16 s and passed the independent force, local-mass and film
-reconstruction gates, but this post-interruption audit does not promote the
-checkpoint to an accepted solver result. Restart from checkpoint 6 in a new
-output directory so the runner can record normal final acceptance. The audit
-method changes only how the same elastic convolution is evaluated; physics,
-equations, tolerances and acceptance limits are unchanged.
+reconstruction gates. At that stage, this post-interruption audit alone had
+not promoted the checkpoint to an accepted solver result; the later normal
+runner acceptance is documented below. The audit method changes only how the
+same elastic convolution is evaluated; physics, equations, tolerances and
+acceptance limits are unchanged.
+
+### 1025x1025 checkpoint re-audit and adjacent-grid comparison (2026-11-12)
+
+Retry 3 in
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry3/` is
+recorded as `accepted_numerical_root`. The runner loaded the preserved
+checkpoint 6, applied zero new Newton corrections, and passed the independent
+final audit; the interrupted correction was neither resumed nor accepted.
+The 1025 audit used the independent zero-padded `scipy.signal.fftconvolve`
+elastic reconstruction (not direct spatial convolution). This establishes an
+accepted discrete root, not a new 1025 nonlinear solve or physical EHL
+validation.
+
+The existing common-coordinate comparison of accepted 513x513 and 1025x1025
+fields is in
+[`VALIDATION_REPORT.md`](VALIDATION_REPORT.md), with machine-readable output
+under `results/ciulli_20261112_hybrid_513_to_1025_analysis.json`. Both grids
+close the 15 N load and independent local/global mass and film audits. Central
+film decreases 0.97%, global minimum film decreases 0.80%, while `p_max`
+increases 10.23%; the pressure and film field differences remain localized
+and non-negligible. This is one adjacent-grid pair, not an observed order,
+Richardson/GCI estimate, or mesh-convergence pass.
+
+The saved-field outlet analysis identifies a sampled connected curved
+pressure-maximum locus from the centerline to symmetric off-axis global
+maxima on both grids. At 1025x1025, the tracked half-prominence width is only
+1.75 cells at the centerline and 2.92 cells at the off-axis maxima; the film
+constriction remains downstream of the pressure locus. The feature is still
+under-resolved, so neither its amplitude nor continuum shape is established.
+The overlay and raw locus CSV/JSON are local under the retry-3
+`_outlet_locus/` directory; exported numerical fields and profiles are
+uncapped.
+
+**Next:** do not launch another uniform grid or tune physical parameters
+from these results. Prioritize a bounded local-resolution or
+discretization-error study of the connected outlet feature and bulk fields,
+then reassess physical comparison. Equation closure is verified at these
+roots; numerical mesh convergence and experimental validation remain open.

@@ -452,6 +452,10 @@ def main_contact_structure_comparison(coarse, fine, *, spacing_um=0.5):
     cavitated0 = (fields["theta_coarse"] < 1 - 1e-10) & (p0 <= 1e3)
     cavitated1 = (fields["theta_fine"] < 1 - 1e-10) & (p1 <= 1e3)
     hotspot_metrics = regions["main_contact"]
+    grid_shapes = [
+        [coarse["case"]["ny"], coarse["case"]["nx"]],
+        [fine["case"]["ny"], fine["case"]["nx"]],
+    ]
     hotspot_metrics = {
         "center_um": [hotspot_x_m * 1e6, hotspot_y_m * 1e6],
         "half_width_um": 10.0,
@@ -461,8 +465,16 @@ def main_contact_structure_comparison(coarse, fine, *, spacing_um=0.5):
         "cavitation_state_mismatch_percent_in_main": float(
             100 * np.mean(cavitated0[main] != cavitated1[main])
         ),
-        "cavitated_area_percent_65": float(100 * np.mean(cavitated0[main])),
-        "cavitated_area_percent_129": float(100 * np.mean(cavitated1[main])),
+        "grids_ny_nx": grid_shapes,
+        "cavitated_area_percent_by_grid_ny_nx": {
+            f"{shape[0]}x{shape[1]}": float(
+                100 * np.mean(cavitated[main])
+            )
+            for shape, cavitated in (
+                (grid_shapes[0], cavitated0),
+                (grid_shapes[1], cavitated1),
+            )
+        },
         "theta_linf_difference_in_main": float(
             np.max(abs(fields["theta_fine"][main] - fields["theta_coarse"][main]))
         ),

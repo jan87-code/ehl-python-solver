@@ -32,9 +32,14 @@ scalars and active/cavitation endpoint states agree. The ridge forms and moves
 during Newton correction in both paths, so the 129-to-513 result makes seed
 dependence less likely for these initializations, not impossible in general.
 This closes the planned seed-path discriminator; it does not demonstrate mesh
-convergence or resolve the ridge. Do not start 1025x1025. Prioritize a
-targeted pressure/flux discretization study in the full-film core and
-resolution-aware analysis of the ridge; retain the elastic-operator audit as
+convergence or resolve the ridge. The targeted full-film-core pressure/flux
+stencil review is complete using the saved 65x65 through 513x513 diagnostics:
+the sampled core remains fully flooded, donor selection stays westward, and
+there is no clipping, limiter, or unexpected branch switch. The production
+flux agrees with its expected first-order donor-advection / second-order
+pressure-diffusion orders; no implementation defect was found to block
+refinement. The donor scheme's expected low-order error and the grid-sensitive
+ridge still preclude a convergence claim. Retain the elastic-operator audit as
 supporting evidence rather than treating it as proof against a coupled
 elasticity effect. See the run and its compact comparison metadata in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md) and
@@ -2879,18 +2884,17 @@ memory, root and field-comparison data are in
 
 This establishes CPU/GPU numerical equivalence and equation closure for
 these two finite grids, not mesh convergence, physical validity, or a
-fully-device JFO implementation. The hybrid is the fastest verified backend
-for these runs (12.6% less elapsed time at 257x257 and 33.4% at 513x513), but
-1025x1025 remains gated. The 513 pressure ridge and outlet feature are still
-grid-sensitive, so the numerical-purpose gate calls for the targeted
-full-film-core pressure/flux study before further uniform refinement.
+fully-device JFO implementation. The targeted core pressure/flux review found
+no defect to block refinement, but the verified hybrid's 1025x1025 resource
+preflight fails its configured CUDA workspace limits. Its 3080x3080 FFT
+workspace estimate is 1.131 GiB against a 1 GiB cap; restart-60 GMRES estimates
+2.027 GiB against that same cap (and exceeds half the currently free 4 GiB GPU
+memory). The host SuperLU and result-storage estimates fit current headroom,
+but do not override the CUDA admission failure.
 
-A 2026-11-12 live resource snapshot was 63.2 GiB host RAM total / 31.9 GiB
-free, an 8-core CPU, and an RTX A2000 Laptop GPU with 4096 MiB total / 3962
-MiB free. This does not measure the 1025x1025 CPU SuperLU peak or total
-runtime; the 513 correction-probe peak is not a full-run resource estimate.
-After the pressure/flux study, perform a bounded 1025-specific CPU/GPU
-memory/runtime preflight. Proceed from the accepted 513x513 seed only if the
-study identifies a concrete question uniform refinement can answer and the
-existing resource and nonlinear acceptance gates pass. The detailed decision
-and evidence are in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+Do not launch 1025x1025 or raise the memory cap for this run. The next step is
+to design and verify a memory-admissible hybrid configuration on saved 513
+checkpoints, retaining the current Krylov tolerance and independently
+rechecking correction residual/parity and peak GPU memory. Only then reconsider
+1025x1025 from the accepted 513x513 seed. The preflight assumptions, estimates
+and limits are documented in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).

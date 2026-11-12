@@ -5983,34 +5983,89 @@ exclusive timings for every flux/property/FFT subkernel, Newton coordination,
 line search, independent final audit, plotting and disk I/O are not available
 from this hybrid run and remain a profiling limitation.
 
-### 1025x1025 gate reassessment (2026-11-12)
+### Core pressure/flux disposition and 1025x1025 preflight (2026-11-12)
 
-The requested hybrid-backend sequence is complete through the accepted
-513x513 root: checkpoint corrections passed the existing independently
-recomputed residual and CPU-parity gates, and both complete hybrid roots passed
-the independent audits and reproduced their CPU reference fields to roundoff.
-The end-to-end measurements were 12.6% less elapsed time at 257x257 and 33.4%
-less at 513x513. These results establish the hybrid as the fastest verified
-backend for these two runs, not as evidence of spatial convergence.
+#### Targeted core pressure/flux review
 
-Do not launch 1025x1025 yet: both existing gates remain uncleared.
+The existing saved core-stencil diagnostics for the accepted 65x65, 129x129,
+257x257 and 513x513 roots were reviewed; no operator or mesh study was rerun.
+At the fixed nominal coordinate `(52, 59.375) um`, each nearest 3x3 stencil
+has `theta=1` throughout and selects the west node for +x donor transport.
+The cell mass divergences are `5.88e-15`, `0`, `1.29e-14` and
+`5.93e-14 kg/(m^2 s)` respectively; the maximum absolute neighboring 3x3
+residual at 513x513 is `8.38e-14 kg/(m^2 s)`. The sample falls on different
+nearest nodes at the coarse grids, so these residuals are local closure checks,
+not pointwise convergence measures.
 
-* **Numerical purpose:** the accepted 513x513 pressure ridge and outlet feature
-  remain grid-sensitive; `p_max`, fixed-region ridge metrics and film behavior
-  are not uniformly asymptotic. The completed diagnostics prioritize a
-  controlled full-film-core pressure/flux study before another uniform
-  refinement. Backend equivalence alone does not establish that the 1025 grid
-  will answer a specific unresolved numerical question.
-* **Resources:** a live host snapshot on 2026-11-12 showed 63.2 GiB physical
-  memory, 31.9 GiB free, an 8-core CPU, and an RTX A2000 Laptop GPU with
-  4096 MiB total / 3962 MiB free device memory. This is only instantaneous
-  headroom, not a 1025x1025 peak-memory or runtime preflight. The 513x513
-  correction probe's 468 MiB reserved peak is not a full-run measurement and
-  cannot bound the CPU SuperLU factorization or total 1025 runtime.
+At the 513x513 peak (`p=812.88 MPa`, `h=405.87 nm`, `rho=1074.65 kg/m^3`,
+`eta=4.839e6 Pa s`, mobility `1.237e-24 m s`), the west/east x pressure
+fluxes are `-1.42e-10` / `3.32e-9 kg/(m s)` versus Couette fluxes
+`8.76e-5` / `8.72e-5 kg/(m s)`. The x and y divergence contributions at
+the cell are approximately `-0.23132` and `+0.23132 kg/(m^2 s)`, cancelling
+to the reported residual. The full 3x3 is flooded; there is no cavitation
+branch transition, donor switch, coefficient clipping or limiter at this
+sample. The production donor flux uses the documented arithmetic face
+mobility and west-node Couette value for positive entrainment. Its independent
+smooth manufactured-field check gives the expected first-order donor
+advection and second-order pressure diffusion. No implementation defect was
+identified to block further refinement. This does not remove the known
+first-order donor error or establish convergence/resolution of the narrow
+pressure ridge.
 
-Next, run the targeted pressure/flux discretization verification and a bounded
-1025-specific CPU/GPU memory and runtime preflight. Proceed with a 1025x1025
-hybrid run seeded from the accepted 513x513 state only if those results give
-uniform refinement a concrete diagnostic purpose and the existing acceptance
-and resource gates pass. Retain the CPU reference and all current tolerances;
-no 1025x1025 solve was run for this reassessment.
+#### Bounded resource estimate for 1025x1025
+
+The host/GPU snapshot was 63.2 GiB host RAM total with 29.1 GiB free, and an
+RTX A2000 Laptop GPU with 4096 MiB total and 3955 MiB free. Resource estimates
+use the existing hybrid defaults and do not assume any solver or physical
+parameter changes.
+
+| Resource | Measured 257x257 | Measured 513x513 | 1025x1025 estimate |
+| --- | ---: | ---: | ---: |
+| Full run directory | 26.91 MiB | 109.23 MiB | 436 MiB by field-area scaling |
+| Hybrid end-to-end runtime | 86.96 s | 921.32 s | 9,794 s (2.72 h) from the two-point power-law exponent 3.415 |
+| Sparse field matrix | 130,050 square; 518,925 nnz | 522,242 square; 2,086,413 nnz | 2,093,058 square; about 8.35M nnz by area scaling |
+| SuperLU `L+U` factor nnz | 9.30M | 52.90M | about 301M using the measured 5.69x factor-fill growth per grid doubling |
+| SuperLU factor storage | 113.7 MB | 643.2 MB | about 3.64 GB using the measured 257/513 factor-storage ratio |
+
+One isolated SuperLU setup took `0.443 s` at 257 and `11.314 s` at 513.
+Post-factorization process-private usage increased by approximately `536 MiB`
+at 257 and `2.18 GiB` at 513 from each probe's pre-factor baseline. The measured
+513 peak working set rose `1.21 GiB` above its probe baseline; scaling that
+increment by the measured LU-fill ratio projects about `7.2 GiB` peak resident
+memory for the 1025 factorization. Scaling the 513 private-usage increment the
+same way projects about `12.4 GiB` additional committed memory, or `13.5 GiB`
+including the 513 probe process baseline. These are two-grid, single-state
+extrapolations, not measured 1025 peaks; compared with 29.1 GiB currently free,
+host RAM appears likely to fit. The estimated run directory is also modest.
+The 2.72 h runtime is an extrapolation from only two complete hybrid runs, not
+a service-time guarantee.
+
+The CUDA workspace admission fails with the current verified settings:
+
+* The limited-load field has `n=(1025-2)^2=1,046,529` interior cells and the
+  bordered GMRES vector has `2n+1=2,093,059` entries. The production DC-FFT
+  estimate is `128 * 3080^2 = 1,214,259,200 bytes` (`1.131 GiB`), exceeding
+  the configured `1 GiB` workspace cap.
+* With the production restart of 60, the device-GMRES estimate
+  `16*N*(restart+5)+32*(restart+1)^2` is `2,176,900,432 bytes`
+  (`2.027 GiB`). It exceeds the configured `1 GiB` cap and half of the
+  currently free GPU memory (`1.931 GiB`); actual free memory would be lower
+  after operator initialization. Thus the current hybrid runner would reject
+  this grid before a nonlinear solve. The observed 513 checkpoint reserved
+  peak of 468 MiB, area-scaled to about 1.82 GiB, is not a full-run peak and
+  does not override these explicit admission checks.
+
+#### Decision
+
+The core numerical review found no flux-discretization defect, so it does not
+block a future uniform-refinement experiment. **The 1025x1025 calculation was
+not run and is not accepted:** the verified hybrid configuration fails its
+current GPU memory admission checks. Do not bypass these checks by raising the
+cap or silently changing restart. First expose and verify a memory-admissible
+hybrid configuration on saved 513x513 corrections, preserving the `1e-9`
+Krylov tolerance and independent true-residual/CPU-parity gates, and measure
+its peak GPU memory. Then reconsider a 1025x1025 run from the accepted 513
+seed. Until such a run passes the independent force, mass, JFO complementarity,
+film-reconstruction, elasticity and outlet-feature audits, there are no
+513x513-to-1025x1025 convergence results and no change to the current
+numerical-verification level.

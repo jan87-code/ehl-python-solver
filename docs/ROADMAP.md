@@ -2879,8 +2879,18 @@ memory, root and field-comparison data are in
 
 This establishes CPU/GPU numerical equivalence and equation closure for
 these two finite grids, not mesh convergence, physical validity, or a
-fully-device JFO implementation. Do not start 1025x1025: the unresolved
-grid-sensitive pressure ridge and outlet feature still do not support
-uniform refinement as a validated physical-accuracy study. Before any
-future 1025x1025 decision, retain the CPU reference and perform a separate
-memory/runtime preflight; the 513 correction probe alone is not that gate.
+fully-device JFO implementation. The hybrid is the fastest verified backend
+for these runs (12.6% less elapsed time at 257x257 and 33.4% at 513x513), but
+1025x1025 remains gated. The 513 pressure ridge and outlet feature are still
+grid-sensitive, so the numerical-purpose gate calls for the targeted
+full-film-core pressure/flux study before further uniform refinement.
+
+A 2026-11-12 live resource snapshot was 63.2 GiB host RAM total / 31.9 GiB
+free, an 8-core CPU, and an RTX A2000 Laptop GPU with 4096 MiB total / 3962
+MiB free. This does not measure the 1025x1025 CPU SuperLU peak or total
+runtime; the 513 correction-probe peak is not a full-run resource estimate.
+After the pressure/flux study, perform a bounded 1025-specific CPU/GPU
+memory/runtime preflight. Proceed from the accepted 513x513 seed only if the
+study identifies a concrete question uniform refinement can answer and the
+existing resource and nonlinear acceptance gates pass. The detailed decision
+and evidence are in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).

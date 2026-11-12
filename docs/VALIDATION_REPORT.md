@@ -5874,11 +5874,23 @@ correction benchmark. All three hybrid corrections meet the independently
 recomputed `5e-9` residual gate, `5e-7` CPU correction-parity gate, and the
 absolute CPU/CUDA residual-parity `1e-10` gate:
 
-| Checkpoint | CPU s / iterations | Hybrid s / iterations | Relative correction L2 | Hybrid true residual |
+| Checkpoint | CPU s / iterations / true residual | Hybrid s / iterations / true residual | Hybrid relative correction L2 | Correction Linf |
 | ---: | ---: | ---: | ---: | ---: |
-| 0 | 5.345 / 56 | 2.457 / 26 | 3.676e-10 | 5.940e-10 |
-| 3 | 5.409 / 59 | 2.261 / 28 | 1.416e-10 | 1.346e-10 |
-| 6 | 5.307 / 60 | 1.951 / 28 | 6.945e-11 | 1.178e-10 |
+| 0 | 5.345 / 56 / 5.547e-10 | 2.457 / 26 / 5.940e-10 | 3.676e-10 | 1.709e-10 |
+| 3 | 5.409 / 59 / 1.587e-10 | 2.261 / 28 / 1.346e-10 | 1.416e-10 | 2.382e-12 |
+| 6 | 5.307 / 60 / 1.029e-10 | 1.951 / 28 / 1.178e-10 | 6.945e-11 | 3.576e-18 |
+
+The hybrid independently recomputed normalized true residuals therefore
+reduce a unit initial residual by factors of approximately `1.68e9`,
+`7.43e9` and `8.49e9`. The listed hybrid wall times include the complete
+correction call; the internally timed totals are `2.444`, `2.249` and
+`1.941 s`. Per-correction listed transfers were about `37.7--40.5 ms`
+(`1.6--2.0%` of internal total): roughly `28.1--30.2 MB` each way for the
+CPU preconditioner vectors, `1.04 MB` for the CPU residual RHS upload, and
+`0.32--0.58 ms` for the correction download. The state/guide upload
+(`2.08 MB`, `2.6--2.8 ms`) is a one-time initialization cost, not repeated
+each correction. Transfer and full-call wall timings include synchronization
+and should not be summed as independent shares.
 
 The benchmark records per-correction residual/property work, CUDA
 linearization and JVP timings, CPU matrix assembly and SuperLU setup/apply
@@ -5971,10 +5983,34 @@ exclusive timings for every flux/property/FFT subkernel, Newton coordination,
 line search, independent final audit, plotting and disk I/O are not available
 from this hybrid run and remain a profiling limitation.
 
-Do not launch 1025x1025. Although these hybrid roots reproduce the CPU fields,
-the accepted 513x513 pressure ridge and outlet feature remain grid-sensitive;
-backend equivalence is not a reason to interpret uniform refinement as
-physical convergence. A future 1025x1025 proposal needs a separate CPU/GPU
-memory and runtime preflight, a specific diagnostic question that uniform
-refinement can answer, and a retained CPU comparison. No 1025x1025 run is
-included in this milestone.
+### 1025x1025 gate reassessment (2026-11-12)
+
+The requested hybrid-backend sequence is complete through the accepted
+513x513 root: checkpoint corrections passed the existing independently
+recomputed residual and CPU-parity gates, and both complete hybrid roots passed
+the independent audits and reproduced their CPU reference fields to roundoff.
+The end-to-end measurements were 12.6% less elapsed time at 257x257 and 33.4%
+less at 513x513. These results establish the hybrid as the fastest verified
+backend for these two runs, not as evidence of spatial convergence.
+
+Do not launch 1025x1025 yet: both existing gates remain uncleared.
+
+* **Numerical purpose:** the accepted 513x513 pressure ridge and outlet feature
+  remain grid-sensitive; `p_max`, fixed-region ridge metrics and film behavior
+  are not uniformly asymptotic. The completed diagnostics prioritize a
+  controlled full-film-core pressure/flux study before another uniform
+  refinement. Backend equivalence alone does not establish that the 1025 grid
+  will answer a specific unresolved numerical question.
+* **Resources:** a live host snapshot on 2026-11-12 showed 63.2 GiB physical
+  memory, 31.9 GiB free, an 8-core CPU, and an RTX A2000 Laptop GPU with
+  4096 MiB total / 3962 MiB free device memory. This is only instantaneous
+  headroom, not a 1025x1025 peak-memory or runtime preflight. The 513x513
+  correction probe's 468 MiB reserved peak is not a full-run measurement and
+  cannot bound the CPU SuperLU factorization or total 1025 runtime.
+
+Next, run the targeted pressure/flux discretization verification and a bounded
+1025-specific CPU/GPU memory and runtime preflight. Proceed with a 1025x1025
+hybrid run seeded from the accepted 513x513 state only if those results give
+uniform refinement a concrete diagnostic purpose and the existing acceptance
+and resource gates pass. Retain the CPU reference and all current tolerances;
+no 1025x1025 solve was run for this reassessment.

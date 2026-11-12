@@ -323,8 +323,12 @@ the physical model.
   - [x] Resident float64 GMRES, verified frozen-film surrogate/Jacobi,
     Schur/full-bordered recovery and complete signed full-film Newton/load
     stepping on documented mathematical cases, including 513x513 execution.
-  - [ ] Device JFO/complementarity and physically validated GPU EHL;
-    broad strong-coupling, ROCm coverage and Linux GPU execution remain open.
+  - [x] Hybrid CPU-residual/CPU-SuperLU and CUDA-JVP donor/JFO corrections
+    and accepted-root parity at 257x257 and 513x513; this is not a
+    GPU-resident preconditioner.
+  - [ ] Fully device-resident active-set preconditioning, broad
+    strong-coupling, physical EHL validation, ROCm coverage and Linux GPU
+    execution remain open.
 
 Do not check off a box without reproducible evidence (tests or documented benchmark output).
 
@@ -2821,7 +2825,62 @@ synchronization, and it is both slower and numerically ineffective. Exact
 measurements, checkpoint checksums and a reproducible benchmark are in
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md) and
 [`cases/ciulli_20261112_device_preconditioner_diagnostics.json`](../cases/ciulli_20261112_device_preconditioner_diagnostics.json).
-The next GPU step requires a materially stronger preconditioner that passes
-the same saved-state true-residual gates before any nonlinear integration.
-Do not launch 513x513 or 1025x1025 CUDA nonlinear runs; the 1025x1025 gate
-also remains closed by the unresolved mesh/ridge behavior.
+This rejects only that device-native preconditioner; it remains isolated and
+is not connected to the nonlinear solver. Subsequent CPU-preconditioned/
+CUDA-JVP correction and accepted-root evidence is recorded in the following
+hybrid milestone. It does not rehabilitate this candidate or validate
+physical EHL. Do not extend its iteration limit or relax its residual gate.
+
+### Hybrid CUDA-JFO correction and root-equivalence follow-up (2026-11-12)
+
+A separate hybrid path uses the CPU donor/JFO residual as the Krylov right
+hand side, CPU SuperLU bordered-Schur preconditioning, and CUDA float64
+matrix-free JVPs plus resident GMRES. Its correction is checked against the
+CPU Jacobian and against CUDA residual parity. This CPU-residual choice matters
+near the accepted root: at saved checkpoint 6, CUDA and CPU residuals differ
+by only `1.21e-14` in absolute Linf, but that is large relative to the
+`9.66e-10` residual norm and yields a misleading `1.26e-5` CUDA-residual
+relative true defect. Solving with the CPU residual gives a relative true
+defect of `1.18e-10` and correction relative-L2 difference `6.95e-11`.
+Neither the nonlinear equations nor any convergence tolerance changed.
+
+The hybrid correction passed the `5e-9` independently recomputed true
+residual and `5e-7` correction-parity gates at saved 257x257 checkpoints
+0/3/6. Relative correction differences were `3.68e-10`, `1.42e-10` and
+`6.95e-11`; iterations were 26/28/28 versus CPU 56/59/60. Correction
+wall times were 2.46/2.26/1.95 s versus 5.34/5.41/5.31 s. A separate
+513x513 checkpoint-0 probe passed with `3.47e-10` relative correction
+difference and `3.71e-10` true residual, using 29 versus 69 Krylov
+iterations. Its observed peak was 427.5 MiB allocated / 468 MiB reserved.
+
+Both full hybrid roots passed independent endpoint audits. The 257x257 run
+started from the exact CPU checkpoint-0 state; the 513x513 run and CPU
+reference both started from the same accepted CPU 257x257 root.
+At 257x257, both used seven Newton corrections; runtime was 86.96 s hybrid
+versus 99.49 s CPU. Pressure relative-L2 difference was `3.78e-15` and film
+relative-L2 difference `2.08e-17`. At 513x513, both again used seven
+corrections; runtime was 921.32 s hybrid versus 1,383.96 s CPU. The 513
+pressure relative-L2 difference was `4.54e-15`, film `7.98e-17`, and theta
+Linf difference `1.11e-15`. The 513 hybrid accepted result has
+`h_min=278.512 nm`, `h_c=465.649 nm`, `p_max=812.881 MPa`, and force
+relative error `2.22e-16`. The required per-run summary figure and centerline
+profile files were generated from the hybrid backend result. Full state
+archives and plots remain local under `results/`.
+
+The speedup is end-to-end evidence for this case only: at 257x257 it is
+modest (12.6% less elapsed time), while at 513x513 it is 33.4% less. The
+513 checkpoint profile identifies repeated CPU SuperLU factorization as the
+largest measured correction cost (about 126.7 s over 11 accepted model
+corrections); GPU JVPs totaled 11.1 s. The peak figure is from one correction
+probe, not a measured full-run peak. Detailed residual, transfer, factor,
+memory, root and field-comparison data are in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md); reproduction commands are in
+[USER_GUIDE.md](USER_GUIDE.md).
+
+This establishes CPU/GPU numerical equivalence and equation closure for
+these two finite grids, not mesh convergence, physical validity, or a
+fully-device JFO implementation. Do not start 1025x1025: the unresolved
+grid-sensitive pressure ridge and outlet feature still do not support
+uniform refinement as a validated physical-accuracy study. Before any
+future 1025x1025 decision, retain the CPU reference and perform a separate
+memory/runtime preflight; the 513 correction probe alone is not that gate.

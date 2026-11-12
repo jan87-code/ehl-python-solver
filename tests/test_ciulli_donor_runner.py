@@ -78,6 +78,9 @@ def test_persistent_iteration_record_keeps_audits_trials_krylov_and_active_sets(
                 "linear_true_residual": 1e-10,
                 "linear_iterations": 4,
                 "krylov_histories": ((0.2, 0.01, 1e-10),),
+                "linear_solver_timings": {
+                    "cpu_preconditioner_apply_seconds": 0.25
+                },
                 "trials": [
                     {"alpha": 0.1, "accepted": False, "reason": "Armijo rejected"},
                     {"alpha": 0.05, "accepted": False, "reason": "feasible Armijo candidate"},
@@ -91,6 +94,7 @@ def test_persistent_iteration_record_keeps_audits_trials_krylov_and_active_sets(
     assert saved["force_residual"] == 0.1
     assert saved["audit"]["mass"]["relative_local_balance"] == 1e-8
     assert model["linear_iterations"] == 4
+    assert model["linear_solver_timings"]["cpu_preconditioner_apply_seconds"] == 0.25
     assert model["krylov_histories"] == [[0.2, 0.01, 1e-10]]
     assert [trial["accepted"] for trial in model["trials"]] == [False, False]
     assert model["correction_norm_l2"] == np.linalg.norm([1.0, -2.0, 0.5])

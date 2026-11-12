@@ -327,6 +327,7 @@ def run(
     *,
     seed=None,
     maximum_physical_nodes=None,
+    linear_backend="cpu",
 ):
     started = time.perf_counter()
     output = Path(output)
@@ -354,6 +355,31 @@ def run(
         if seed is not None
         else (None, {"kind": "Hertz initial guess; not a solution"})
     )
+    if linear_backend not in ("cpu", "hybrid-cuda"):
+        raise ValueError("linear_backend must be 'cpu' or 'hybrid-cuda'")
+    correction_solver = None
+    device_backend = None
+    backend_label = "CPU (NumPy/SciPy)"
+    backend_description = (
+        "SciPy sparse GMRES/SuperLU; NumPy and SciPy OpenBLAS "
+        "thread counts queried independently. NumPy FFT and Python "
+        "matrix-free operations are not configured as parallel solvers."
+    )
+    if linear_backend == "hybrid-cuda":
+        from ehl_solver.backend import make_backend
+        from ehl_solver.hybrid_jfo import HybridJFOCorrectionSolver
+
+        device_backend = make_backend("torch", "cuda")
+        correction_solver = HybridJFOCorrectionSolver(case, device_backend)
+        import torch
+
+        gpu_name = torch.cuda.get_device_name(device_backend.device)
+        backend_label = f"Hybrid CUDA operator / CPU SuperLU ({gpu_name})"
+        backend_description = (
+            "CPU residual and SuperLU bordered-Schur preconditioner with "
+            "CUDA float64 JFO JVPs and resident GMRES; every correction "
+            "passes independent CPU/CUDA residual checks."
+        )
     output.mkdir(parents=True)
     command = [
         "python",
@@ -371,11 +397,14 @@ def run(
         command.extend(("--seed", str(seed)))
     if maximum_physical_nodes is not None:
         command.extend(("--maximum-physical-nodes", str(maximum_physical_nodes)))
+    if linear_backend != "cpu":
+        command.extend(("--linear-backend", linear_backend))
     metadata = dict(
         status="running",
         case=asdict(case),
         transport_fraction=0.0,
         equation="donor-flux JFO/Elrod-Adams",
+        linear_backend=linear_backend,
         coordinates="(ny,nx), x follows +entrainment; fields are SI",
         command=" ".join(command),
         runtime=dict(
@@ -397,11 +426,7 @@ def run(
             },
             numpy_openblas_active_threads=_numpy_openblas_thread_count(),
             scipy_openblas_active_threads=_scipy_openblas_thread_count(),
-            linear_algebra_backend=(
-                "SciPy sparse GMRES/SuperLU; NumPy and SciPy OpenBLAS "
-                "thread counts queried independently. NumPy FFT and Python "
-                "matrix-free operations are not configured as parallel solvers."
-            ),
+            linear_algebra_backend=backend_description,
         ),
         fluid=asdict(case.fluid()),
         maximum_corrections=30,
@@ -422,12 +447,36 @@ def run(
         termination_reason=None,
     )
     metadata["case_sha256"] = _digest(case_path)
+    if correction_solver is not None:
+        import torch
+
+        metadata["runtime"].update(
+            torch=torch.__version__,
+            cuda=torch.version.cuda,
+            gpu=gpu_name,
+            hybrid_operator_initialization_seconds=(
+                correction_solver.initialization_seconds
+            ),
+            hybrid_operator_memory_limit_bytes=(
+                correction_solver.memory_limit_bytes
+            ),
+        )
     source_files = [
         Path(__file__),
         Path(__import__("ehl_solver.limited_newton", fromlist=["__file__"]).__file__),
         Path(__import__("ehl_solver.limited_system", fromlist=["__file__"]).__file__),
         Path(__import__("ehl_solver.limited_audit", fromlist=["__file__"]).__file__),
     ]
+    if linear_backend == "hybrid-cuda":
+        source_files.extend(
+            Path(__import__(module, fromlist=["__file__"]).__file__)
+            for module in (
+                "ehl_solver.backend",
+                "ehl_solver.hybrid_jfo",
+                "ehl_solver.device_jfo",
+                "ehl_solver.device_krylov",
+            )
+        )
     metadata["source_sha256"] = {path.name: _digest(path) for path in source_files}
     metadata["run_script_sha256"] = _digest(__file__)
     summary_path = output / "summary.json"
@@ -465,6 +514,7 @@ def run(
             case,
             initial_state=initial_state,
             transport_fraction=0.0,
+            correction_solver=correction_solver,
             state_observer=observe,
             diagnostic_observer=observe_diagnostics,
         )
@@ -498,6 +548,9 @@ def run(
                             "linear_true_residual": model.get("linear_true_residual"),
                             "linear_iterations": model.get("linear_iterations"),
                             "krylov_histories": model.get("krylov_histories"),
+                            "linear_solver_timings": model.get(
+                                "linear_solver_timings"
+                            ),
                             "correction_norm_l2": (
                                 float(np.linalg.norm(model["direction"]))
                                 if isinstance(model.get("direction"), np.ndarray)
@@ -543,6 +596,18 @@ def run(
         )
         if isinstance(exc, LimitedNewtonError):
             metadata["failure_audit"] = exc.audit
+    if device_backend is not None:
+        import torch
+
+        torch.cuda.synchronize(device_backend.device)
+        metadata["runtime"].update(
+            cuda_peak_allocated_bytes=torch.cuda.max_memory_allocated(
+                device_backend.device
+            ),
+            cuda_peak_reserved_bytes=torch.cuda.max_memory_reserved(
+                device_backend.device
+            ),
+        )
     figure_state = output / (
         "state.npz"
         if metadata["status"] == "accepted_numerical_root"
@@ -566,7 +631,7 @@ def run(
                 newton_corrections=metadata.get(
                     "newton_corrections", metadata.get("diagnostic_record_count")
                 ),
-                backend="CPU (NumPy/SciPy)",
+                backend=backend_label,
                 runtime_seconds=metadata.get("elapsed_seconds"),
                 field_archive_path=figure_state,
             )
@@ -595,6 +660,9 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=Path)
     parser.add_argument("--maximum-physical-nodes", type=int)
+    parser.add_argument(
+        "--linear-backend", choices=("cpu", "hybrid-cuda"), default="cpu"
+    )
     args = parser.parse_args(argv)
     report = run(
         args.case,
@@ -603,6 +671,7 @@ def main(argv=None):
         args.half_width_mm,
         seed=args.seed,
         maximum_physical_nodes=args.maximum_physical_nodes,
+        linear_backend=args.linear_backend,
     )
     audit = report["audit"]
     print(

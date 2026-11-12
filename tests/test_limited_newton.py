@@ -7,7 +7,10 @@ import numpy as np
 import pytest
 from scipy.sparse import csr_matrix
 
-from ehl_solver.cavitating_newton import CavitatingLinearError
+from ehl_solver.cavitating_newton import (
+    CavitatingLinearError,
+    solve_cavitating_correction,
+)
 from ehl_solver.limited_audit import audit_limited_state, limited_mass_audit
 from ehl_solver.limited_continuation import (
     LimitedPathError,
@@ -34,6 +37,33 @@ def donor_root():
     root = solve_limited_load(case, transport_fraction=0.0)
     assert root.audit["numerically_accepted"] and root.transport_fraction == 0
     return root
+
+
+def test_optional_correction_solver_hook_records_timing(donor_root):
+    calls = []
+
+    def correction_solver(model, state, **options):
+        calls.append(options.copy())
+        correction = solve_cavitating_correction(model, state, **options)
+        return SimpleNamespace(**vars(correction), timings={"bridge_seconds": 0.125})
+
+    initial = donor_root.state.copy()
+    initial[0] += 1e-4
+    result = solve_limited_load(
+        donor_root.case,
+        initial_state=initial,
+        transport_fraction=0.0,
+        correction_solver=correction_solver,
+    )
+    assert result.audit["numerically_accepted"]
+    assert calls
+    assert calls[0]["krylov_rtol"] == 1e-9
+    assert any(
+        model["linear_solver_timings"] == {"bridge_seconds": 0.125}
+        for record in result.history
+        for model in record["models"]
+        if model["status"] == "linear_solved"
+    )
 
 
 def mathematical_state():

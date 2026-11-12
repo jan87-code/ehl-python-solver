@@ -8,6 +8,10 @@ from ehl_solver.cavitating_newton import solve_cavitating_correction
 from ehl_solver.device_jfo import DeviceDonorJFO
 from ehl_solver.device_jfo_krylov import solve_device_jfo_correction
 from ehl_solver.device_jfo_preconditioner import ExperimentalDeviceDonorJFOPreconditioner
+from ehl_solver.hybrid_jfo import (
+    CPUBlockSchurPreconditioner,
+    HybridJFOCorrectionSolver,
+)
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 
@@ -168,3 +172,55 @@ def test_device_bordered_gmres_correction_matches_cpu_superlu(backend):
     )
     assert actual.linear_residual_relative <= 5e-9
     assert relative < 5e-7
+
+
+def test_cpu_schur_preconditioner_applies_full_frozen_border(backend):
+    case, cpu, state = _case_state()
+    full = state[:cpu.n] >= state[cpu.n:2 * cpu.n]
+    model = LimitedLoadLinearization(
+        case, state, np.zeros(cpu.size), preconditioner="local",
+        active_full=full, transport_fraction=0,
+    )
+    matrix = model.frozen_matrix(state)
+    inverse = CPUBlockSchurPreconditioner(matrix, cpu.n, backend.device)
+    rhs = np.random.default_rng(2029).normal(size=cpu.size)
+    actual = inverse(as_float64(rhs, backend)).cpu().numpy()
+    np.testing.assert_allclose(matrix @ actual, rhs, rtol=2e-10, atol=2e-10)
+    assert inverse.application_count == 1
+    assert inverse.device_to_host_bytes == rhs.nbytes
+    assert inverse.host_to_device_bytes == rhs.nbytes
+    fallback = CPUBlockSchurPreconditioner(
+        matrix, cpu.n, backend.device, schur_tolerance=1.0
+    )
+    fallback_actual = fallback(as_float64(rhs, backend)).cpu().numpy()
+    assert fallback.used_bordered_fallback
+    np.testing.assert_allclose(matrix @ fallback_actual, rhs, rtol=2e-10, atol=2e-10)
+    with pytest.raises(ValueError, match="schur_tolerance"):
+        CPUBlockSchurPreconditioner(
+            matrix, cpu.n, backend.device, schur_tolerance=0.0
+        )
+
+
+def test_hybrid_cuda_operator_cpu_schur_correction_matches_reference(backend):
+    case, cpu, state = _case_state()
+    full = state[:cpu.n] >= state[cpu.n:2 * cpu.n]
+    model = LimitedLoadLinearization(
+        case, state, np.zeros(cpu.size), preconditioner="local",
+        active_full=full, transport_fraction=0,
+    )
+    reference = solve_cavitating_correction(
+        model, state, maximum_krylov_cycles=10, gmres_restart=60, krylov_rtol=1e-9
+    )
+    hybrid = HybridJFOCorrectionSolver(case, backend)
+    actual = hybrid(model, state)
+    relative = np.linalg.norm(actual.direction - reference.direction) / np.linalg.norm(
+        reference.direction
+    )
+    assert actual.true_linear_residual <= 5e-9
+    assert actual.linear_iterations <= 600
+    assert relative < 5e-7
+    assert actual.timings["cpu_preconditioner_applications"] > 0
+    assert actual.timings["linear_rhs_h2d_bytes"] == model.size * 8
+    assert actual.timings["cpu_residual_parity_linf"] <= 1e-10
+    with pytest.raises(ValueError, match="tolerance or iteration budget"):
+        hybrid(model, state, schur_tolerance=0.0)

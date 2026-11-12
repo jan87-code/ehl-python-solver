@@ -1,0 +1,693 @@
+{
+  "scope": "Saved-state linear correction benchmark; no nonlinear CUDA solve",
+  "grid_ny_nx": [
+    257,
+    257
+  ],
+  "accepted_state_sha256": "ecac5724a26374879a9e028e43631d043f6b16ebf5e00f8f001fc8dea038010b",
+  "gpu": "NVIDIA RTX A2000 Laptop GPU",
+  "torch_version": "2.11.0+cu128",
+  "cuda_version": "12.8",
+  "precision": "float64",
+  "cpu_linear_tolerances": {
+    "rtol": 1e-09,
+    "restart": 60,
+    "cycles": 10
+  },
+  "device_linear_tolerances": {
+    "rtol": 1e-09,
+    "restart": 60,
+    "maximum_iterations": 600
+  },
+  "checkpoints": [
+    {
+      "checkpoint": 0,
+      "checkpoint_sha256": "fbc2dd5b714d082a312f63503991d18ab3ae56eeea0b7f2d12d4c8b7ae507b92",
+      "active_full_cells": 37768,
+      "cpu": {
+        "seconds": 5.499740800001746,
+        "true_linear_residual": 5.547297990179503e-10,
+        "gmres_iterations": 56,
+        "preconditioner": {
+          "matrix_assembly_seconds": 0.4563778999981878,
+          "matrix_shape": [
+            130050,
+            130050
+          ],
+          "matrix_nnz": 518925,
+          "factorization_seconds": [
+            0.6826046999995015,
+            0.7370687000002363,
+            0.7451330999974743
+          ],
+          "factorization_median_seconds": 0.7370687000002363,
+          "factor_application_mean_seconds": 0.024382849999892642,
+          "superlu_factor_nnz": 9299963
+        }
+      },
+      "device_candidate": {
+        "status": "failed_true_residual_gate",
+        "reason": "iteration_limit",
+        "seconds": 14.895032399999764,
+        "setup_seconds": 0.7067900000001828,
+        "gmres_seconds": 13.957557999998244,
+        "iterations": 600,
+        "operator_applications": 612,
+        "preconditioner_applications": 610,
+        "true_relative_residual": 0.8694065617259055,
+        "true_residual_history": [
+          0.17382870901327196,
+          0.17245279379972678,
+          0.1704380256714516,
+          0.1681834446431442,
+          0.1657745162625205,
+          0.16340811380327883,
+          0.16112671496508732,
+          0.15876250439967363,
+          0.15633628416229037,
+          0.15359969999433545,
+          0.1511278202324817
+        ],
+        "estimated_preconditioned_history_tail": [
+          7.036028745121371,
+          7.021214986272877,
+          7.003331898322217,
+          6.988530385081575,
+          6.9701099852568005,
+          6.952559573583575,
+          6.934010703000735,
+          6.909078411881805,
+          6.878311494644189,
+          6.838302874351187
+        ],
+        "correction_vs_cpu": {
+          "full": {
+            "relative_l2": 0.5811421372155925,
+            "rms": 0.005333780081416313,
+            "linf": 0.2925743782652317,
+            "relative_linf": 0.7103674949766711
+          },
+          "blocks": {
+            "pressure": {
+              "relative_l2": 0.532583127604512,
+              "rms": 0.00657393897899311,
+              "linf": 0.2925743782652317,
+              "relative_linf": 0.7103674949766711
+            },
+            "theta_direction": {
+              "relative_l2": 0.9214441108600024,
+              "rms": 0.003698902507397922,
+              "linf": 0.11105163420941173,
+              "relative_linf": 0.7742027374955761
+            },
+            "bordered_h0_over_href": {
+              "relative_l2": 1.2904998090612567,
+              "rms": 0.004445835208593335,
+              "linf": 0.004445835208593335,
+              "relative_linf": 1.2904998090612567
+            }
+          },
+          "cosine_similarity": 0.8278689856889093,
+          "angle_degrees": 34.11955041415779
+        },
+        "residual_blocks": {
+          "cpu_reference_correction": {
+            "mass": {
+              "initial_l2": 0.1732659926778819,
+              "final_l2": 9.611456761852018e-11,
+              "reduction_factor": 5.547226327165445e-10,
+              "final_linf": 1.2999714152361896e-12
+            },
+            "selected_complementarity": {
+              "initial_l2": 0.013975545018673255,
+              "final_l2": 7.768029979854521e-12,
+              "reduction_factor": 5.558301997865102e-10,
+              "final_linf": 2.160527833028336e-12
+            },
+            "load": {
+              "initial_l2": 1.1842378929335003e-16,
+              "final_l2": 4.625929269271469e-19,
+              "reduction_factor": 0.003906249999999986,
+              "final_linf": 4.625929269271469e-19
+            }
+          },
+          "gpu_candidate_correction": {
+            "mass": {
+              "initial_l2": 0.1732659926778819,
+              "final_l2": 0.1506402778253596,
+              "reduction_factor": 0.8694162974347444,
+              "final_linf": 0.0020279630351291104
+            },
+            "selected_complementarity": {
+              "initial_l2": 0.013975545018673255,
+              "final_l2": 0.0121294989558417,
+              "reduction_factor": 0.8679088321518064,
+              "final_linf": 0.00337358563050864
+            },
+            "load": {
+              "initial_l2": 1.2079226507921703e-14,
+              "final_l2": 1.0485617167432811e-14,
+              "reduction_factor": 0.8680702494117662,
+              "final_linf": 1.0485617167432811e-14
+            }
+          },
+          "cpu_operator_on_gpu_correction": {
+            "mass": {
+              "initial_l2": 0.1732659926778819,
+              "final_l2": 0.1506402778253596,
+              "reduction_factor": 0.8694162974347444,
+              "final_linf": 0.00202796303512911
+            },
+            "selected_complementarity": {
+              "initial_l2": 0.013975545018673255,
+              "final_l2": 0.0121294989558417,
+              "reduction_factor": 0.8679088321518064,
+              "final_linf": 0.00337358563050864
+            },
+            "load": {
+              "initial_l2": 1.1842378929335003e-16,
+              "final_l2": 1.7071991968246417e-15,
+              "reduction_factor": 14.416015625,
+              "final_linf": 1.7071991968246417e-15
+            }
+          }
+        },
+        "independently_recomputed_gpu_true_relative_residual": 0.8694065617259054,
+        "operator_parity": {
+          "selected_residual_cpu_vs_cuda": {
+            "relative_l2": 7.05413718918532e-14,
+            "rms": 3.400232063747406e-17,
+            "linf": 1.2197650297215052e-14,
+            "relative_linf": 3.1380405254026166e-12
+          },
+          "JVP_on_gpu_candidate_correction": {
+            "relative_l2": 3.423847863622515e-16,
+            "rms": 2.1617275281861828e-20,
+            "linf": 4.833932957599874e-18,
+            "relative_linf": 9.414759115203072e-15
+          },
+          "JVP_on_cpu_reference_correction": {
+            "relative_l2": 2.476113589262347e-16,
+            "rms": 1.1935351692993616e-19,
+            "linf": 2.710505431213761e-18,
+            "relative_linf": 6.973208507778721e-16
+          },
+          "frozen_local_field_matrix_random_direction": {
+            "relative_l2": 8.7145103687477e-15,
+            "rms": 1.4807691414222575e-10,
+            "linf": 4.307366907596588e-09,
+            "relative_linf": 1.0613271026194175e-14
+          }
+        },
+        "bordered_preconditioner": {
+          "sampled_full_matrix_defect_blocks": {
+            "mass": {
+              "initial_l2": 254.57230007230257,
+              "final_l2": 89880.60613887434,
+              "reduction_factor": 353.06514539620696,
+              "final_linf": 14975.62409648222
+            },
+            "selected_complementarity": {
+              "initial_l2": 255.86048285353138,
+              "final_l2": 0.0,
+              "reduction_factor": 0.0,
+              "final_linf": 0.0
+            },
+            "load": {
+              "initial_l2": 0.5386607764428248,
+              "final_l2": 3.444600160662503e-09,
+              "reduction_factor": 6.394748441514052e-09,
+              "final_linf": 3.444600160662503e-09
+            }
+          },
+          "load_row_residual": -3.444600160662503e-09,
+          "cpu_candidate_correction_boundary_extensions": {
+            "pressure_boundary_linf": 0.0,
+            "west_content_direction_linf": 0.0,
+            "east_copy_linf": 0.0,
+            "transverse_copy_linf": 0.0
+          },
+          "active_full_cells": 37768,
+          "preconditioner_active_mask_matches_selected_mask": true
+        },
+        "preconditioner_device_bytes": 22605736,
+        "pressure_mg_levels": 6,
+        "gpu_peak_allocated_bytes": 148974592,
+        "gpu_peak_reserved_bytes": 167772160
+      },
+      "explicit_field_transfer_bytes": {
+        "initial_state_host_to_device": 1040408,
+        "active_mask_host_to_device": 65025,
+        "preconditioner_mobility_device_to_host": 528392,
+        "preconditioner_mask_device_to_host": 65025,
+        "full_field_transfers_per_gmres_iteration": 0
+      }
+    },
+    {
+      "checkpoint": 3,
+      "checkpoint_sha256": "30153ee8ccbbb580925f29ed04fb36a440fda90381ff4ace6929eae31c0775a4",
+      "active_full_cells": 37902,
+      "cpu": {
+        "seconds": 5.087741399998777,
+        "true_linear_residual": 1.5867174789509564e-10,
+        "gmres_iterations": 59,
+        "preconditioner": {
+          "matrix_assembly_seconds": 0.44662570000218693,
+          "matrix_shape": [
+            130050,
+            130050
+          ],
+          "matrix_nnz": 518925,
+          "factorization_seconds": [
+            0.6705693000003521,
+            0.5906420999999682,
+            0.601463999999396
+          ],
+          "factorization_median_seconds": 0.601463999999396,
+          "factor_application_mean_seconds": 0.020657165000011447,
+          "superlu_factor_nnz": 9393646
+        }
+      },
+      "device_candidate": {
+        "status": "failed_true_residual_gate",
+        "reason": "iteration_limit",
+        "seconds": 13.833020999998553,
+        "setup_seconds": 0.5357494999989285,
+        "gmres_seconds": 13.101116199999524,
+        "iterations": 600,
+        "operator_applications": 612,
+        "preconditioner_applications": 610,
+        "true_relative_residual": 0.7848836947137079,
+        "true_residual_history": [
+          0.0006096811443449433,
+          0.0006015142716442176,
+          0.000591160103067295,
+          0.0005710925656118794,
+          0.0005609917055179097,
+          0.000543186709429634,
+          0.000531704684191343,
+          0.0005156977067272958,
+          0.0005049218911245956,
+          0.0004894574267740245,
+          0.0004785287891707405
+        ],
+        "estimated_preconditioned_history_tail": [
+          0.34154211121278544,
+          0.34106256167247945,
+          0.3405097031608262,
+          0.3399624663009537,
+          0.33939495899482186,
+          0.3389567607855781,
+          0.3382992892470077,
+          0.33767845599202817,
+          0.3371852409132975,
+          0.3367187441467819
+        ],
+        "correction_vs_cpu": {
+          "full": {
+            "relative_l2": 0.551879747491086,
+            "rms": 0.00018512015579721613,
+            "linf": 0.016358969428116862,
+            "relative_linf": 0.47194384687620994
+          },
+          "blocks": {
+            "pressure": {
+              "relative_l2": 0.5462750272009912,
+              "rms": 0.00025811942656037764,
+              "linf": 0.016358969428116862,
+              "relative_linf": 0.47194384687620994
+            },
+            "theta_direction": {
+              "relative_l2": 1.0392751322709604,
+              "rms": 4.374736917874461e-05,
+              "linf": 0.0012110899972489044,
+              "relative_linf": 1.0286048793159397
+            },
+            "bordered_h0_over_href": {
+              "relative_l2": 0.27345304004051313,
+              "rms": 5.740610242904807e-06,
+              "linf": 5.740610242904807e-06,
+              "relative_linf": 0.27345304004051313
+            }
+          },
+          "cosine_similarity": 0.857521431064612,
+          "angle_degrees": 30.960581944596914
+        },
+        "residual_blocks": {
+          "cpu_reference_correction": {
+            "mass": {
+              "initial_l2": 0.0006096811443449453,
+              "final_l2": 9.673917282960885e-14,
+              "reduction_factor": 1.5867174789134658e-10,
+              "final_linf": 2.2927199825077335e-14
+            },
+            "selected_complementarity": {
+              "initial_l2": 2.34001796697107e-18,
+              "final_l2": 4.667960784688508e-19,
+              "reduction_factor": 0.19948397194277692,
+              "final_linf": 1.155982018437378e-19
+            },
+            "load": {
+              "initial_l2": 1.1842378929335003e-16,
+              "final_l2": 4.736608241046146e-19,
+              "reduction_factor": 0.003999710083007896,
+              "final_linf": 4.736608241046146e-19
+            }
+          },
+          "gpu_candidate_correction": {
+            "mass": {
+              "initial_l2": 0.0006096811443449428,
+              "final_l2": 0.00047852878917074046,
+              "reduction_factor": 0.7848836947137083,
+              "final_linf": 0.00017163131764703118
+            },
+            "selected_complementarity": {
+              "initial_l2": 2.34001796697107e-18,
+              "final_l2": 1.9651391887396646e-18,
+              "reduction_factor": 0.8397966239906055,
+              "final_linf": 1.0832392967142037e-18
+            },
+            "load": {
+              "initial_l2": 1.2079226507921703e-14,
+              "final_l2": 1.0143797529356887e-14,
+              "reduction_factor": 0.8397721098039235,
+              "final_linf": 1.0143797529356887e-14
+            }
+          },
+          "cpu_operator_on_gpu_correction": {
+            "mass": {
+              "initial_l2": 0.0006096811443449453,
+              "final_l2": 0.0004785287891707427,
+              "reduction_factor": 0.7848836947137088,
+              "final_linf": 0.00017163131764703183
+            },
+            "selected_complementarity": {
+              "initial_l2": 2.34001796697107e-18,
+              "final_l2": 1.9651391887396646e-18,
+              "reduction_factor": 0.8397966239906055,
+              "final_linf": 1.0832392967142037e-18
+            },
+            "load": {
+              "initial_l2": 1.1842378929335003e-16,
+              "final_l2": 1.8168391415172386e-15,
+              "reduction_factor": 15.34184265136719,
+              "final_linf": 1.8168391415172386e-15
+            }
+          }
+        },
+        "independently_recomputed_gpu_true_relative_residual": 0.7848836947137083,
+        "operator_parity": {
+          "selected_residual_cpu_vs_cuda": {
+            "relative_l2": 1.9723632149944087e-11,
+            "rms": 3.3345160338150624e-17,
+            "linf": 1.1960802718628353e-14,
+            "relative_linf": 5.4952888520637883e-11
+          },
+          "JVP_on_gpu_candidate_correction": {
+            "relative_l2": 3.7542635301554085e-15,
+            "rms": 1.45814750985296e-21,
+            "linf": 2.439454888092385e-19,
+            "relative_linf": 5.300366886151596e-15
+          },
+          "JVP_on_cpu_reference_correction": {
+            "relative_l2": 3.822776109723753e-15,
+            "rms": 6.462860458425127e-21,
+            "linf": 1.1384122811097797e-18,
+            "relative_linf": 5.230338184242887e-15
+          },
+          "frozen_local_field_matrix_random_direction": {
+            "relative_l2": 8.712661536248066e-15,
+            "rms": 1.464765611683339e-10,
+            "linf": 5.73345459997654e-09,
+            "relative_linf": 1.4963758518524753e-14
+          }
+        },
+        "bordered_preconditioner": {
+          "sampled_full_matrix_defect_blocks": {
+            "mass": {
+              "initial_l2": 255.9953011137667,
+              "final_l2": 83038.89422143417,
+              "reduction_factor": 324.37663449350157,
+              "final_linf": 13654.788813156074
+            },
+            "selected_complementarity": {
+              "initial_l2": 254.97055733829896,
+              "final_l2": 0.0,
+              "reduction_factor": 0.0,
+              "final_linf": 0.0
+            },
+            "load": {
+              "initial_l2": 1.7349482383796704,
+              "final_l2": 2.3182036290592123e-09,
+              "reduction_factor": 1.3361802835249223e-09,
+              "final_linf": 2.3182036290592123e-09
+            }
+          },
+          "load_row_residual": -2.3182036290592123e-09,
+          "cpu_candidate_correction_boundary_extensions": {
+            "pressure_boundary_linf": 0.0,
+            "west_content_direction_linf": 0.0,
+            "east_copy_linf": 0.0,
+            "transverse_copy_linf": 0.0
+          },
+          "active_full_cells": 37902,
+          "preconditioner_active_mask_matches_selected_mask": true
+        },
+        "preconditioner_device_bytes": 22614248,
+        "pressure_mg_levels": 6,
+        "gpu_peak_allocated_bytes": 172185600,
+        "gpu_peak_reserved_bytes": 199229440
+      },
+      "explicit_field_transfer_bytes": {
+        "initial_state_host_to_device": 1040408,
+        "active_mask_host_to_device": 65025,
+        "preconditioner_mobility_device_to_host": 528392,
+        "preconditioner_mask_device_to_host": 65025,
+        "full_field_transfers_per_gmres_iteration": 0
+      }
+    },
+    {
+      "checkpoint": 6,
+      "checkpoint_sha256": "8df36c10c205ba41fde79d633a03187c65c7ffbc15f661b6a6c52aab3bef71a8",
+      "active_full_cells": 37904,
+      "cpu": {
+        "seconds": 4.9412470999996,
+        "true_linear_residual": 1.0292328298411399e-10,
+        "gmres_iterations": 60,
+        "preconditioner": {
+          "matrix_assembly_seconds": 0.3931062999981805,
+          "matrix_shape": [
+            130050,
+            130050
+          ],
+          "matrix_nnz": 518925,
+          "factorization_seconds": [
+            0.5777066000009654,
+            0.587880099999893,
+            0.5726913999969838
+          ],
+          "factorization_median_seconds": 0.5777066000009654,
+          "factor_application_mean_seconds": 0.020233360000020184,
+          "superlu_factor_nnz": 9387341
+        }
+      },
+      "device_candidate": {
+        "status": "failed_true_residual_gate",
+        "reason": "iteration_limit",
+        "seconds": 13.828834399999323,
+        "setup_seconds": 0.7883328999996593,
+        "gmres_seconds": 12.854836599999544,
+        "iterations": 600,
+        "operator_applications": 612,
+        "preconditioner_applications": 610,
+        "true_relative_residual": 0.7944694499564504,
+        "true_residual_history": [
+          9.657831549543275e-10,
+          9.51590168658975e-10,
+          9.405788838577043e-10,
+          9.10136915799954e-10,
+          8.900721310854829e-10,
+          8.727401093545404e-10,
+          8.475203091381329e-10,
+          8.322835491026382e-10,
+          8.083200185898206e-10,
+          7.917732713675166e-10,
+          7.672852118937698e-10
+        ],
+        "estimated_preconditioned_history_tail": [
+          8.097561657545502e-07,
+          8.086939157081684e-07,
+          8.072801919650737e-07,
+          8.059348088366899e-07,
+          8.046072611647121e-07,
+          8.030400073956657e-07,
+          8.010426433524111e-07,
+          7.994065250675997e-07,
+          7.976425975508883e-07,
+          7.951630764139637e-07
+        ],
+        "correction_vs_cpu": {
+          "full": {
+            "relative_l2": 0.5918017426874085,
+            "rms": 4.058821038010865e-10,
+            "linf": 6.099934215214317e-08,
+            "relative_linf": 0.5078474741942877
+          },
+          "blocks": {
+            "pressure": {
+              "relative_l2": 0.5895413342266826,
+              "rms": 5.706922754689097e-10,
+              "linf": 6.099934215214317e-08,
+              "relative_linf": 0.5078474741942877
+            },
+            "theta_direction": {
+              "relative_l2": 1.0143950399566584,
+              "rms": 6.159078286393508e-11,
+              "linf": 1.67459420573733e-09,
+              "relative_linf": 1.0403894017292206
+            },
+            "bordered_h0_over_href": {
+              "relative_l2": 0.14389502068816173,
+              "rms": 1.7991076817663785e-12,
+              "linf": 1.7991076817663785e-12,
+              "relative_linf": 0.14389502068816173
+            }
+          },
+          "cosine_similarity": 0.8158026341871413,
+          "angle_degrees": 35.33319798839088
+        },
+        "residual_blocks": {
+          "cpu_reference_correction": {
+            "mass": {
+              "initial_l2": 9.657831591160154e-10,
+              "final_l2": 9.940157338041332e-20,
+              "reduction_factor": 1.0292328297730509e-10,
+              "final_linf": 2.562284358967062e-20
+            },
+            "selected_complementarity": {
+              "initial_l2": 8.562841742607379e-22,
+              "final_l2": 5.909460091489945e-25,
+              "reduction_factor": 0.0006901283790035946,
+              "final_linf": 1.0341823754362037e-25
+            },
+            "load": {
+              "initial_l2": 0.0,
+              "final_l2": 9.788303915210828e-25,
+              "reduction_factor": 9.788303915210827e+275,
+              "final_linf": 9.788303915210828e-25
+            }
+          },
+          "gpu_candidate_correction": {
+            "mass": {
+              "initial_l2": 9.65783154878788e-10,
+              "final_l2": 7.672852118258719e-10,
+              "reduction_factor": 0.7944694499482868,
+              "final_linf": 4.0405649148856427e-10
+            },
+            "selected_complementarity": {
+              "initial_l2": 8.562841742607379e-22,
+              "final_l2": 7.236026944526298e-22,
+              "reduction_factor": 0.8450497115368775,
+              "final_linf": 1.2834057233677031e-22
+            },
+            "load": {
+              "initial_l2": 1.2079226507921703e-14,
+              "final_l2": 1.0207546881020161e-14,
+              "reduction_factor": 0.8450497119435527,
+              "final_linf": 1.0207546881020161e-14
+            }
+          },
+          "cpu_operator_on_gpu_correction": {
+            "mass": {
+              "initial_l2": 9.657831591160154e-10,
+              "final_l2": 7.672852158852467e-10,
+              "reduction_factor": 0.7944694506658673,
+              "final_linf": 4.040564919867856e-10
+            },
+            "selected_complementarity": {
+              "initial_l2": 8.562841742607379e-22,
+              "final_l2": 7.236026944526298e-22,
+              "reduction_factor": 0.8450497115368775,
+              "final_linf": 1.2834057233677031e-22
+            },
+            "load": {
+              "initial_l2": 0.0,
+              "final_l2": 1.8716796263159396e-15,
+              "reduction_factor": 1.8716796263159397e+285,
+              "final_linf": 1.8716796263159396e-15
+            }
+          }
+        },
+        "independently_recomputed_gpu_true_relative_residual": 0.794469449956451,
+        "operator_parity": {
+          "selected_residual_cpu_vs_cuda": {
+            "relative_l2": 1.2573115808047428e-05,
+            "rms": 3.3671750589184926e-17,
+            "linf": 1.2079226507921703e-14,
+            "relative_linf": 2.45411102624764e-05
+          },
+          "JVP_on_gpu_candidate_correction": {
+            "relative_l2": 4.0459789210181375e-15,
+            "rms": 2.5450650978833104e-27,
+            "linf": 5.856022155208607e-25,
+            "relative_linf": 6.643453471268095e-15
+          },
+          "JVP_on_cpu_reference_correction": {
+            "relative_l2": 3.805839377050423e-15,
+            "rms": 1.0192324340430443e-26,
+            "linf": 2.3781442610899546e-24,
+            "relative_linf": 4.8316256421549266e-15
+          },
+          "frozen_local_field_matrix_random_direction": {
+            "relative_l2": 9.035309534228675e-15,
+            "rms": 1.5003071141100612e-10,
+            "linf": 4.889443516731262e-09,
+            "relative_linf": 1.192791163138149e-14
+          }
+        },
+        "bordered_preconditioner": {
+          "sampled_full_matrix_defect_blocks": {
+            "mass": {
+              "initial_l2": 255.25080283742864,
+              "final_l2": 75236.3854029518,
+              "reduction_factor": 294.7547453978841,
+              "final_linf": 10807.568121748638
+            },
+            "selected_complementarity": {
+              "initial_l2": 256.14033925922456,
+              "final_l2": 0.0,
+              "reduction_factor": 0.0,
+              "final_linf": 0.0
+            },
+            "load": {
+              "initial_l2": 1.4422386338117474,
+              "final_l2": 9.603604578245495e-10,
+              "reduction_factor": 6.65881800216637e-10,
+              "final_linf": 9.603604578245495e-10
+            }
+          },
+          "load_row_residual": 9.603604578245495e-10,
+          "cpu_candidate_correction_boundary_extensions": {
+            "pressure_boundary_linf": 0.0,
+            "west_content_direction_linf": 0.0,
+            "east_copy_linf": 0.0,
+            "transverse_copy_linf": 0.0
+          },
+          "active_full_cells": 37904,
+          "preconditioner_active_mask_matches_selected_mask": true
+        },
+        "preconditioner_device_bytes": 22614376,
+        "pressure_mg_levels": 6,
+        "gpu_peak_allocated_bytes": 171120128,
+        "gpu_peak_reserved_bytes": 199229440
+      },
+      "explicit_field_transfer_bytes": {
+        "initial_state_host_to_device": 1040408,
+        "active_mask_host_to_device": 65025,
+        "preconditioner_mobility_device_to_host": 528392,
+        "preconditioner_mask_device_to_host": 65025,
+        "full_field_transfers_per_gmres_iteration": 0
+      }
+    }
+  ]
+}

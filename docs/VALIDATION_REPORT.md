@@ -172,9 +172,11 @@ roughness, mixed contact and dissolved-gas physics are absent. These are
 stated model assumptions, not reasons to alter fields to resemble a figure.
 
 The optional NVIDIA resident signed full-film Newton/Krylov implementation
-is preserved. Its existing mathematical parity/performance evidence does
-not establish device JFO support. This report adds no GPU port and makes
-no new CUDA/ROCm execution claim on a host where those tests skip.
+is preserved. Its mathematical parity/performance evidence does not establish
+device JFO support. A separately scoped hybrid CPU-preconditioned/CUDA-JVP
+donor/JFO path is documented below; it does not provide a GPU-resident
+preconditioner or imply physical validation. Optional GPU tests still skip
+gracefully on hosts without an available device.
 
 ## 2. Evidence and reproducible benchmark figures
 
@@ -5816,14 +5818,163 @@ This bounded linear benchmark does not include Newton line search, full
 nonlinear iterations, final audits, plotting or run-output I/O. The archived
 instrumented 257x257 CPU profile above remains the only component breakdown:
 its 194.045 s total is distorted by roughly 94.9 s of Matplotlib layout and
-must not be treated as ordinary runtime shares. No 513x513 nonlinear
-profiling rerun was performed; the existing 513 root was used only for the
-previous saved-field/operator diagnostics. No accepted CUDA root, CPU/GPU
-full-solver equivalence, 513x513 CUDA solve, or 1025x1025 run is justified.
+must not be treated as ordinary runtime shares. At the time of this
+preconditioner screening, no accepted CUDA root or 513x513 CUDA solve existed.
+The subsequent hybrid CUDA-JVP results are documented separately below and do
+not alter the failed candidate's conclusion. Do not extend iteration limits
+or loosen tolerances to turn its stagnation into apparent success; it remains
+unintegrated and no physical-validation claim follows from that candidate.
 
-Next work must either design a stronger active-set pressure/content
-preconditioner and show the true residual gate on these same saved states, or
-stop this GPU route and retain the accepted CPU solver. Do not extend
-iteration limits or loosen tolerances to turn stagnation into apparent
-success. The existing preconditioner candidate is not integrated into a
-nonlinear solver, and no physical-validation claim follows from these tests.
+## Hybrid CPU-preconditioned/CUDA-JVP donor/JFO verification (2026-11-12)
+
+This is a distinct, bounded acceleration path after the device-resident
+multigrid candidate failed. The nonlinear limited-load solve, its residual,
+feasibility checks, line searches and independent endpoint audits remain CPU
+float64. The hybrid correction uses the existing CPU frozen local bordered
+matrix and SuperLU Schur factorization as its preconditioner, while the
+donor/JFO matrix-free JVPs and restarted GMRES vector operations run on the
+selected PyTorch CUDA device. A full bordered Krylov vector is round-tripped
+for each CPU preconditioner application; the pressure/content/material fields
+are not transferred during those applications. This is not a GPU-resident
+preconditioner or a fully device-resident nonlinear solver.
+
+### Why the CPU residual is the Krylov right-hand side
+
+The CUDA residual is computed and independently compared with the CPU
+residual at every correction. The linear right-hand side is then formed from
+the CPU residual and uploaded once to the device. This avoids a false late-
+Newton failure caused by normalizing the tiny cross-device residual difference
+by an already tiny residual norm. On saved 257x257 checkpoint 6, the CPU
+residual norm is `9.6578e-10` and the CUDA/CPU residual absolute Linf
+difference is only `1.208e-14`; nevertheless a CUDA-residual-based
+correction has a CPU-recomputed relative true defect of `1.257e-5`. Using
+the CPU residual as the right-hand side gives a CPU-recomputed relative true
+defect of `1.178e-10` and relative correction difference `6.945e-11`.
+The CUDA residual's relative defect is retained as a diagnostic, not used as
+the correction's residual gate; its absolute parity remains checked against
+`1e-10`. The `1e-9` Krylov tolerance and `5e-9` independently recomputed
+linear-residual gate are unchanged.
+
+The failed device-native preconditioner is separately diagnosed in
+[`cases/ciulli_20261112_device_preconditioner_root_cause_v2.json`](../cases/ciulli_20261112_device_preconditioner_root_cause_v2.json).
+On the three production checkpoints, CUDA residual/JVP and the local frozen
+field-matrix action match CPU at roundoff scale, while the sampled
+experimental bordered-preconditioner defect amplifies mass residual by
+approximately 295--353 times. The failed corrections differ from the CPU
+reference by relative L2 `0.55--0.59` and have true relative residual
+`0.785--0.869`. This implicates that preconditioner approximation, not an
+observed CUDA operator mismatch; the candidate remains isolated and rejected.
+
+### Saved 257x257 correction comparison
+
+Use the checksum-verified accepted one-thread CPU root
+`results/ciulli_20261112_cpu_thread_benchmark_v3/threads_1`, with identical
+saved checkpoints 0, 3 and 6. No nonlinear solve is performed by this
+correction benchmark. All three hybrid corrections meet the independently
+recomputed `5e-9` residual gate, `5e-7` CPU correction-parity gate, and the
+absolute CPU/CUDA residual-parity `1e-10` gate:
+
+| Checkpoint | CPU s / iterations | Hybrid s / iterations | Relative correction L2 | Hybrid true residual |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 5.345 / 56 | 2.457 / 26 | 3.676e-10 | 5.940e-10 |
+| 3 | 5.409 / 59 | 2.261 / 28 | 1.416e-10 | 1.346e-10 |
+| 6 | 5.307 / 60 | 1.951 / 28 | 6.945e-11 | 1.178e-10 |
+
+The benchmark records per-correction residual/property work, CUDA
+linearization and JVP timings, CPU matrix assembly and SuperLU setup/apply
+timings, Krylov counts, explicit synchronization, transfer volumes, and peak
+device allocation. It is reproducible with
+`examples.benchmark_ciulli_hybrid_jfo`; output JSON remains under ignored
+`results/`.
+
+### Accepted 257x257 hybrid root
+
+The hybrid nonlinear run starts from the exact state in CPU checkpoint 0;
+it uses the same case, domain, 70,000-node budget, transport endpoint,
+nonlinear/linear tolerances and seven accepted Newton corrections as the
+CPU reference. Both roots pass the unchanged independent force, local/global
+mass, JFO complementarity, reconstructed-film and direct-elasticity audits.
+CPU elapsed time is `99.490 s`; hybrid elapsed time is `86.955 s` (12.6%
+less for this run). The final fields agree as follows:
+
+| Field | Relative L2 | RMS | Linf |
+| --- | ---: | ---: | ---: |
+| Pressure [Pa] | 3.784e-15 | 4.258e-7 Pa | 1.192e-5 Pa |
+| Film [m] | 2.080e-17 | 2.348e-22 m | 3.388e-21 m |
+| Theta | 6.974e-17 | 5.854e-17 | 9.992e-16 |
+| Deformation [m] | 5.611e-16 | 2.580e-22 m | 3.388e-21 m |
+| Density [kg/m^3] | 6.526e-17 | 5.869e-14 kg/m^3 | 1.137e-12 kg/m^3 |
+| Viscosity [Pa s] | 4.587e-14 | 4.452e-9 Pa s | 2.512e-7 Pa s |
+
+These are CPU/GPU implementation differences at one grid, not estimates of
+spatial discretization error. The standard accepted 2x2 run-summary figure
+and raw centerline profile CSVs were produced from this hybrid run's own
+final fields.
+
+### 513x513 checkpoint probe and accepted hybrid root
+
+The 513x513 gate used the existing accepted CPU checkpoint/root rather than
+repeating it for the diagnostic. At saved checkpoint 0, CPU SuperLU correction
+took `41.588 s` and 69 iterations; hybrid took `15.022 s` and 29 iterations.
+Relative correction L2 difference is `3.468e-10`, and the hybrid true
+relative residual is `3.712e-10`. This correction's measured CUDA peak was
+427.5 MiB allocated / 468 MiB reserved on an RTX A2000 Laptop GPU with
+PyTorch `2.11.0+cu128` and CUDA `12.8`. This is a one-correction probe, not
+the full nonlinear run's peak-memory measurement.
+
+The subsequent hybrid solve uses the same accepted CPU 257x257 root as the
+accepted CPU 513x513 reference seed (seed SHA-256
+`9c3e870e9d2aa7ec8950556ff522559f5a41ecda739b3bc5c0df1337c1b3137a`).
+Both 513x513 roots take seven Newton corrections and pass the independent
+endpoint audit including direct elasticity. CPU elapsed time is
+`1,383.955 s`; hybrid elapsed time is `921.324 s` (33.4% less). Final-field
+comparisons are:
+
+| Field | Relative L2 | RMS | Linf |
+| --- | ---: | ---: | ---: |
+| Pressure [Pa] | 4.545e-15 | 5.121e-7 Pa | 1.240e-5 Pa |
+| Film [m] | 7.978e-17 | 8.967e-22 m | 3.388e-21 m |
+| Theta | 8.151e-17 | 6.841e-17 | 1.110e-15 |
+| Deformation [m] | 2.138e-15 | 9.845e-22 m | 3.388e-21 m |
+| Density [kg/m^3] | 7.704e-17 | 6.928e-14 kg/m^3 | 1.364e-12 kg/m^3 |
+| Viscosity [Pa s] | 5.309e-14 | 5.397e-9 Pa s | 3.772e-7 Pa s |
+
+The accepted hybrid result has `h_min=278.512 nm`,
+`h_c=465.649 nm`, `p_max=812.881 MPa`, force relative error
+`2.22e-16`, local/global relative mass defects `8.58e-14` /
+`1.13e-16`, maximum dimensionless mass defect `4.49e-13`, maximum
+complementarity defect `2.28e-27`, and direct film-reconstruction error
+`5.46e-20 m`.
+Its standard per-run summary figure and machine-readable profiles are in
+the local ignored run directory
+`results/ciulli_20261112_hybrid_513/`.
+
+The instrumented 513 run records 11 accepted model corrections. Across them,
+the measured CPU SuperLU bordered-preconditioner setup totals `126.69 s`,
+GMRES wall time `58.48 s`, CPU preconditioner applications `34.84 s`, and
+CUDA JVP execution `11.13 s`; these timings are nested and must not be added
+as disjoint shares. Repeated CPU factorization is the largest measured
+correction cost, so this is not evidence that a fully device-resident
+preconditioner is unnecessary at larger grids. The device RHS/field transfer,
+active-mask bytes, operator counts, histories and source hashes remain in the
+local per-iteration diagnostics.
+
+### Scope and next decision
+
+The hybrid path preserves the CPU solver as the reference and gives
+roundoff-level CPU/GPU root parity at 257x257 and 513x513. It verifies
+equation closure and backend equivalence for these cases; it does not
+establish mesh convergence, physical validity, or strong-compliance
+robustness. The end-to-end speedup is modest at 257x257 and 33.4% at 513x513;
+the largest profiled correction cost is CPU SuperLU setup. Detailed
+exclusive timings for every flux/property/FFT subkernel, Newton coordination,
+line search, independent final audit, plotting and disk I/O are not available
+from this hybrid run and remain a profiling limitation.
+
+Do not launch 1025x1025. Although these hybrid roots reproduce the CPU fields,
+the accepted 513x513 pressure ridge and outlet feature remain grid-sensitive;
+backend equivalence is not a reason to interpret uniform refinement as
+physical convergence. A future 1025x1025 proposal needs a separate CPU/GPU
+memory and runtime preflight, a specific diagnostic question that uniform
+refinement can answer, and a retained CPU comparison. No 1025x1025 run is
+included in this milestone.

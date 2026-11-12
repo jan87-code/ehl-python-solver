@@ -121,6 +121,7 @@ def solve_limited_load(
     preconditioner="local",
     state_observer=None,
     diagnostic_observer=None,
+    correction_solver=None,
     transport_fraction=1.0,
     reference_recovery=False,
     local_balance_tolerance=1e-10,
@@ -131,6 +132,8 @@ def solve_limited_load(
     with restart 60 and 24 full/affine line-search trials. Original min/force
     residuals and the true one-sided derivative govern all nonlinear merit
     checks, even when a recovery model selects different complementary rows.
+    An optional correction callback replaces only the linear solve; its
+    returned timings are retained with that frozen-model attempt.
     """
     if (
         type(maximum_iterations) is not int
@@ -145,6 +148,7 @@ def solve_limited_load(
         or preconditioner not in ("material", "local")
         or (state_observer is not None and not callable(state_observer))
         or (diagnostic_observer is not None and not callable(diagnostic_observer))
+        or (correction_solver is not None and not callable(correction_solver))
     ):
         raise ValueError("Invalid bounded Newton/Krylov/recovery/observer options")
     probe = LimitedLoadProbe(case, transport_fraction=transport_fraction)
@@ -239,13 +243,20 @@ def solve_limited_load(
                 )
                 record["models"].append(entry)
                 try:
-                    linear = solve_cavitating_correction(
-                        model,
-                        state,
+                    correction_options = dict(
+                        krylov_rtol=1e-9,
                         maximum_krylov_cycles=maximum_krylov_cycles,
                         gmres_restart=60,
                         schur_tolerance=1e-10,
                     )
+                    if correction_solver is None:
+                        linear = solve_cavitating_correction(
+                            model, state, **correction_options
+                        )
+                    else:
+                        linear = correction_solver(
+                            model, state, **correction_options
+                        )
                 except CavitatingLinearError as exc:
                     entry.update(
                         status="linear_rejected", reason=str(exc), diagnostics=exc.diagnostics
@@ -278,6 +289,7 @@ def solve_limited_load(
                     used_bordered_fallback=linear.used_bordered_fallback,
                     schur_indicator=linear.schur_indicator,
                     field_setup_failures=linear.field_setup_failures,
+                    linear_solver_timings=getattr(linear, "timings", None),
                 )
                 if not np.isfinite(measured) or measured > 5e-9:
                     entry.update(

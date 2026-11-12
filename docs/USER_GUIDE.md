@@ -290,3 +290,47 @@ production preconditioner. The checked-in compact measurements are in
 [`cases/ciulli_20261112_device_preconditioner_diagnostics.json`](../cases/ciulli_20261112_device_preconditioner_diagnostics.json);
 see [VALIDATION_REPORT.md](VALIDATION_REPORT.md) and [ROADMAP.md](ROADMAP.md)
 for the measured limitations and current gates.
+
+The experimental hybrid correction path keeps the nonlinear solve, residual,
+and bordered SuperLU preconditioner on the CPU while evaluating JFO Jacobian
+products and GMRES on CUDA. It uses the CPU residual as the Krylov right-hand
+side and checks CUDA residual parity; it is not a GPU-resident preconditioner
+or a fully device-resident nonlinear solver. First compare saved corrections
+without launching a nonlinear solve:
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:OPENBLAS_NUM_THREADS = "1"
+$env:OMP_NUM_THREADS = "1"
+.\.venv\Scripts\python.exe -m examples.benchmark_ciulli_hybrid_jfo --root results\ciulli_20261112_cpu_thread_benchmark_v3\threads_1 --checkpoints 0 3 6 --output results\my_hybrid_257_corrections.json
+```
+
+For a bounded 513x513 resource probe, use one saved CPU checkpoint before
+considering a full hybrid solve:
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.benchmark_ciulli_hybrid_jfo --root results\ciulli_20261111_donor_513_fixed --checkpoints 0 --output results\my_hybrid_513_checkpoint.json
+```
+
+Only after all saved-state correction gates pass, a donor/JFO run may
+explicitly select the optional backend. The default remains CPU. Use a fresh
+output directory and a previously accepted compatible CPU seed:
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.run_ciulli_donor_grid --case cases\ciulli_15n_donor.json --grid 257 --half-width-mm 0.4 --output results\my_hybrid_257 --seed results\ciulli_20261112_cpu_thread_benchmark_v3\threads_1\checkpoints\checkpoint_0000.npz --maximum-physical-nodes 70000 --linear-backend hybrid-cuda
+```
+
+For the 513x513 follow-up, first complete the 257x257 gates and use the same
+accepted CPU 257x257 seed as the CPU reference:
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.run_ciulli_donor_grid --case cases\ciulli_15n_donor.json --grid 513 --half-width-mm 0.4 --output results\my_hybrid_513 --seed results\ciulli_20261111_donor_257_fixed --maximum-physical-nodes 300000 --linear-backend hybrid-cuda
+```
+
+GPU use is optional and requires a working PyTorch CUDA device. The hybrid
+runner preserves CPU nonlinear feasibility, Armijo and independent endpoint
+audits and records linear-solver timings, device identity and memory peaks.
+Passing this backend's equation-closure and CPU-equivalence checks does not
+establish mesh convergence or physical validation; consult the current
+resource and refinement gates in [ROADMAP.md](ROADMAP.md) before increasing
+the grid.

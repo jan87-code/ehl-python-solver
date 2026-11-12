@@ -77,9 +77,12 @@ def load_limited_path(directory):
     saved_audit = report.get("audit", {})
     if not all(
         saved_audit.get(k) is True
-        for k in ("numerically_accepted", "full_limited_equations", "direct_elasticity_checked")
+        for k in ("numerically_accepted", "full_limited_equations")
+    ) or not (
+        saved_audit.get("direct_elasticity_checked") is True
+        or saved_audit.get("independent_elasticity_checked") is True
     ):
-        raise ValueError("Recorded accepted direct MC final audit required")
+        raise ValueError("Recorded accepted independent MC final audit required")
     sources = report.get("source_sha256")
     if not isinstance(sources, dict) or not sources:
         raise ValueError("Archived source checksums required")

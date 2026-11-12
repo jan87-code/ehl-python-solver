@@ -2925,3 +2925,23 @@ preflights remain estimates, and projected runtime and GPU memory are not
 measured 1025 usage. Even if accepted, one 513-to-1025 pair supports only a
 comparison of changes, not Richardson extrapolation, GCI, or physical EHL
 validation.
+
+The first heartbeat-enabled restart exposed a second issue: its initial audit
+passed, but the final direct-elasticity audit entered a long
+`scipy.signal.convolve2d` call. CPU time advanced for more than five minutes
+while the heartbeat stopped at sequence 9 (`final_audit`), because the native
+direct convolution held execution long enough to starve the Python heartbeat
+thread. That attempt was interrupted at the user's request; its checkpoint 0
+is byte-identical to source checkpoint 6, its summary is marked interrupted,
+and no accepted root was written.
+
+The independent SI audit now retains direct convolution through 20,000 nodes
+and uses zero-padded `scipy.signal.fftconvolve` above that threshold. Direct
+versus FFT parity (including boundary behavior) and affected audit/load
+paths pass 77 targeted tests. Applying the new FFT audit to the saved 1025
+state took 2.16 s and passed the independent force, local-mass and film
+reconstruction gates, but this post-interruption audit does not promote the
+checkpoint to an accepted solver result. Restart from checkpoint 6 in a new
+output directory so the runner can record normal final acceptance. The audit
+method changes only how the same elastic convolution is evaluated; physics,
+equations, tolerances and acceptance limits are unchanged.

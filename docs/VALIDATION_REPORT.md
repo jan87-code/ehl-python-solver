@@ -6172,3 +6172,41 @@ seed from checkpoint 6; it is a new bounded Newton solve and may repeat work.
 Resource projections remain estimates, not measured 1025 usage, and one
 513-to-1025 pair cannot establish Richardson/GCI mesh convergence or physical
 EHL validation.
+
+### Retry-2 audit bottleneck and revised independent elasticity check
+
+The heartbeat-enabled retry was started from checkpoint 6 in the fresh
+directory
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry2/`. Its
+checkpoint 0 is byte-identical to the source checkpoint 6 (SHA-256
+`42F4EAFE1EBFAAE38EC22CB07B445A9A399D0D1679E9E2F4FC45E0CCDFA2BE89`). The
+initial SI audit passed, after which the final independent elasticity audit
+entered `scipy.signal.convolve2d`. That direct spatial convolution scales
+quadratically with the number of grid cells. Process CPU time increased by
+more than five minutes while the heartbeat file remained at sequence 9,
+stage `final_audit`; the long native call prevented the Python heartbeat
+thread from running. The process was interrupted at the user's request. Its
+summary was preserved before being marked `interrupted`, and no root was
+written as accepted.
+
+To keep the same film-reconstruction equation and acceptance tolerance while
+avoiding this audit bottleneck, `audit_limited_state(..., direct=True)` now
+uses direct `convolve2d` at up to 20,000 nodes and independent, zero-padded
+`scipy.signal.fftconvolve` above that size. The reported method and
+`independent_elasticity_checked` flag distinguish an independent FFT
+reconstruction from a direct spatial sum; `direct_elasticity_checked` is
+false when the FFT path is used. Small-grid regression tests compare both
+methods, including boundary samples, and the portable limited-path loader
+accepts either recorded independent method while re-auditing the fields.
+No solver equation, preconditioner, tolerance, or acceptance gate changed.
+
+Applied to the saved 1025x1025 checkpoint state, the independent FFT audit
+completed in 2.16 s and reported `numerically_accepted=true`,
+`relative_local_balance=6.26e-12`, force relative error `2.22e-16`, and film
+reconstruction error `3.39e-21 m` versus the unchanged `1.94e-16 m` limit.
+This post-interruption audit is diagnostic evidence only: the interrupted
+run summary remains unaccepted. A fresh runner restart from the preserved
+checkpoint is still required to record solver acceptance and complete its
+normal finalization. The targeted audit/loader/runner regression set passes
+(77 passed); the full suite was not rerun after this audit implementation
+change.

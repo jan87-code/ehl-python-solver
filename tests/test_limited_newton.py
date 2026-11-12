@@ -29,6 +29,37 @@ from ehl_solver.prototype import PointContactCase, hertz_guess
 from ehl_solver.transport_candidate import donor_fluxes, face_divergence
 
 
+def test_large_independent_elastic_audit_uses_zero_padded_fft(monkeypatch):
+    import ehl_solver.limited_audit as audit_module
+
+    case = PointContactCase(ny=9, nx=13)
+    probe = LimitedLoadProbe(case)
+    state = hertz_guess(case, probe.system)[0]
+    monkeypatch.setattr(audit_module, "_DIRECT_ELASTICITY_AUDIT_MAX_NODES", 0)
+
+    audit = audit_module.audit_limited_state(probe, state, direct=True)
+
+    assert audit["independent_elasticity_checked"]
+    assert not audit["direct_elasticity_checked"]
+    assert audit["elasticity_reconstruction_method"] == "scipy.signal.fftconvolve"
+
+
+def test_independent_fft_elastic_convolution_matches_direct_at_edges():
+    from ehl_solver.limited_audit import _independent_elastic_convolution
+
+    rng = np.random.default_rng(864)
+    pressure = rng.normal(size=(7, 11))
+    kernel = rng.normal(size=(7, 11))
+    direct = _independent_elastic_convolution(
+        pressure, kernel, method="direct"
+    )
+    transformed = _independent_elastic_convolution(
+        pressure, kernel, method="fft"
+    )
+
+    np.testing.assert_allclose(transformed, direct, rtol=2e-13, atol=2e-13)
+
+
 @pytest.fixture(scope="module")
 def donor_root():
     case = PointContactCase(

@@ -2,10 +2,20 @@
 
 import numpy as np
 from scipy.integrate import trapezoid
-from scipy.signal import convolve2d
+from scipy.signal import convolve2d, fftconvolve
 
 from ehl_solver.elasticity import cell_integrated_kernel
 from ehl_solver.property_reynolds import admissible
+
+_DIRECT_ELASTICITY_AUDIT_MAX_NODES = 20_000
+
+
+def _independent_elastic_convolution(pressure, kernel, *, method):
+    if method == "direct":
+        return convolve2d(pressure, kernel, mode="same")
+    if method == "fft":
+        return fftconvolve(pressure, kernel, mode="same")
+    raise ValueError("elasticity audit method must be 'direct' or 'fft'")
 
 
 def limited_mass_audit(problem, fluid, speed, h, p, theta, *, transport_fraction=1.0):
@@ -67,17 +77,21 @@ def limited_mass_audit(problem, fluid, speed, h, p, theta, *, transport_fraction
 
 
 def audit_limited_state(probe, state, *, direct=False):
+    """Audit SI fields; large independent elasticity checks use zero-padded FFT."""
     problem, case = probe.system.problem, probe.case
     p, theta, h = probe.fields(state)
     error = 0.0
+    elasticity_method = None
     if direct:
+        use_direct = p.size <= _DIRECT_ELASTICITY_AUDIT_MAX_NODES
+        elasticity_method = "direct" if use_direct else "fft"
         kernel = cell_integrated_kernel(
             problem.shape, problem.dx_m, problem.dy_m, case.contact_modulus_pa
         )
         reconstructed = (
             state[-1] * problem.film_scale_m
             + problem.rigid_geometry_m
-            + convolve2d(p, kernel, mode="same")
+            + _independent_elastic_convolution(p, kernel, method=elasticity_method)
         )
         error = float(abs(reconstructed - h).max())
         h = reconstructed
@@ -111,7 +125,17 @@ def audit_limited_state(probe, state, *, direct=False):
         minimum_film_m=float(h.min()),
         central_film_m=float(h[case.ny // 2, case.nx // 2]),
         film_reconstruction_error_m=error,
-        direct_elasticity_checked=direct,
+        direct_elasticity_checked=direct and elasticity_method == "direct",
+        independent_elasticity_checked=direct,
+        elasticity_reconstruction_method=(
+            None
+            if elasticity_method is None
+            else (
+                "scipy.signal.convolve2d"
+                if elasticity_method == "direct"
+                else "scipy.signal.fftconvolve"
+            )
+        ),
         transport_fraction=probe.transport_fraction,
         full_limited_equations=probe.transport_fraction == 1.0,
     )

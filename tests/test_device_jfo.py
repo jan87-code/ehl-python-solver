@@ -4,7 +4,10 @@ import numpy as np
 import pytest
 
 from ehl_solver.backend import as_float64, make_backend
+from ehl_solver.cavitating_newton import solve_cavitating_correction
 from ehl_solver.device_jfo import DeviceDonorJFO
+from ehl_solver.device_jfo_krylov import solve_device_jfo_correction
+from ehl_solver.device_jfo_preconditioner import ExperimentalDeviceDonorJFOPreconditioner
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 
@@ -99,3 +102,69 @@ def test_ties_active_overrides_and_resident_operations(backend, monkeypatch):
     assert device.residual(z).device == z.device
     assert action(v).device == z.device
     assert device.directional_derivative(z, v).device == z.device
+
+
+def test_local_device_preconditioner_matches_cpu_frozen_matrix(backend):
+    case, cpu, state = _case_state()
+    full = state[:cpu.n] >= state[cpu.n:2 * cpu.n]
+    guide = np.zeros(cpu.size)
+    model = LimitedLoadLinearization(
+        case, state, guide, preconditioner="local", active_full=full,
+        transport_fraction=0,
+    )
+    device = DeviceDonorJFO(case, backend)
+    z = as_float64(state, backend)
+    mask = backend.xp.as_tensor(full, dtype=backend.xp.bool, device=backend.device)
+    inverse = ExperimentalDeviceDonorJFOPreconditioner(device, z, mask)
+    direction = np.random.default_rng(2027).normal(size=2 * cpu.n) * 1e-4
+    actual = inverse.matrix_vector(as_float64(direction, backend)).cpu().numpy()
+    expected = model.frozen_matrix(state)[:2 * cpu.n, :2 * cpu.n] @ direction
+    np.testing.assert_allclose(actual, expected, rtol=2e-10, atol=1e-9)
+
+    rhs = as_float64(np.random.default_rng(2028).normal(size=cpu.size), backend)
+    preconditioned = inverse(rhs)
+    assert preconditioned.shape == rhs.shape
+    assert preconditioned.dtype == backend.xp.float64
+    assert preconditioned.device == rhs.device
+    assert bool(backend.xp.isfinite(preconditioned).all())
+
+
+def test_selected_newton_residual_matches_cpu_active_rows(backend):
+    case, cpu, state = _case_state()
+    full = state[:cpu.n] >= state[cpu.n:2 * cpu.n]
+    device = DeviceDonorJFO(case, backend)
+    z = as_float64(state, backend)
+    mask = backend.xp.as_tensor(full, dtype=backend.xp.bool, device=backend.device)
+    model = LimitedLoadLinearization(
+        case, state, np.zeros(cpu.size), preconditioner="local",
+        active_full=full, transport_fraction=0,
+    )
+    actual = device.linear_residual(z, mask).cpu().numpy()
+    np.testing.assert_allclose(actual, model.residual(state), rtol=2e-12, atol=2e-12)
+    np.testing.assert_allclose(
+        device.residual(z).cpu().numpy(), cpu.residual(state), rtol=2e-12, atol=2e-12
+    )
+
+
+def test_device_bordered_gmres_correction_matches_cpu_superlu(backend):
+    case, cpu, state = _case_state()
+    full = state[:cpu.n] >= state[cpu.n:2 * cpu.n]
+    model = LimitedLoadLinearization(
+        case, state, np.zeros(cpu.size), preconditioner="local",
+        active_full=full, transport_fraction=0,
+    )
+    reference = solve_cavitating_correction(
+        model, state, maximum_krylov_cycles=10, gmres_restart=60, krylov_rtol=1e-9
+    )
+    device = DeviceDonorJFO(case, backend)
+    z = as_float64(state, backend)
+    mask = backend.xp.as_tensor(full, dtype=backend.xp.bool, device=backend.device)
+    actual = solve_device_jfo_correction(
+        device, z, mask, rtol=1e-9, restart=60, max_iterations=600
+    )
+    correction = actual.direction.cpu().numpy()
+    relative = np.linalg.norm(correction - reference.direction) / np.linalg.norm(
+        reference.direction
+    )
+    assert actual.linear_residual_relative <= 5e-9
+    assert relative < 5e-7

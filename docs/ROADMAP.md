@@ -2802,3 +2802,26 @@ acceptable workaround. Then compare actual CPU and CUDA solutions, audits,
 figures, memory and end-to-end runtimes at 257x257, and 513x513 if practical.
 Do not run 1025x1025 until those gates and the unresolved outlet-resolution
 question justify it. No solver physics or acceptance tolerances changed.
+
+### Device JFO preconditioner candidate rejected (2026-11-12)
+
+The first GPU-resident active-set pressure/content multigrid candidate was
+tested against the CPU correction at saved 257x257 checkpoints 0, 3 and 6.
+All three used the same accepted root; no nonlinear run was started. Each
+candidate exhausted 600 GMRES steps and failed its independently recomputed
+true-residual gate, with relative residuals `0.7849--0.8694`. The CPU
+reference converged in 56--60 steps and 4.50--5.53 s; the device candidate
+took 11.22--14.68 s. Small-case parity tests do not override this production
+failure.
+
+Keep the candidate isolated and clearly experimental; do not connect it to
+the nonlinear solver or relax the residual/iteration limits. It avoids full
+field transfers inside Krylov but still performs setup transfers and scalar
+synchronization, and it is both slower and numerically ineffective. Exact
+measurements, checkpoint checksums and a reproducible benchmark are in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md) and
+[`cases/ciulli_20261112_device_preconditioner_diagnostics.json`](../cases/ciulli_20261112_device_preconditioner_diagnostics.json).
+The next GPU step requires a materially stronger preconditioner that passes
+the same saved-state true-residual gates before any nonlinear integration.
+Do not launch 513x513 or 1025x1025 CUDA nonlinear runs; the 1025x1025 gate
+also remains closed by the unresolved mesh/ridge behavior.

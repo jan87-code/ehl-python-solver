@@ -1,0 +1,243 @@
+{
+  "scope": "Saved-state linear correction benchmark; no nonlinear CUDA solve",
+  "grid_ny_nx": [
+    257,
+    257
+  ],
+  "accepted_state_sha256": "ecac5724a26374879a9e028e43631d043f6b16ebf5e00f8f001fc8dea038010b",
+  "gpu": "NVIDIA RTX A2000 Laptop GPU",
+  "torch_version": "2.11.0+cu128",
+  "cuda_version": "12.8",
+  "precision": "float64",
+  "cpu_linear_tolerances": {
+    "rtol": 1e-09,
+    "restart": 60,
+    "cycles": 10
+  },
+  "device_linear_tolerances": {
+    "rtol": 1e-09,
+    "restart": 60,
+    "maximum_iterations": 600
+  },
+  "checkpoints": [
+    {
+      "checkpoint": 0,
+      "checkpoint_sha256": "fbc2dd5b714d082a312f63503991d18ab3ae56eeea0b7f2d12d4c8b7ae507b92",
+      "active_full_cells": 37768,
+      "cpu": {
+        "seconds": 5.525752100002137,
+        "true_linear_residual": 5.547297990179503e-10,
+        "gmres_iterations": 56,
+        "preconditioner": {
+          "matrix_assembly_seconds": 0.4513550000010582,
+          "matrix_shape": [
+            130050,
+            130050
+          ],
+          "matrix_nnz": 518925,
+          "factorization_seconds": [
+            0.7376280000025872,
+            0.6498930999987351,
+            0.6702455000013288
+          ],
+          "factorization_median_seconds": 0.6702455000013288,
+          "factor_application_mean_seconds": 0.021292519999951763,
+          "superlu_factor_nnz": 9299963
+        }
+      },
+      "device_candidate": {
+        "status": "failed_true_residual_gate",
+        "reason": "iteration_limit",
+        "seconds": 13.923352999998315,
+        "setup_seconds": 0.79559750000044,
+        "gmres_seconds": 12.93602049999754,
+        "iterations": 600,
+        "operator_applications": 612,
+        "preconditioner_applications": 610,
+        "true_relative_residual": 0.8694065617259055,
+        "true_residual_history": [
+          0.17382870901327196,
+          0.17245279379972678,
+          0.1704380256714516,
+          0.1681834446431442,
+          0.1657745162625205,
+          0.16340811380327883,
+          0.16112671496508732,
+          0.15876250439967363,
+          0.15633628416229037,
+          0.15359969999433545,
+          0.1511278202324817
+        ],
+        "estimated_preconditioned_history_tail": [
+          7.036028745121371,
+          7.021214986272877,
+          7.003331898322217,
+          6.988530385081575,
+          6.9701099852568005,
+          6.952559573583575,
+          6.934010703000735,
+          6.909078411881805,
+          6.878311494644189,
+          6.838302874351187
+        ],
+        "preconditioner_device_bytes": 22605736,
+        "pressure_mg_levels": 6,
+        "gpu_peak_allocated_bytes": 140472320,
+        "gpu_peak_reserved_bytes": 163577856
+      },
+      "explicit_field_transfer_bytes": {
+        "initial_state_host_to_device": 1040408,
+        "active_mask_host_to_device": 65025,
+        "preconditioner_mobility_device_to_host": 528392,
+        "preconditioner_mask_device_to_host": 65025,
+        "full_field_transfers_per_gmres_iteration": 0
+      }
+    },
+    {
+      "checkpoint": 3,
+      "checkpoint_sha256": "30153ee8ccbbb580925f29ed04fb36a440fda90381ff4ace6929eae31c0775a4",
+      "active_full_cells": 37902,
+      "cpu": {
+        "seconds": 5.233636099997966,
+        "true_linear_residual": 1.5867174789509564e-10,
+        "gmres_iterations": 59,
+        "preconditioner": {
+          "matrix_assembly_seconds": 0.5356116999973892,
+          "matrix_shape": [
+            130050,
+            130050
+          ],
+          "matrix_nnz": 518925,
+          "factorization_seconds": [
+            0.7823525999992853,
+            0.7619434000007459,
+            0.7707144000014523
+          ],
+          "factorization_median_seconds": 0.7707144000014523,
+          "factor_application_mean_seconds": 0.02239745499991841,
+          "superlu_factor_nnz": 9393646
+        }
+      },
+      "device_candidate": {
+        "status": "failed_true_residual_gate",
+        "reason": "iteration_limit",
+        "seconds": 11.21554350000224,
+        "setup_seconds": 0.4640863000022364,
+        "gmres_seconds": 10.686055000001943,
+        "iterations": 600,
+        "operator_applications": 612,
+        "preconditioner_applications": 610,
+        "true_relative_residual": 0.7848836947137079,
+        "true_residual_history": [
+          0.0006096811443449433,
+          0.0006015142716442176,
+          0.000591160103067295,
+          0.0005710925656118794,
+          0.0005609917055179097,
+          0.000543186709429634,
+          0.000531704684191343,
+          0.0005156977067272958,
+          0.0005049218911245956,
+          0.0004894574267740245,
+          0.0004785287891707405
+        ],
+        "estimated_preconditioned_history_tail": [
+          0.34154211121278544,
+          0.34106256167247945,
+          0.3405097031608262,
+          0.3399624663009537,
+          0.33939495899482186,
+          0.3389567607855781,
+          0.3382992892470077,
+          0.33767845599202817,
+          0.3371852409132975,
+          0.3367187441467819
+        ],
+        "preconditioner_device_bytes": 22614248,
+        "pressure_mg_levels": 6,
+        "gpu_peak_allocated_bytes": 163695616,
+        "gpu_peak_reserved_bytes": 195035136
+      },
+      "explicit_field_transfer_bytes": {
+        "initial_state_host_to_device": 1040408,
+        "active_mask_host_to_device": 65025,
+        "preconditioner_mobility_device_to_host": 528392,
+        "preconditioner_mask_device_to_host": 65025,
+        "full_field_transfers_per_gmres_iteration": 0
+      }
+    },
+    {
+      "checkpoint": 6,
+      "checkpoint_sha256": "8df36c10c205ba41fde79d633a03187c65c7ffbc15f661b6a6c52aab3bef71a8",
+      "active_full_cells": 37904,
+      "cpu": {
+        "seconds": 4.496374800000922,
+        "true_linear_residual": 1.0292328298411399e-10,
+        "gmres_iterations": 60,
+        "preconditioner": {
+          "matrix_assembly_seconds": 0.32490949999919394,
+          "matrix_shape": [
+            130050,
+            130050
+          ],
+          "matrix_nnz": 518925,
+          "factorization_seconds": [
+            0.46836999999868567,
+            0.4928175999993982,
+            0.45952110000143875
+          ],
+          "factorization_median_seconds": 0.46836999999868567,
+          "factor_application_mean_seconds": 0.01451317499995639,
+          "superlu_factor_nnz": 9387341
+        }
+      },
+      "device_candidate": {
+        "status": "failed_true_residual_gate",
+        "reason": "iteration_limit",
+        "seconds": 14.68341320000036,
+        "setup_seconds": 0.7391806000014185,
+        "gmres_seconds": 13.876721200002066,
+        "iterations": 600,
+        "operator_applications": 612,
+        "preconditioner_applications": 610,
+        "true_relative_residual": 0.7944694499564504,
+        "true_residual_history": [
+          9.657831549543275e-10,
+          9.51590168658975e-10,
+          9.405788838577043e-10,
+          9.10136915799954e-10,
+          8.900721310854829e-10,
+          8.727401093545404e-10,
+          8.475203091381329e-10,
+          8.322835491026382e-10,
+          8.083200185898206e-10,
+          7.917732713675166e-10,
+          7.672852118937698e-10
+        ],
+        "estimated_preconditioned_history_tail": [
+          8.097561657545502e-07,
+          8.086939157081684e-07,
+          8.072801919650737e-07,
+          8.059348088366899e-07,
+          8.046072611647121e-07,
+          8.030400073956657e-07,
+          8.010426433524111e-07,
+          7.994065250675997e-07,
+          7.976425975508883e-07,
+          7.951630764139637e-07
+        ],
+        "preconditioner_device_bytes": 22614376,
+        "pressure_mg_levels": 6,
+        "gpu_peak_allocated_bytes": 163695616,
+        "gpu_peak_reserved_bytes": 197132288
+      },
+      "explicit_field_transfer_bytes": {
+        "initial_state_host_to_device": 1040408,
+        "active_mask_host_to_device": 65025,
+        "preconditioner_mobility_device_to_host": 528392,
+        "preconditioner_mask_device_to_host": 65025,
+        "full_field_transfers_per_gmres_iteration": 0
+      }
+    }
+  ]
+}

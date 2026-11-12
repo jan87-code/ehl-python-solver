@@ -26,6 +26,7 @@ class DeviceDonorJFO:
         self.size = 2 * self.n + 1
         self.pressure_scale = problem.pressure_scale_pa
         self.film_scale = problem.film_scale_m
+        self.e_star_pa = problem.e_star_pa
         self.film_floor = problem.film_floor_m
         self.inlet = problem.inlet_fractional_film_content
         self.dx, self.dy = problem.dx_m, problem.dy_m
@@ -110,6 +111,24 @@ class DeviceDonorJFO:
         constraint = torch.minimum(z[:self.n], z[self.n:2 * self.n])
         load = (p[1:-1, 1:-1].sum() * (self.dx * self.dy) - self.target_load) / self.target_load
         return self._join(mass, constraint, load)
+
+    def linear_residual(self, state, active_full):
+        """Return the CPU Newton model residual with its selected contact rows."""
+        import torch
+
+        z = self._vector(state)
+        if (
+            not isinstance(active_full, torch.Tensor)
+            or active_full.shape != (self.n,)
+            or active_full.dtype != torch.bool
+            or active_full.device != z.device
+        ):
+            raise ValueError("active_full must be a same-device boolean interior mask")
+        result = self.residual(z)
+        result[self.n:2 * self.n] = torch.where(
+            active_full, z[self.n:2 * self.n], z[:self.n]
+        )
+        return result
 
     def _action(self, direction, fields, pressure_row):
         import torch

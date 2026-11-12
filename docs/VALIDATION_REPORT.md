@@ -5758,3 +5758,72 @@ import in `tests/test_joint_refinement.py`. Changed-file Ruff passes;
 repository-wide `ruff check .` reports the existing E501 in the untracked
 `.kilo/` notebook helper. No unrelated files were changed to mask these
 limitations.
+
+## Saved-state device JFO preconditioner screening (2026-11-12)
+
+The local frozen donor/JFO matrix matches the CPU model on focused small
+systems, but the experimental multigrid/content-sweep preconditioner is not
+production-ready. It is explicitly named
+`ExperimentalDeviceDonorJFOPreconditioner`; no nonlinear driver uses it.
+`examples/benchmark_ciulli_jfo_preconditioner.py` repeats its bounded linear
+screen on saved checkpoints 0, 3 and 6 from the checksum-verified accepted
+257x257, one-thread CPU root. It runs no nonlinear solve and does not change
+the equations, tolerances or saved fields. Compact results, checkpoint
+hashes, transfer estimates and hardware/software identity are committed in
+`cases/ciulli_20261112_device_preconditioner_diagnostics.json`; reproduction
+is documented in `USER_GUIDE.md`.
+
+The CPU local sparse matrix contains 130,050 field unknowns. Across the three
+checkpoints, matrix assembly took 0.325--0.536 s, SuperLU factorization
+0.468--0.771 s, and a repeated factor solve averaged 0.0145--0.0224 s.
+Factor L/U contained 9.30--9.39 million nonzeros. Full CPU correction solves
+took 4.50--5.53 s, converged in 56--60 Krylov iterations, and had
+independently checked relative linear residuals of `1.03e-10` to `5.55e-10`.
+These factor/setup/apply timings are microbenchmarks; they are not additive to
+the full correction time.
+
+On the NVIDIA RTX A2000 Laptop GPU (PyTorch 2.11.0+cu128, CUDA 12.8), every
+candidate failed the required `5e-9` true unpreconditioned residual gate:
+
+| Checkpoint | Device total s | Setup s | GMRES s | Steps | Operator / preconditioner calls | True relative residual | Peak allocated MiB |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 13.923 | 0.796 | 12.936 | 600 | 612 / 610 | 0.8694 | 134.0 |
+| 3 | 11.216 | 0.464 | 10.686 | 600 | 612 / 610 | 0.7849 | 156.1 |
+| 6 | 14.683 | 0.739 | 13.877 | 600 | 612 / 610 | 0.7945 | 156.1 |
+
+The CPU converged in about one tenth as many iterations and in less wall time.
+The experimental preconditioner therefore provides no acceleration and cannot
+be accepted as a linear solver. Its repeated failure across smooth, middle,
+and late Newton states closes this candidate, not the general search for a
+device-native preconditioner. Focused small CPU/CUDA tests still pass; they
+verify matrix/residual mechanics, not production-scale convergence.
+
+The candidate keeps full Krylov vectors and sparse hierarchy operations on
+the GPU: there are no full-field transfers per Krylov iteration. It does copy
+the mobility field and active mask to the host once when building each
+preconditioner, and uploads the sparse multigrid hierarchy. The estimated
+total preconditioner storage is about 22.6 MB at 257x257, including both the
+hierarchy and local device arrays; it is not a measured transfer-volume
+counter. The input state and mask are uploaded once per correction. Scalar
+validation still synchronizes the device, so “no full-field transfer” does
+not mean an asynchronous loop. As a comparison, a host SuperLU application
+would round-trip roughly 2.08 MB of full field vectors; at roughly 610
+preconditioner applications this is about 1.27 GB of aggregate traffic per
+correction, before synchronization overhead. The measured candidate avoids
+that traffic but still loses because the preconditioner is ineffective.
+
+This bounded linear benchmark does not include Newton line search, full
+nonlinear iterations, final audits, plotting or run-output I/O. The archived
+instrumented 257x257 CPU profile above remains the only component breakdown:
+its 194.045 s total is distorted by roughly 94.9 s of Matplotlib layout and
+must not be treated as ordinary runtime shares. No 513x513 nonlinear
+profiling rerun was performed; the existing 513 root was used only for the
+previous saved-field/operator diagnostics. No accepted CUDA root, CPU/GPU
+full-solver equivalence, 513x513 CUDA solve, or 1025x1025 run is justified.
+
+Next work must either design a stronger active-set pressure/content
+preconditioner and show the true residual gate on these same saved states, or
+stop this GPU route and retain the accepted CPU solver. Do not extend
+iteration limits or loosen tolerances to turn stagnation into apparent
+success. The existing preconditioner candidate is not integrated into a
+nonlinear solver, and no physical-validation claim follows from these tests.

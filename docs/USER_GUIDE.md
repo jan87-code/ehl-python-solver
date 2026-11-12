@@ -268,3 +268,25 @@ run a nonlinear CUDA solver or establish CPU/GPU accepted-root equivalence.
 In particular, relative residual error is misleading near a roundoff-level
 root; inspect the absolute errors as well. Component timings exclude setup
 and field transfers, and are not an end-to-end speedup.
+
+To reproduce the bounded CPU/GPU preconditioner screen on the same saved
+257x257 root (checkpoints 0, 3 and 6), use a fresh output filename:
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:OPENBLAS_NUM_THREADS = "1"
+$env:OMP_NUM_THREADS = "1"
+.\.venv\Scripts\python.exe -m examples.benchmark_ciulli_jfo_preconditioner --root results\ciulli_20261112_cpu_thread_benchmark_v3\threads_1 --checkpoints 0 3 6 --max-iterations 600 --output results\my_jfo_preconditioner_diagnostics.json
+```
+
+The script verifies the accepted-root checksum, compares CPU SuperLU
+corrections against the experimental device candidate, records independently
+recomputed true residuals, iteration/operator counts, setup/apply timings,
+peak CUDA allocations and explicit field-transfer estimates, and refuses to
+overwrite an output file. It runs no nonlinear solve. The candidate failed
+all three production-state residual gates and is not connected to the EHL
+solver; passing small-case parity tests is not evidence that it is a useful
+production preconditioner. The checked-in compact measurements are in
+[`cases/ciulli_20261112_device_preconditioner_diagnostics.json`](../cases/ciulli_20261112_device_preconditioner_diagnostics.json);
+see [VALIDATION_REPORT.md](VALIDATION_REPORT.md) and [ROADMAP.md](ROADMAP.md)
+for the measured limitations and current gates.

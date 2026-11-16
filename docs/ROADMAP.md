@@ -11,13 +11,22 @@ TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
 The broad project priority remains **benchmark-led physical validation**.
-The Ciulli 15 N case now has an accepted 1025x1025 numerical root, recorded
-after a runner restart re-audited preserved checkpoint 6 with zero new Newton
-corrections; this was not a fresh nonlinear solve. Its adjacent 513-to-1025
-comparison shows continuing localized pressure and outlet-feature changes,
-so it does not establish asymptotic mesh convergence or justify a stronger
-physical claim. Do not start another uniform refinement or redo the Figure 13
-comparison automatically.
+The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
+the retry-3 state byte-for-byte, and the retry-3 runner independently
+re-audited it before returning `accepted_numerical_root`. Zero additional
+Newton corrections were needed because checkpoint 6 already contained the
+accepted full step from Newton iteration 5; its initial audit met the original
+mass/force/feasibility gates and its final independent elasticity audit
+passed. This re-audit is not a new nonlinear solve.
+
+The bounded common-coordinate study finds 63.5% of the 513-to-1025 pressure
+difference energy inside a 7.9%-area corridor around the connected pressure
+and film-constriction loci. The film difference is not similarly localized:
+96.3% lies outside that corridor. `h_c` and `h_min` change by about 1%, but
+one grid pair cannot establish convergence. The outlet width is still below
+three cells at 1025, and bulk fields retain measurable differences; neither
+physical validation nor a mesh-convergence claim is justified. Do not start
+2049x2049 or another automatic uniform refinement.
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but
 fixed-neighborhood pressure averages/integrals and the peak on a nested
@@ -2979,8 +2988,17 @@ The overlay and raw locus CSV/JSON are local under the retry-3
 `_outlet_locus/` directory; exported numerical fields and profiles are
 uncapped.
 
-**Next:** do not launch another uniform grid or tune physical parameters
-from these results. Prioritize a bounded local-resolution or
-discretization-error study of the connected outlet feature and bulk fields,
-then reassess physical comparison. Equation closure is verified at these
+**Next:** do not launch 2049x2049 or tune physical parameters. The minimum
+discriminating follow-up is a same-domain, same-1025-grid solve with the
+existing bounded MC-limited conservative capacity flux at the exact
+`transport_fraction=1` endpoint, initialized from the accepted donor field
+and subject to unchanged independent audits. Its smooth manufactured tests
+show second-order behavior, but the limiter can reduce order at extrema and
+the exact Ciulli endpoint is not yet an accepted root; a blended stage is not
+evidence. This tests the donor-advection discretization without another
+global refinement. If that endpoint cannot be accepted, retain the donor
+result and diagnose the endpoint failure. Nonuniform local refinement is not
+the minimum step because the current `PointContactCase` constructs uniform
+axes and the elastic convolution and coupled solver would need matching
+nonuniform-grid verification. Equation closure is verified at the donor
 roots; numerical mesh convergence and experimental validation remain open.

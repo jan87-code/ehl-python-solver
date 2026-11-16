@@ -6334,3 +6334,171 @@ PyTorch warnings) when excluding `tests/test_joint_refinement.py`. Plain
 `resource` module on Windows. `ruff check docs examples src tests` passes;
 repository-wide `ruff check .` reports the existing E501 in the unrelated,
 untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`.
+
+### Direct checkpoint-6 verification and bounded outlet-refinement study
+
+#### Checkpoint 6 is the accepted state
+
+The preserved source
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_workspacecap_retry1/checkpoints/checkpoint_0006.npz`
+has SHA-256
+`42f4eafe1ebfaae38ec22cb07b445a9a399d0d1679e9e2f4fc45e0ccdfa2be89`.
+That hash exactly matches both retry 3's input seed hash and its accepted
+`state.npz` hash. Thus retry 3 audited the same checkpoint bytes; it did not
+silently replace them with a different state.
+
+Retry 3 first ran the ordinary SI audit, then the final independent elasticity
+audit. Both returned `numerically_accepted=true`. The accepted gates include
+the 15 N load, the unchanged donor/JFO mass and complementarity tolerances,
+positive feasible film and pressure/content boundary conditions, and the
+film reconstruction. Recorded values are:
+
+| Check on checkpoint 6 [SI unless noted] | Result |
+| --- | ---: |
+| Integrated force [N] / relative error | 15.000000000000002 / 2.22e-16 |
+| Relative local / global mass balance | 6.259e-12 / 9.395e-17 |
+| Scaled maximum mass residual | 1.507e-11 |
+| Maximum complementarity | 6.073e-29 |
+| Minimum film [m] | 2.762880e-7 |
+| Film reconstruction maximum error [m] | 3.388e-21 |
+| Independent elasticity method | zero-padded `scipy.signal.fftconvolve` |
+
+`independent_elasticity_checked=true` and `direct_elasticity_checked=false`.
+The independent large-grid FFT reconstruction is the reported final
+elasticity check; it is not described as direct spatial convolution. The
+checkpoint is therefore an accepted root of the configured discrete
+15 N donor-flux/JFO equations. This is equation closure, not continuum
+convergence or experimental validation.
+
+Zero additional Newton corrections on retry 3 are expected, not a bypass of
+the solver gates. Checkpoint 6 was saved after the sixth accepted full Newton
+step (iteration index 5) in the earlier attempt. The saved iteration-5
+diagnostic records an accepted full step (`alpha=1`), with merit decreasing
+from `4.382e-22` to `9.055e-31`; its pre-step audit was not yet accepted. The
+new run re-audited the post-step checkpoint, which passed the requested
+`1e-10` local-balance tolerance (`6.259e-12`) and all final gates, so it
+returned before computing another correction. `accepted_as_solution=false`
+in the checkpoint-seed provenance only means the runner did not assume a
+checkpoint was valid before auditing it; retry 3 then recorded the accepted
+result. The earlier attempt had stalled during its final audit, not during
+the accepted Newton step.
+
+#### Saved-field comparison method
+
+The new post-processing tool
+`examples/analyze_ciulli_outlet_refinement.py` verifies each input's accepted
+status and field checksum, then runs the existing outlet pressure/film-minimum
+tracker and samples the 513 and 1025 fields on a common 0.5 um grid over
+`x=[-100,100] um`, `y=[-75,75] um`. It runs no solver and does not modify
+either field. The reproduction command is:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m examples.analyze_ciulli_outlet_refinement `
+  --coarse results\ciulli_20261112_hybrid_513 `
+  --fine results\ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry3 `
+  --output results\ciulli_20261112_hybrid_513_1025_outlet_refinement_study.json
+```
+
+The pressure support is the union of cells with pressure above 1 kPa on
+either grid. The feature corridor is the union, for both grids, of horizontal
+bands about the tracked pressure-maximum and downstream film-constriction
+loci over `|y|<=59.375 um`. Its half-width is varied (2.5, 5 and 10 um) to
+show sensitivity to the analyst-selected corridor. This is a spatial
+partition of field differences, not an estimate of discretization error or a
+physical feature boundary.
+
+#### Smooth/bulk changes versus the connected outlet structure
+
+On the full common contact window, the 513-to-1025 pressure difference has
+relative L2 `3.830%` and RMS `20.034 MPa`; film relative L2 is `0.850%` and
+RMS is `3.858 nm`. At the nominal +/-5 um locus corridor, which occupies
+`7.93%` of the contact comparison area, it contains `63.53%` of the
+pressure squared-difference integral. Varying the half-width from 2.5 to
+10 um changes this share only from `62.20%` to `64.03%`. Outside the +/-5 um
+corridor, pressure relative L2 remains `2.362%` and RMS `12.619 MPa`.
+Therefore most pressure discrepancy is concentrated along the connected
+outlet structure, but a material bulk/other-region difference remains.
+
+Film change behaves differently: only `3.68%` of the squared film-difference
+integral lies inside the +/-5 um corridor; `96.32%` is outside it. Outside
+that corridor, film relative L2 is `0.863%` and RMS is `3.946 nm`. This
+supports a small but spatially broad film change, not the claim that all
+remaining 513-to-1025 differences are confined to the outlet ridge.
+
+| Scalar | 513x513 | 1025x1025 | Change |
+| --- | ---: | ---: | ---: |
+| `h_c` [nm] | 465.649 | 461.126 | -4.523 nm (-0.971%) |
+| Global `h_min` [nm] | 278.512 | 276.288 | -2.224 nm (-0.799%) |
+| `p_max` [MPa] | 812.881 | 896.066 | +83.185 MPa (+10.233%) |
+
+The global film minimum remains a symmetric pair: `(23.4375,+/-82.8125) um`
+at 513 and `(25.0000,+/-82.03125) um` at 1025. The 513 mirror values differ
+only at roundoff; both are included in the reported location. `p_max` is
+reported as a diagnostic only, never as the convergence criterion.
+
+The pressure tracker follows one sampled connected curved locus linking the
+centerline outlet peak to the symmetric off-axis global maxima: 77 transverse
+rows at 513 and 153 at 1025 over `y=-59.375` to `+59.375 um`. The maximum
+positive-branch x step halves from 3.125 to 1.5625 um. Representative
+pressure and film features are:
+
+| Locus point | Grid | Pressure peak x [um] | Peak [MPa] | Half-prominence width [um] (cells) | +/-5 um pressure integral [N/m] (mean [MPa]) | Downstream film constriction x [um], h [nm] |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Centerline, y=0 | 513 | 85.938 | 689.502 | 2.094 (1.34) | 4410.309 (441.031) | 93.750, 398.828 |
+| Centerline, y=0 | 1025 | 86.719 | 765.733 | 1.366 (1.75) | 4164.425 (416.443) | 94.531, 396.551 |
+| Off-axis, y=+/-59.375 um | 513 | 51.563 | 812.881 | 3.225 (2.06) | 5764.355 (576.435) | 65.625, 335.945 |
+| Off-axis, y=+/-59.375 um | 1025 | 53.125 | 896.066 | 2.278 (2.92) | 5357.296 (535.730) | 66.406, 334.671 |
+
+The x-window is 10 um wide, fixed in physical width, and centered on the
+tracked pressure peak; the mean is its integral divided by that same width.
+Integrated pressure over the entire tracked `y` arc decreases from `0.57623`
+to `0.53222 N` (-7.64%), and its area-mean pressure decreases from `485.25`
+to `448.19 MPa`. The local film constriction remains downstream of the
+pressure locus by 7.813 um at the centerline and by 14.063 um (513) /
+13.281 um (1025) at the off-axis points. Those local constriction minima are
+not the global `h_min`.
+
+Physical widths contract by about 35% at the centerline and 29% off-axis,
+while the cell counts remain below three even on 1025. The location,
+half-prominence width, fixed-window integrals, and film constriction all
+change with refinement. The feature is still under-resolved; the connected
+sampled locus does not establish a continuous physical ridge or converged
+peak amplitude.
+
+#### Validation decision and next bounded step
+
+The approximate 1% changes in `h_c` and `h_min` and sub-1% bulk-film L2
+change are encouraging, but not sufficient evidence for physical validation:
+there is only one adjacent-grid pair, no observed order, and pressure still
+differs by 2.36% outside the ridge corridor. In addition, the high-gradient
+outlet feature is represented by fewer than three cells. No convergence or
+experimental-accuracy tolerance has been established from these values.
+
+Do not run 2049x2049. The smallest targeted discretization test is a
+same-domain, same-1025-grid solve using the existing conservative
+MC-limited capacity flux at exactly `transport_fraction=1`, seeded from the
+accepted donor root and audited with unchanged feasibility, force, mass,
+complementarity and independent-elasticity gates. This bounded candidate
+has second-order smooth-manufactured behavior, but limiter extrema can reduce
+order and the exact Ciulli endpoint is not yet an accepted root; a blended
+`transport_fraction<1` state cannot substitute. This isolates donor-advection
+sensitivity without multiplying the global grid. If the endpoint cannot be
+accepted, preserve the donor root and diagnose that solver blocker. Local
+nonuniform refinement is a later option: the current coupled case generates
+uniform axes, so a local mesh requires verified nonuniform elastic and
+Reynolds operators rather than a plotting-only patch.
+
+Verification for this increment: `py -3.13 -m pytest -q
+tests/test_ciulli_outlet_refinement.py tests/test_ciulli_grid_analysis.py`
+passes (15 passed); the saved JSON exactly matches a fresh recomputation from
+the checksum-validated roots. The full Windows-compatible suite
+(`py -3.13 -m pytest -q --ignore=tests/test_joint_refinement.py`) passes
+(785 passed, 81 skipped). Unfiltered collection is blocked because
+`examples/run_joint_refinement.py` imports POSIX-only `resource`. The
+default Python 3.10 environment's installed pytest 9.2.0 also crashes before
+collection: `_pytest.nodeid.NodeId(path="")` lacks its `_str_cache` slot, so
+validation was run on Python 3.13. `ruff check docs examples src tests` and
+`git diff --check` pass. Repository-wide `ruff check .` reports only the
+pre-existing E501 in the unrelated, untracked
+`.kilo/skills/jupyter-notebook/scripts/new_notebook.py`.

@@ -27,6 +27,20 @@ one grid pair cannot establish convergence. The outlet width is still below
 three cells at 1025, and bulk fields retain measurable differences; neither
 physical validation nor a mesh-convergence claim is justified. Do not start
 2049x2049 or another automatic uniform refinement.
+
+The exact MC-capacity (`transport_fraction=1`) 1025 endpoint is not yet
+evaluated: an independent exact-flux audit of the accepted donor seed fails
+the local mass gate (`1.682e-2` versus `1e-10`), so a nonlinear correction is
+necessary. The existing CPU limited solver's 1025 resource preflight cannot
+pass its 2 GiB ceiling even from the GMRES-basis lower bound at its configured
+restart 60; its preflight would otherwise perform the sparse factorization
+before applying that ceiling. We did not launch that factorization or a solver.
+No accepted 513x513 Ciulli MC root exists in the saved archives. A single
+513x513 MC root would measure same-grid scheme sensitivity, not MC-grid
+convergence, so defer it until a safe 1025 MC solve is resource-admissible.
+Do not infer that the higher-order flux improves convergence from this
+uncompleted endpoint.
+
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but
 fixed-neighborhood pressure averages/integrals and the peak on a nested
@@ -2988,17 +3002,16 @@ The overlay and raw locus CSV/JSON are local under the retry-3
 `_outlet_locus/` directory; exported numerical fields and profiles are
 uncapped.
 
-**Next:** do not launch 2049x2049 or tune physical parameters. The minimum
-discriminating follow-up is a same-domain, same-1025-grid solve with the
-existing bounded MC-limited conservative capacity flux at the exact
-`transport_fraction=1` endpoint, initialized from the accepted donor field
-and subject to unchanged independent audits. Its smooth manufactured tests
-show second-order behavior, but the limiter can reduce order at extrema and
-the exact Ciulli endpoint is not yet an accepted root; a blended stage is not
-evidence. This tests the donor-advection discretization without another
-global refinement. If that endpoint cannot be accepted, retain the donor
-result and diagnose the endpoint failure. Nonuniform local refinement is not
-the minimum step because the current `PointContactCase` constructs uniform
-axes and the elastic convolution and coupled solver would need matching
-nonuniform-grid verification. Equation closure is verified at the donor
-roots; numerical mesh convergence and experimental validation remain open.
+**Next:** do not launch 2049x2049 or tune physical parameters. First make the
+exact MC Newton/preconditioner resource-admissible at 1025 without weakening
+the existing residual or final-audit gates, and make its resource preflight
+reject oversized configurations before constructing/factorizing the full
+bordered matrix. Then retry `transport_fraction=1` from the saved donor root.
+The current donor seed does not satisfy the exact MC mass equation, and the
+endpoint solve is still untested at this grid. Defer a 513x513 MC run: alone
+it cannot establish refinement convergence and there is no accepted 1025 MC
+root to pair with it. Nonuniform local refinement remains a later option
+because `PointContactCase` constructs uniform axes and the elastic convolution
+and coupled solver need matching nonuniform-grid verification. Equation
+closure is verified at the donor roots; MC-grid convergence and experimental
+validation remain open.

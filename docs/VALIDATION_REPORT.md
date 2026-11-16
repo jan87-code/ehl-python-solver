@@ -6502,3 +6502,95 @@ validation was run on Python 3.13. `ruff check docs examples src tests` and
 `git diff --check` pass. Repository-wide `ruff check .` reports only the
 pre-existing E501 in the unrelated, untracked
 `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`.
+
+### Exact MC-capacity assessment at 1025x1025 (2026-11-16)
+
+#### Accepted MC roots and saved seeds
+
+The local Ciulli result archive contains no accepted 513x513
+MC-capacity (`transport_fraction=1`) root. Both accepted 513x513 Ciulli
+archives use donor transport (`transport_fraction=0`). The older 33x33 exact
+MC transport-path summaries are `rejected_path`; the endpoint continuation
+stopped at fraction `0.9995491`, as described in the earlier endpoint
+diagnosis above. The registered 50 N limited-capacity roots are a different
+physical case and do not supply a Ciulli seed.
+
+The accepted 1025x1025 donor field/checkpoint was left unchanged. I evaluated
+that saved state with the exact limited-capacity flux (`transport_fraction =
+1`) and its independent SI mass audit; this was an audit-only operation, not
+a Newton correction or a solver run. The default 1 GiB elasticity workspace
+guard rejected construction; repeating the audit with a 1536 MiB workspace
+cap (no equation or acceptance change) completed in 2.52 s. The exact-MC audit
+reported:
+
+| Exact-MC evaluation of the accepted donor seed | Result |
+| --- | ---: |
+| `transport_fraction` | 1.0 |
+| Relative local mass balance | 1.6824e-2 |
+| Relative global mass balance | 1.5267e-3 |
+| Maximum SI mass divergence [kg/(m2 s)] | 4.121 |
+| Scaled maximum mass residual | 5.2839e-2 |
+| Integrated force [N] | 15.000000000000002 |
+| Maximum complementarity | 6.0735e-29 |
+| Minimum film [m] | 2.762880e-7 |
+| `numerically_accepted` for the exact-MC equation | false |
+
+Thus the donor seed satisfies force, complementarity and film feasibility,
+but it is not an exact MC root: its local balance is far above the unchanged
+`1e-10` requirement. A nonlinear correction would be required. No exact-MC
+film reconstruction/final independent audit was performed because no MC root
+was produced. The exact endpoint is **not marked failed** at 1025; it remains
+untested as a nonlinear solve.
+
+#### Safe resource decision
+
+The existing limited nonlinear runner is CPU/SciPy and forms a sparse
+bordered SuperLU preconditioner; the hybrid CUDA donor backend does not
+accelerate this MC path. On the machine at assessment time, available host
+memory was approximately 33.25 GiB, while the RTX A2000 Laptop GPU has 4 GiB
+VRAM (3.87 GiB free); the limited solver does not use that GPU. The runner's
+resource ceiling is 2 GiB. At 1025x1025, its configured GMRES restart of 60
+already makes the preflight Krylov-basis term exceed that ceiling:
+
+```text
+interior cells n = (1025-2)^2 = 1,046,529
+bordered unknowns = 2*n + 1 = 2,093,059
+basis bytes = 2 * unknowns * (restart+3) * 8
+            = 2,109,803,472 bytes
+estimated-peak lower bound = 2 * basis bytes
+                           = 4,219,606,944 bytes
+with the preflight's minimum 15% margin = 4,852,547,985 bytes
+resource ceiling = 2,147,483,648 bytes
+```
+
+The lower bound excludes the sparse matrix, SuperLU factors and FFT
+workspace, so it is sufficient to determine that the unchanged preflight
+would reject this configuration. The preflight implementation factorizes
+the sparse matrices before checking its ceiling; running that factorization
+at this size merely to reach the rejection could exceed safe memory. I
+therefore did not invoke it, start a 1025 MC solver, or create/alter a result
+directory. This is a conservative resource-gate decision, not a numerical
+failure of the MC equations. The earlier 33x33 exact-endpoint diagnosis found
+a rank-deficient natural frozen preconditioner and GMRES true residual 0.519
+after 600 iterations; that result is a separate known numerical risk, not
+proof of 1025 behavior.
+
+#### Comparison and next decision
+
+Because there is no accepted 1025 MC root, no valid MC-versus-donor
+comparison can be made for `h_c`, `h_min`, film fields/profiles, bulk or
+outlet pressure, connected Petrusevich locus, feature width/cell count,
+fixed-window pressure integral, or the independent final audits. The
+exact-MC donor-seed residual above is not a substitute for comparing two
+accepted roots. It provides no evidence that the MC formulation improves
+discretization or physical accuracy.
+
+A single 513x513 MC run could measure same-grid scheme sensitivity, but
+without a 1025 MC root it cannot assess MC mesh contraction. I do not
+recommend that run for the requested convergence assessment; defer it until
+the exact 1025 solver has a safe resource path. The next enabling work is a
+memory-admissible limited-flux preconditioner/GMRES configuration and a
+resource preflight that checks cheap lower bounds before constructing and
+factorizing the full matrix. Keep the exact `transport_fraction=1` equations,
+true Krylov/residual checks, and all existing acceptance tolerances
+unchanged. Do not start 2049x2049 or tune physical parameters.

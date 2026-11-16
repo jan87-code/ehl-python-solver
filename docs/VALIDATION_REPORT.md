@@ -6565,15 +6565,16 @@ resource ceiling = 2,147,483,648 bytes
 
 The lower bound excludes the sparse matrix, SuperLU factors and FFT
 workspace, so it is sufficient to determine that the unchanged preflight
-would reject this configuration. The preflight implementation factorizes
-the sparse matrices before checking its ceiling; running that factorization
-at this size merely to reach the rejection could exceed safe memory. I
-therefore did not invoke it, start a 1025 MC solver, or create/alter a result
-directory. This is a conservative resource-gate decision, not a numerical
-failure of the MC equations. The earlier 33x33 exact-endpoint diagnosis found
-a rank-deficient natural frozen preconditioner and GMRES true residual 0.519
-after 600 iterations; that result is a separate known numerical risk, not
-proof of 1025 behavior.
+would reject this configuration. At the time, the preflight implementation
+factorized the sparse matrices before checking its ceiling; running that
+factorization at this size merely to reach the rejection could exceed safe
+memory. I therefore did not invoke it, start a 1025 MC solver, or create/alter
+a result directory. The preflight ordering was subsequently corrected as
+recorded in Section 38. This is a conservative resource-gate decision, not a
+numerical failure of the MC equations. The earlier 33x33 exact-endpoint
+diagnosis found a rank-deficient natural frozen preconditioner and GMRES true
+residual 0.519 after 600 iterations; that result is a separate known
+numerical risk, not proof of 1025 behavior.
 
 #### Comparison and next decision
 
@@ -6585,12 +6586,92 @@ exact-MC donor-seed residual above is not a substitute for comparing two
 accepted roots. It provides no evidence that the MC formulation improves
 discretization or physical accuracy.
 
-A single 513x513 MC run could measure same-grid scheme sensitivity, but
-without a 1025 MC root it cannot assess MC mesh contraction. I do not
-recommend that run for the requested convergence assessment; defer it until
-the exact 1025 solver has a safe resource path. The next enabling work is a
-memory-admissible limited-flux preconditioner/GMRES configuration and a
-resource preflight that checks cheap lower bounds before constructing and
-factorizing the full matrix. Keep the exact `transport_fraction=1` equations,
-true Krylov/residual checks, and all existing acceptance tolerances
-unchanged. Do not start 2049x2049 or tune physical parameters.
+At the time of this 1025 assessment, a single 513x513 MC run was deferred
+because it could not assess MC mesh contraction without an accepted 1025
+root. The later bounded 513x513 preflight and correction probe is recorded in
+Section 38; it did not produce an accepted MC root. The next enabling work is
+a numerically viable, bounded limited-flux preconditioner/active-set recovery
+that reaches GMRES. Keep the exact `transport_fraction=1` equations, true
+Krylov/residual checks, and all existing acceptance tolerances unchanged. Do
+not start 2049x2049 or tune physical parameters.
+
+## 38. 513x513 exact MC preflight and correction probe (2026-11-16)
+
+The limited-path runner now validates and records GMRES restart, configured
+process-memory limit, and elastic FFT workspace limit. For runs above the
+existing node threshold, a dimension-based estimate is checked against both
+the configured ceiling and 75% of currently available host RAM **before**
+loading/interpolating a seed or constructing a probe, sparse matrix, or LU
+factor. The estimate uses the two saved sparse-factor observations, an
+`n^1.5` fill model, a 1.5 factor-fill multiplier and an additional 25%
+whole-process margin. This is a conservative planning model, not a measured
+513 factor-size validation. Restart is passed through continuation to the
+existing limited Newton solve; the Krylov tolerance (`1e-9`), true-residual
+checks, equations and acceptance gates were not changed.
+
+The accepted donor state was loaded from
+`results/ciulli_20261111_donor_513_fixed` with its recorded checksum
+`4d6376f51c0056f0414a8bed3cab8916c88f27db8f738d8ab77f060ffcf0ce06`.
+This verifies the donor seed as an input only; it is not an accepted
+limited-capacity state.
+
+### Static memory estimate and measured factorization attempt
+
+The first candidate used restart 20, a 32 GiB configured process limit, and a
+1 GiB FFT workspace limit. At preflight, available host RAM was
+34,481,106,944 bytes and the effective ceiling (minimum of the configured
+limit and 75% of free RAM) was 25,860,830,208 bytes (24.08 GiB).
+
+| Restart | Adjusted estimated peak [bytes] | Adjusted estimate [GiB] | Krylov basis [bytes] | Static gate |
+| ---: | ---: | ---: | ---: | --- |
+| 20 | 18,897,044,745 | 17.60 | 192,185,424 | pass |
+| 30 | 19,105,941,945 | 17.79 | 275,744,304 | pass |
+| 40 | 19,314,839,145 | 17.99 | 359,303,184 | pass |
+
+Only restart 20 proceeded to a measured factorization attempt. The actual
+matrix had 3,099,161 nonzeros. Both the field-block factorization and the
+full bordered fallback failed in SuperLU (`dpanel_bmod.c`). The process had
+grown by 4,755,369,984 bytes of private commit and 938,201,088 bytes of
+working set at failure. These are measurements of failed attempts, not the
+peak for a completed factorization; no LU factor size or solve residual was
+available. The configured memory gate passed, but the preconditioner
+factorization gate did not. The preflight matrix used the same initial
+`active_full` mask as the solver; aligning this mask did not remove the
+factorization failure.
+
+### Exact-MC one-correction diagnostic
+
+A direct `solve_limited_load` probe used the exact `transport_fraction=1`
+equations, the accepted donor seed, restart 20, a one-Newton-correction
+budget, unchanged `1e-9` Krylov tolerance, and unchanged true-residual and
+nonlinear acceptance checks. The initial exact-MC audit had relative local
+mass balance `2.1270125e-2`, maximum mass residual `3.3322644e-2`, and force
+relative error `2.22e-16`; the seed therefore required a correction.
+
+The first local-preconditioner model failed both the field and bordered
+SuperLU factors before GMRES. The solver entered its existing active-set
+recovery path, which remained CPU-active for more than 16 CPU minutes with
+about 5.95 GB (5.54 GiB) process-private memory and 1.15 GB (1.07 GiB)
+working set. No subsequent recovery heartbeat or GMRES iteration was
+observed. I stopped this diagnostic to bound the experiment; it produced no
+accepted step, checkpoint, correction L2/Linf comparison, Krylov residual,
+or completed-correction runtime. It is not an accepted result and does not
+disprove the exact MC endpoint.
+
+Restarts 30 and 40 were not run as correction trials: the observed failure is
+before GMRES, so changing restart cannot resolve the current blocker. Their
+static estimates are not measurements. No MC root was accepted at 513x513;
+therefore no 513-to-1025 MC comparison or 1025 MC run is justified. Do not
+start 2049x2049. The next blocker is a numerically viable and computationally
+bounded exact-MC active-set/preconditioner recovery from the accepted donor
+seed. Once that path reaches Krylov, compare restart 20/30/40 on the same
+saved correction without changing equations or acceptance criteria.
+
+Verification for the code change: the targeted limited-path tests pass
+(39 passed), and the Windows-compatible full suite passes (789 passed,
+81 skipped) with `tests/test_joint_refinement.py` excluded because it imports
+the POSIX-only `resource` module. The unfiltered full suite stops at that
+collection error. `ruff check docs examples src tests` and `git diff --check`
+pass. Repository-wide `ruff check .` reports one pre-existing E501 in the
+untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; that
+unrelated user file was not changed.

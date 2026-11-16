@@ -3,6 +3,7 @@
 import argparse
 import gc
 import json
+import math
 import os
 import platform
 import shutil
@@ -10,13 +11,13 @@ import signal
 import sys
 import threading
 import time
-import tracemalloc
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import scipy
+from scipy.fft import next_fast_len
 from scipy.interpolate import RegularGridInterpolator
 from scipy.sparse.linalg import splu
 
@@ -30,6 +31,15 @@ from ehl_solver.limited_newton import LimitedNewtonError
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import clean_json, digest, load_run
+
+_REFERENCE_FACTOR_BYTES = (
+    (38_809, 265_243_020),
+    (46_225, 310_058_172),
+)
+_FACTOR_FILL_SAFETY = 1.5
+_MATRIX_NNZ_PER_INTERIOR_ESTIMATE = 15
+_PREFLIGHT_SAFETY_MARGIN = 1.25
+_DEFAULT_MEMORY_LIMIT_BYTES = 2 * 1024**3
 
 
 class _RunInterrupted(KeyboardInterrupt):
@@ -108,7 +118,7 @@ class _ProgressReporter:
             print(f"[progress {timestamp}] " + " ".join(details), flush=True)
 
 
-def _interpolate_limited_seed(directory, case):
+def _interpolate_limited_seed(directory, case, *, workspace_limit_bytes=2**30):
     source = load_limited_path(directory)
     if source.case.physical_signature() != case.physical_signature():
         raise ValueError("Limited seed and target must use identical physical parameters")
@@ -136,7 +146,11 @@ def _interpolate_limited_seed(directory, case):
     theta = RegularGridInterpolator((old_y, old_x), source.theta)(points).reshape(
         case.ny, case.nx
     )
-    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    probe = LimitedLoadProbe(
+        case,
+        transport_fraction=0.0,
+        workspace_limit_bytes=workspace_limit_bytes,
+    )
     offset_m = source.state[-1] * source.case.problem().film_scale_m
     state = np.r_[
         (pressure[1:-1, 1:-1] / probe.system.problem.pressure_scale_pa).ravel(),
@@ -251,143 +265,329 @@ def _available_memory_bytes():
             ) from err
 
 
-def _measure_peak_memory(func):
-    """Run a function and return the peak memory increase in bytes."""
-    if not tracemalloc.is_tracing():
-        tracemalloc.start()
-    snapshot_before = tracemalloc.take_snapshot()
-    result = func()
-    snapshot_after = tracemalloc.take_snapshot()
-    top_stats = snapshot_after.compare_to(snapshot_before, 'lineno')
-    if top_stats:
-        peak_increase = sum(stat.size_diff for stat in top_stats)
+def _process_memory_snapshot():
+    """Return current and high-water private/working-set bytes for this process."""
+    if platform.system() == "Windows":
+        import ctypes
+
+        class ProcessMemoryCountersEx(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong),
+                ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+                ("PrivateUsage", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        psapi.GetProcessMemoryInfo.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ProcessMemoryCountersEx),
+            ctypes.c_ulong,
+        ]
+        psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+        counters = ProcessMemoryCountersEx()
+        counters.cb = ctypes.sizeof(counters)
+        if not psapi.GetProcessMemoryInfo(
+            kernel32.GetCurrentProcess(),
+            ctypes.byref(counters),
+            counters.cb,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return {
+            "current_private_bytes": int(counters.PrivateUsage),
+            "peak_private_bytes": int(counters.PeakPagefileUsage),
+            "current_working_set_bytes": int(counters.WorkingSetSize),
+            "peak_working_set_bytes": int(counters.PeakWorkingSetSize),
+        }
+
+    import resource
+
+    peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if platform.system() == "Darwin":
+        peak *= 1
     else:
-        peak_increase = 0
-    return result, peak_increase
+        peak *= 1024
+    current = peak
+    status_path = Path("/proc/self/status")
+    if status_path.exists():
+        for line in status_path.read_text().splitlines():
+            if line.startswith("VmRSS:"):
+                current = int(line.split()[1]) * 1024
+                break
+    return {
+        "current_private_bytes": current,
+        "peak_private_bytes": peak,
+        "current_working_set_bytes": current,
+        "peak_working_set_bytes": peak,
+    }
 
 
-def resource_preflight(case, state, *, use_measured_peak=True):
-    """Measure sparse-factor cost and refuse a large run without bounded headroom.
-    
-    If use_measured_peak is True, tracks actual memory usage during preflight
-    and applies a safety margin. Otherwise, uses the legacy estimation method.
-    
-    For grids similar to 199x199 and 223x223, a calibration factor is applied
-    based on historical data (199x199: estimated 804 MB, observed 935 MB).
-    """
-    # Historical calibration: for large grids, observed peak is ~1.16x the estimate
-    # Based on ROADMAP: 199x199 estimated ~804 MB, actual RSS ~935 MB
-    HISTORICAL_OVERHEAD = 1.163
-    
-    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+def estimate_resource_requirements(
+    case,
+    *,
+    gmres_restart=60,
+    memory_limit_bytes=_DEFAULT_MEMORY_LIMIT_BYTES,
+    workspace_limit_bytes=2**30,
+    available_memory_bytes=None,
+):
+    """Estimate limited-path memory without building fields or sparse matrices."""
+    if (
+        type(gmres_restart) is not int
+        or not 1 <= gmres_restart <= 60
+        or type(memory_limit_bytes) is not int
+        or memory_limit_bytes < 1
+        or type(workspace_limit_bytes) is not int
+        or workspace_limit_bytes < 1
+    ):
+        raise ValueError("Invalid GMRES restart, memory limit or workspace limit")
+    n = (case.ny - 2) * (case.nx - 2)
+    size = 2 * n + 1
+    factor_coefficient = max(
+        factor_bytes / (reference_n**1.5)
+        for reference_n, factor_bytes in _REFERENCE_FACTOR_BYTES
+    )
+    estimated_factor_bytes = math.ceil(
+        _FACTOR_FILL_SAFETY * factor_coefficient * n**1.5
+    )
+    estimated_matrix_nonzeros = _MATRIX_NNZ_PER_INTERIOR_ESTIMATE * n
+    estimated_sparse_payload_bytes = (
+        12 * estimated_matrix_nonzeros + 4 * (size + 1)
+    )
+    basis_bytes = 2 * size * (gmres_restart + 3) * np.dtype(np.float64).itemsize
+    fft_shape = tuple(next_fast_len(3 * axis - 2) for axis in (case.ny, case.nx))
+    fft_workspace_bytes = 128 * math.prod(fft_shape)
+    estimated_peak = (
+        2 * (2 * estimated_sparse_payload_bytes + estimated_factor_bytes + basis_bytes)
+        + 2 * fft_workspace_bytes
+        + 160 * case.ny * case.nx
+    )
+    adjusted_peak = math.ceil(estimated_peak * _PREFLIGHT_SAFETY_MARGIN)
+    available = (
+        _available_memory_bytes()
+        if available_memory_bytes is None
+        else int(available_memory_bytes)
+    )
+    if available < 0:
+        raise ValueError("Available memory cannot be negative")
+    memory_ceiling = min(memory_limit_bytes, 3 * available // 4)
+    return {
+        "physical_nodes": case.ny * case.nx,
+        "interior_nodes": n,
+        "bordered_unknowns": size,
+        "transport_fraction": 1.0,
+        "gmres_restart": gmres_restart,
+        "matrix_nonzeros_estimate": estimated_matrix_nonzeros,
+        "estimated_sparse_payload_bytes": estimated_sparse_payload_bytes,
+        "estimated_factor_bytes": estimated_factor_bytes,
+        "krylov_basis_bytes": basis_bytes,
+        "elastic_fft_workspace_bytes": fft_workspace_bytes,
+        "estimated_peak_bytes": estimated_peak,
+        "safety_margin": _PREFLIGHT_SAFETY_MARGIN,
+        "adjusted_peak_bytes": adjusted_peak,
+        "configured_memory_limit_bytes": memory_limit_bytes,
+        "configured_workspace_limit_bytes": workspace_limit_bytes,
+        "available_memory_before_run_bytes": available,
+        "memory_ceiling_bytes": memory_ceiling,
+        "memory_preflight_passed": adjusted_peak <= memory_ceiling,
+        "workspace_preflight_passed": fft_workspace_bytes <= workspace_limit_bytes,
+        "factor_estimator": {
+            "growth_exponent": 1.5,
+            "safety_multiplier": _FACTOR_FILL_SAFETY,
+            "reference_interior_nodes": [n for n, _ in _REFERENCE_FACTOR_BYTES],
+        },
+    }
+
+
+def resource_preflight(
+    case,
+    state,
+    *,
+    gmres_restart=60,
+    memory_limit_bytes=_DEFAULT_MEMORY_LIMIT_BYTES,
+    workspace_limit_bytes=2**30,
+    use_measured_peak=True,
+):
+    """Check a conservative estimate before constructing/factorizing sparse matrices."""
+    estimate = estimate_resource_requirements(
+        case,
+        gmres_restart=gmres_restart,
+        memory_limit_bytes=memory_limit_bytes,
+        workspace_limit_bytes=workspace_limit_bytes,
+    )
+    result = dict(
+        **estimate,
+        estimated_peak_with_margin_bytes=estimate["estimated_peak_bytes"],
+        measured_peak_bytes=None,
+        measured_peak_working_set_bytes=None,
+        safety_margin_ratio=None,
+        factor_bytes=None,
+        known_vector_relative_residual=None,
+        field_preflight_passed=None,
+        factor_preflight_passed=None,
+        use_measured_peak=use_measured_peak,
+    )
+    if not estimate["memory_preflight_passed"]:
+        result.update(
+            passed=False,
+            status="rejected_preflight",
+            reason="Conservative memory estimate exceeds configured ceiling",
+        )
+        return result
+    if not estimate["workspace_preflight_passed"]:
+        result.update(
+            passed=False,
+            status="rejected_preflight",
+            reason="Estimated elastic FFT workspace exceeds configured workspace limit",
+        )
+        return result
+    if state is None:
+        result.update(passed=True, status="estimate_only")
+        return result
+    expected_size = 2 * estimate["interior_nodes"] + 1
+    state = np.asarray(state, dtype=np.float64)
+    if state.shape != (expected_size,) or not np.all(np.isfinite(state)):
+        raise ValueError("Finite full P,D,h0/Href state required for factor preflight")
+    before = _process_memory_snapshot() if use_measured_peak else None
+    probe = LimitedLoadProbe(
+        case,
+        transport_fraction=1.0,
+        workspace_limit_bytes=workspace_limit_bytes,
+    )
     guide = np.zeros(probe.size, dtype=np.float64)
     model = LimitedLoadLinearization(
         case,
         state,
         guide,
         preconditioner="local",
-        transport_fraction=0.0,
+        active_full=state[: probe.n] >= state[probe.n : 2 * probe.n],
+        transport_fraction=1.0,
+        workspace_limit_bytes=workspace_limit_bytes,
     )
     matrix = model.frozen_matrix(state)
     field_matrix = matrix[: 2 * probe.n, : 2 * probe.n].tocsc()
-    
-    def factorize():
-        field_lu = splu(field_matrix)  # noqa: F821
-        bordered_lu = splu(matrix)  # noqa: F821
-        return field_lu, bordered_lu
-    
-    field_lu, bordered_lu = factorize()
-    
+    field_lu = None
+    bordered_lu = None
+    field_factor_error = None
+    try:
+        field_lu = splu(field_matrix)
+    except RuntimeError as exc:
+        field_factor_error = str(exc)
+    try:
+        bordered_lu = splu(matrix)
+    except RuntimeError as exc:
+        after = _process_memory_snapshot() if before is not None else None
+        measured_peak_bytes = None
+        if after is not None:
+            measured_peak_bytes = max(
+                0, after["peak_private_bytes"] - before["current_private_bytes"]
+            )
+            result["measured_peak_working_set_bytes"] = max(
+                0,
+                after["peak_working_set_bytes"] - before["current_working_set_bytes"],
+            )
+        measured_memory_passed = (
+            measured_peak_bytes is None
+            or measured_peak_bytes <= estimate["memory_ceiling_bytes"]
+        )
+        result.update(
+            measured_peak_bytes=measured_peak_bytes,
+            measured_memory_preflight_passed=measured_memory_passed,
+            memory_preflight_passed=bool(
+                estimate["memory_preflight_passed"] and measured_memory_passed
+            ),
+            safety_margin_ratio=(
+                None
+                if measured_peak_bytes is None
+                else measured_peak_bytes / estimate["estimated_peak_bytes"]
+            ),
+        )
+        result.update(
+            matrix_nonzeros=int(matrix.nnz),
+            field_preflight_passed=field_lu is not None,
+            field_preflight_error=field_factor_error,
+            factor_preflight_passed=False,
+            passed=False,
+            status="rejected_preflight",
+            reason=(
+                f"SuperLU bordered fallback preflight failed: {exc}"
+                if field_factor_error is None
+                else (
+                    "SuperLU field factorization and bordered fallback preflight failed: "
+                    f"{field_factor_error}; {exc}"
+                )
+            ),
+        )
+        del field_lu, bordered_lu, field_matrix, matrix, model, probe
+        gc.collect()
+        return result
+    factors = tuple(lu for lu in (field_lu, bordered_lu) if lu is not None)
     factor_bytes = sum(
-        _payload_bytes(lu.L) + _payload_bytes(lu.U) for lu in (field_lu, bordered_lu)
+        _payload_bytes(lu.L) + _payload_bytes(lu.U) for lu in factors
     )
-    factor_bytes += sum(
-        lu.perm_c.nbytes + lu.perm_r.nbytes for lu in (field_lu, bordered_lu)
-    )
-    basis_bytes = 2 * probe.size * (60 + 3) * np.dtype(np.float64).itemsize
-    fft_workspace_bytes = probe.system.base.elastic_operator.estimated_workspace_bytes
-    estimated_peak = (
-        2
-        * (_payload_bytes(matrix) + _payload_bytes(field_matrix) + factor_bytes + basis_bytes)
-        + 2 * fft_workspace_bytes
-        + 160 * case.ny * case.nx
-    )
-    
+    factor_bytes += sum(lu.perm_c.nbytes + lu.perm_r.nbytes for lu in factors)
     known = np.random.default_rng(17329929).normal(size=probe.size)
     rhs = matrix @ known
     relative_residual = float(
         np.linalg.norm(matrix @ bordered_lu.solve(rhs) - rhs)
         / max(np.linalg.norm(rhs), np.finfo(np.float64).tiny)
     )
-    
     measured_peak_bytes = None
-    safety_margin_ratio = None
-    
-    if use_measured_peak:
-        gc.collect()
-        tracemalloc.stop()
-        tracemalloc.start()
-        
-        def measure_factorize():
-            return factorize()
-        
-        _, peak_during_factorize = _measure_peak_memory(measure_factorize)
-        
-        def measure_solve():
-            test_rhs = matrix @ known  # noqa: F821
-            _ = bordered_lu.solve(test_rhs)  # noqa: F821
-            return None
-        
-        _, peak_during_solve = _measure_peak_memory(measure_solve)
-        
-        measured_peak_bytes = peak_during_factorize + peak_during_solve
-        
-        tracemalloc.stop()
-        gc.collect()
-        
-        if measured_peak_bytes > 0 and estimated_peak > 0:
-            safety_margin_ratio = float(measured_peak_bytes) / float(estimated_peak)
-        else:
-            safety_margin_ratio = 1.0
-    
-    available = _available_memory_bytes()
-    # For large grids, raise the cap from 1 GiB to 2 GiB to account for
-    # historical overhead (~16%) and allow 50k mesh study
-    memory_ceiling = min(2147483648, 3 * available // 4)  # 2 GiB = 2147483648 bytes
-    
-    # Apply safety margins
-    if use_measured_peak and measured_peak_bytes is not None:
-        # Use measured margin if available
-        measured_margin = max(safety_margin_ratio or 1.0, 1.15)
-    else:
-        # Use historical calibration for large grids
-        # For grids >= 173x173, apply the historical overhead factor
-        if case.ny * case.nx >= 173 * 173:
-            measured_margin = HISTORICAL_OVERHEAD
-        else:
-            measured_margin = 1.15
-    
-    adjusted_peak = int(estimated_peak * measured_margin)
-    
-    result = dict(
-        physical_nodes=case.ny * case.nx,
-        interior_nodes=probe.n,
+    measured_peak_working_set_bytes = None
+    if before is not None:
+        after = _process_memory_snapshot()
+        measured_peak_bytes = max(
+            0, after["peak_private_bytes"] - before["current_private_bytes"]
+        )
+        measured_peak_working_set_bytes = max(
+            0,
+            after["peak_working_set_bytes"] - before["current_working_set_bytes"],
+        )
+    safety_margin_ratio = (
+        None
+        if measured_peak_bytes is None or estimate["estimated_peak_bytes"] == 0
+        else measured_peak_bytes / estimate["estimated_peak_bytes"]
+    )
+    memory_measured_passed = (
+        measured_peak_bytes is None
+        or measured_peak_bytes <= estimate["memory_ceiling_bytes"]
+    )
+    factor_passed = bool(
+        np.isfinite(relative_residual) and relative_residual < 1e-8
+    )
+    result.update(
         matrix_nonzeros=int(matrix.nnz),
         factor_bytes=int(factor_bytes),
-        krylov_basis_bytes=int(basis_bytes),
-        elastic_fft_workspace_bytes=int(fft_workspace_bytes),
-        estimated_peak_with_margin_bytes=int(estimated_peak),
-        measured_peak_bytes=int(measured_peak_bytes) if measured_peak_bytes else None,
-        safety_margin_ratio=float(safety_margin_ratio) if safety_margin_ratio else None,
-        adjusted_peak_bytes=int(adjusted_peak),
-        available_memory_before_run_bytes=int(available),
-        memory_ceiling_bytes=int(memory_ceiling),
+        measured_peak_bytes=measured_peak_bytes,
+        measured_peak_working_set_bytes=measured_peak_working_set_bytes,
+        safety_margin_ratio=safety_margin_ratio,
         known_vector_relative_residual=relative_residual,
-        memory_preflight_passed=bool(adjusted_peak < memory_ceiling),
-        factor_preflight_passed=bool(np.isfinite(relative_residual) and relative_residual < 1e-8),
-        use_measured_peak=use_measured_peak,
+        field_preflight_passed=field_lu is not None,
+        field_preflight_error=field_factor_error,
+        memory_preflight_passed=bool(
+            estimate["memory_preflight_passed"] and memory_measured_passed
+        ),
+        factor_preflight_passed=factor_passed,
+        measured_memory_preflight_passed=memory_measured_passed,
+        passed=bool(
+            estimate["memory_preflight_passed"]
+            and memory_measured_passed
+            and factor_passed
+        ),
+        status=(
+            "passed"
+            if estimate["memory_preflight_passed"] and memory_measured_passed and factor_passed
+            else "rejected_preflight"
+        ),
     )
-    result["passed"] = result["memory_preflight_passed"] and result["factor_preflight_passed"]
     del known, rhs, field_lu, bordered_lu, field_matrix, matrix, model, probe
     gc.collect()
     return result
@@ -404,13 +604,22 @@ def main(
     resume_from=None,
     use_measured_peak=True,
     progress_interval=300.0,
+    gmres_restart=60,
+    memory_limit_bytes=_DEFAULT_MEMORY_LIMIT_BYTES,
+    workspace_limit_bytes=2**30,
 ):
     if (
         isinstance(progress_interval, bool)
         or not np.isfinite(progress_interval)
         or progress_interval <= 0
+        or type(gmres_restart) is not int
+        or not 1 <= gmres_restart <= 60
+        or type(memory_limit_bytes) is not int
+        or memory_limit_bytes < 1
+        or type(workspace_limit_bytes) is not int
+        or workspace_limit_bytes < 1
     ):
-        raise ValueError("Progress interval must be a finite positive number of seconds")
+        raise ValueError("Invalid progress, GMRES, memory or workspace setting")
     if sum(value is not None for value in (seed, limited_seed, resume_from)) > 1:
         raise ValueError(
             "Choose only one of a prototype seed, limited MC seed, or resume checkpoint"
@@ -425,33 +634,102 @@ def main(
             if case_path is not None
             else saved_case
         )
-        initial, resume_fraction, seed_metadata = _load_resume_checkpoint(resume_from, case)
     elif limited_seed is not None:
         if case_path is None:
             raise ValueError("A target case is required when refining an MC seed")
         case = PointContactCase(**json.loads(case_path.read_text()))
-        initial, seed_metadata = _interpolate_limited_seed(limited_seed, case)
     elif seed is not None:
-        case, _, _ = load_run(seed)
+        seed_summary = json.loads((seed / "summary.json").read_text())
+        case = PointContactCase(**seed_summary["case"])
         if case_path is not None and PointContactCase(**json.loads(case_path.read_text())) != case:
             raise ValueError("Seed and case must match exactly")
-        with np.load(seed / "solution.npz", allow_pickle=False) as saved:
-            initial = saved["state_dimensionless"].copy()
-            probe = LimitedLoadProbe(case, transport_fraction=0.0)
-            p, t, h = probe.fields(initial)
-            for actual, key in [(p, "pressure_pa"), (t, "theta"), (h, "film_m")]:
-                np.testing.assert_array_equal(actual, saved[key])
     else:
         case = (
             PointContactCase(**json.loads(case_path.read_text()))
             if case_path
             else PointContactCase()
         )
+
+    estimate = None
+    if case.maximum_physical_nodes > 20000:
+        estimate = estimate_resource_requirements(
+            case,
+            gmres_restart=gmres_restart,
+            memory_limit_bytes=memory_limit_bytes,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
+        if not estimate["memory_preflight_passed"] or not estimate["workspace_preflight_passed"]:
+            output.mkdir(parents=True, exist_ok=False)
+            preflight = dict(
+                **estimate,
+                status="rejected_preflight",
+                passed=False,
+                preflight_stage="before_seed_loading_or_matrix_construction",
+                reason=(
+                    "Conservative memory estimate exceeds configured ceiling"
+                    if not estimate["memory_preflight_passed"]
+                    else "Estimated elastic FFT workspace exceeds configured limit"
+                ),
+            )
+            _write_json_atomic(
+                output / "summary.json",
+                dict(
+                    status="rejected_preflight",
+                    case=asdict(case),
+                    operator_transport="limited_capacity_target",
+                    target_transport_fraction=1.0,
+                    gmres_restart=gmres_restart,
+                    memory_limit_bytes=memory_limit_bytes,
+                    workspace_limit_bytes=workspace_limit_bytes,
+                    resource_preflight=preflight,
+                ),
+            )
+            print("rejected_preflight", preflight["reason"], flush=True)
+            return 1
+
+    if resume_from is not None:
+        initial, resume_fraction, seed_metadata = _load_resume_checkpoint(resume_from, case)
+    elif limited_seed is not None:
+        initial, seed_metadata = _interpolate_limited_seed(
+            limited_seed,
+            case,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
+    elif seed is not None:
+        seed_summary = json.loads((seed / "summary.json").read_text())
+        if seed_summary.get("equation") == "donor-flux JFO/Elrod-Adams":
+            from examples.run_ciulli_donor_grid import _seed_state
+
+            probe = LimitedLoadProbe(
+                case,
+                transport_fraction=0.0,
+                workspace_limit_bytes=workspace_limit_bytes,
+            )
+            initial, seed_metadata = _seed_state(seed, case, probe)
+            seed_metadata["target_transport_fraction"] = 1.0
+        else:
+            loaded_case, _, _ = load_run(seed)
+            if loaded_case != case:
+                raise ValueError("Seed and case must match exactly")
+            with np.load(seed / "solution.npz", allow_pickle=False) as saved:
+                initial = saved["state_dimensionless"].copy()
+                probe = LimitedLoadProbe(
+                    case,
+                    transport_fraction=0.0,
+                    workspace_limit_bytes=workspace_limit_bytes,
+                )
+                p, t, h = probe.fields(initial)
+                for actual, key in [(p, "pressure_pa"), (t, "theta"), (h, "film_m")]:
+                    np.testing.assert_array_equal(actual, saved[key])
+            seed_metadata = dict(
+                path=str(seed),
+                kind="independently audited prototype root",
+                state_sha256=digest(seed / "solution.npz"),
+                accepted_for_target=False,
+            )
+    else:
         initial = None
-    if limited_seed is None and case.maximum_physical_nodes > 20000:
-        # Allow running without seed if preflight will be checked and memory cap is raised
-        # This enables testing the 50k case with raised preflight cap
-        pass
+
     output.mkdir(parents=True, exist_ok=False)
     report = dict(
         status="running",
@@ -462,7 +740,7 @@ def main(
         initial_state_accepted_for_target=False,
         seed=(
             seed_metadata
-            if limited_seed is not None or resume_from is not None
+            if limited_seed is not None or resume_from is not None or seed_metadata is not None
             else None
             if seed is None
             else dict(path=str(seed), sha256=digest(seed / "solution.npz"))
@@ -474,7 +752,10 @@ def main(
         maximum_corrections_per_attempt=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
-        gmres_restart=60,
+        gmres_restart=gmres_restart,
+        memory_limit_bytes=memory_limit_bytes,
+        workspace_limit_bytes=workspace_limit_bytes,
+        resource_estimate=estimate,
         runtime=dict(
             python=sys.version,
             numpy=np.__version__,
@@ -500,7 +781,11 @@ def main(
     def stage(index, stage_case, fraction, outcome):
         folder = output / f"attempt_{index:03d}"
         folder.mkdir(exist_ok=False)
-        probe = LimitedLoadProbe(stage_case, transport_fraction=fraction)
+        probe = LimitedLoadProbe(
+            stage_case,
+            transport_fraction=fraction,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
         p, t, h = probe.fields(outcome.state)
         probe.system.sync(outcome.state)
         _, _, _, w, offset = probe.system.base.unpack(outcome.state[:-1])
@@ -553,14 +838,19 @@ def main(
     try:
         if case.maximum_physical_nodes > 20000:
             if initial is None:
-                preflight_probe = LimitedLoadProbe(case, transport_fraction=0.0)
-                initial_for_preflight = np.ones(2 * preflight_probe.n + 1) * 0.5
+                interior = (case.ny - 2) * (case.nx - 2)
+                initial_for_preflight = np.full(2 * interior + 1, 0.5, dtype=np.float64)
                 initial_for_preflight[-1] = 0.1
             else:
                 initial_for_preflight = initial
             try:
                 preflight = resource_preflight(
-                    case, initial_for_preflight, use_measured_peak=use_measured_peak
+                    case,
+                    initial_for_preflight,
+                    gmres_restart=gmres_restart,
+                    memory_limit_bytes=memory_limit_bytes,
+                    workspace_limit_bytes=workspace_limit_bytes,
+                    use_measured_peak=use_measured_peak,
                 )
             except (MemoryError, OSError, RuntimeError, ValueError) as exc:
                 report.update(
@@ -607,6 +897,8 @@ def main(
                 endpoint_prediction=endpoint_prediction,
                 progress_observer=observe_progress,
                 initial_transport_fraction=resume_fraction,
+                gmres_restart=gmres_restart,
+                workspace_limit_bytes=workspace_limit_bytes,
             )
         result = path.result
         report.update(
@@ -673,6 +965,25 @@ if __name__ == "__main__":
         help="Disable measured peak memory tracking during preflight (uses estimate only)"
     )
     parser.add_argument(
+        "--gmres-restart",
+        type=int,
+        choices=range(1, 61),
+        default=60,
+        help="GMRES restart length; Krylov tolerances and acceptance gates are unchanged",
+    )
+    parser.add_argument(
+        "--memory-limit-mib",
+        type=int,
+        default=_DEFAULT_MEMORY_LIMIT_BYTES // 1024**2,
+        help="Configured process-memory preflight ceiling in MiB",
+    )
+    parser.add_argument(
+        "--workspace-limit-mib",
+        type=int,
+        default=1024,
+        help="Elastic FFT workspace limit in MiB",
+    )
+    parser.add_argument(
         "--progress-interval",
         type=float,
         default=300.0,
@@ -687,5 +998,8 @@ if __name__ == "__main__":
             resume_from=args.resume_from,
             use_measured_peak=args.use_measured_peak,
             progress_interval=args.progress_interval,
+            gmres_restart=args.gmres_restart,
+            memory_limit_bytes=args.memory_limit_mib * 1024**2,
+            workspace_limit_bytes=args.workspace_limit_mib * 1024**2,
         )
     )

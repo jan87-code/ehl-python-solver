@@ -122,7 +122,7 @@ def test_failed_predicted_endpoint_rolls_back_to_last_accepted_root(cold_path, m
             return second
         raise LimitedNewtonError("injected endpoint/retry failure", state + 123, [], {})
 
-    def predict(previous, last):
+    def predict(previous, last, **_kwargs):
         return last.state + 0.123, {"method": "injected prediction"}
 
     monkeypatch.setattr(module, "solve_limited_load", solve)
@@ -171,6 +171,31 @@ def test_progress_observer_receives_stage_and_newton_status(cold_path, monkeypat
     assert events[1][3]["mass"]["relative_local_balance"] == 3e-9
     assert events[1][4] == "Newton correction"
     assert events[2][4] == "accepted_stage"
+
+
+def test_continuation_passes_explicit_gmres_and_workspace_settings(cold_path, monkeypatch):
+    _, stages = cold_path
+    result = stages[0]
+    captured = {}
+
+    def solve(case, state, **kwargs):
+        captured.update(kwargs)
+        return result
+
+    monkeypatch.setattr(module, "solve_limited_load", solve)
+    outcome, _ = module._attempt(
+        result.case,
+        result.state,
+        result.transport_fraction,
+        0,
+        None,
+        gmres_restart=30,
+        workspace_limit_bytes=1536 * 1024**2,
+    )
+
+    assert outcome is result
+    assert captured["gmres_restart"] == 30
+    assert captured["workspace_limit_bytes"] == 1536 * 1024**2
 
 
 def test_continuation_resumes_from_a_reaudited_accepted_fraction(cold_path, monkeypatch):

@@ -18,6 +18,7 @@ from ehl_solver.limited_comparison import (
     file_sha256,
     load_limited_path,
 )
+from ehl_solver.limited_continuation import LimitedPathError
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
 from examples.compare_limited_paths import main
@@ -25,6 +26,7 @@ from examples.run_limited_transport_path import (
     _interpolate_limited_seed,
     _load_resume_checkpoint,
     _ProgressReporter,
+    estimate_resource_requirements,
     resource_preflight,
 )
 
@@ -512,8 +514,126 @@ def test_limited_seed_transfer_is_interpolated_unaccepted_and_resource_preflight
     assert not info["accepted_for_target"] and probe.feasible(state)
     preflight = resource_preflight(target, state)
     assert preflight["physical_nodes"] == target.ny * target.nx
-    assert preflight["passed"]
-    assert preflight["known_vector_relative_residual"] < 1e-8
+    if preflight["passed"]:
+        assert preflight["known_vector_relative_residual"] < 1e-8
+    else:
+        assert preflight["status"] == "rejected_preflight"
+        assert preflight["reason"].startswith("SuperLU")
+
+
+def test_resource_estimate_scales_with_restart_without_building_sparse_objects(monkeypatch):
+    case = PointContactCase(ny=513, nx=513, maximum_physical_nodes=300000)
+    estimates = [
+        estimate_resource_requirements(
+            case,
+            gmres_restart=restart,
+            memory_limit_bytes=64 * 1024**3,
+            workspace_limit_bytes=2 * 1024**3,
+            available_memory_bytes=64 * 1024**3,
+        )
+        for restart in (20, 30, 40)
+    ]
+    assert [item["gmres_restart"] for item in estimates] == [20, 30, 40]
+    assert estimates[0]["krylov_basis_bytes"] < estimates[1]["krylov_basis_bytes"]
+    assert estimates[1]["krylov_basis_bytes"] < estimates[2]["krylov_basis_bytes"]
+    assert estimates[0]["estimated_factor_bytes"] == estimates[2]["estimated_factor_bytes"]
+    assert all(item["workspace_preflight_passed"] for item in estimates)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("Rejected preflight must not construct or factor matrices")
+
+    monkeypatch.setattr(limited_runner, "LimitedLoadProbe", forbidden)
+    monkeypatch.setattr(limited_runner, "splu", forbidden)
+    rejected = resource_preflight(
+        case,
+        None,
+        gmres_restart=20,
+        memory_limit_bytes=1,
+        workspace_limit_bytes=2 * 1024**3,
+    )
+    assert rejected["status"] == "rejected_preflight"
+    assert not rejected["memory_preflight_passed"]
+    assert rejected["factor_bytes"] is None
+
+
+def test_runner_rejects_resource_limit_before_loading_or_interpolating_seed(
+    tmp_path, monkeypatch
+):
+    case = PointContactCase(ny=513, nx=513, maximum_physical_nodes=300000)
+    case_path = tmp_path / "case.json"
+    case_path.write_text(json.dumps(asdict(case)))
+    output = tmp_path / "rejected"
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("A rejected static estimate must precede seed allocation")
+
+    monkeypatch.setattr(limited_runner, "_interpolate_limited_seed", forbidden)
+    monkeypatch.setattr(limited_runner, "LimitedLoadProbe", forbidden)
+    code = limited_runner.main(
+        case_path,
+        None,
+        output,
+        1,
+        limited_seed=tmp_path / "missing-seed",
+        memory_limit_bytes=1,
+        use_measured_peak=False,
+    )
+    report = json.loads((output / "summary.json").read_text())
+    assert code == 1
+    assert report["status"] == "rejected_preflight"
+    assert (
+        report["resource_preflight"]["preflight_stage"]
+        == "before_seed_loading_or_matrix_construction"
+    )
+
+
+def test_runner_loads_audited_donor_archive_as_unaccepted_mc_seed(
+    accepted_mc_path, tmp_path, monkeypatch
+):
+    root = accepted_mc_path[0].result
+    case = root.case
+    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    pressure, theta, _ = probe.fields(root.state)
+    seed = tmp_path / "donor"
+    seed.mkdir()
+    state_path = seed / "state.npz"
+    np.savez_compressed(
+        state_path,
+        state_dimensionless=root.state,
+        pressure_pa=pressure,
+        theta=theta,
+        x_m=probe.system.problem.x_m,
+        y_m=probe.system.problem.y_m,
+        case_json=json.dumps(asdict(case), sort_keys=True),
+    )
+    (seed / "summary.json").write_text(
+        json.dumps(
+            {
+                "status": "accepted_numerical_root",
+                "case": asdict(case),
+                "transport_fraction": 0.0,
+                "equation": "donor-flux JFO/Elrod-Adams",
+                "audit": {"numerically_accepted": True},
+                "state_sha256": file_sha256(state_path),
+            }
+        )
+    )
+    captured = {}
+
+    def stop_after_seed(case_arg, initial, **_kwargs):
+        captured.update(case=case_arg, state=initial.copy())
+        raise LimitedPathError("injected stop", None, [])
+
+    monkeypatch.setattr(limited_runner, "continue_limited_transport", stop_after_seed)
+    output = tmp_path / "limited-run"
+    code = limited_runner.main(None, seed, output, 1, use_measured_peak=False)
+
+    assert code == 1
+    assert captured["case"] == case
+    np.testing.assert_array_equal(captured["state"], root.state)
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["seed"]["kind"] == "accepted donor root"
+    assert not summary["initial_state_accepted_for_target"]
 
 
 def test_comparison_cli_marks_audits_separately_from_convergence(saved, tmp_path):

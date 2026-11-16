@@ -93,7 +93,18 @@ def _options(maximum_attempts, observer):
         )
 
 
-def _attempt(case, state, fraction, index, observer, *, audit_only=False, progress_observer=None):
+def _attempt(
+    case,
+    state,
+    fraction,
+    index,
+    observer,
+    *,
+    audit_only=False,
+    progress_observer=None,
+    gmres_restart=60,
+    workspace_limit_bytes=2**30,
+):
     if progress_observer is not None:
         progress_observer(index, fraction, None, None, "starting stage")
 
@@ -109,6 +120,8 @@ def _attempt(case, state, fraction, index, observer, *, audit_only=False, progre
             case,
             state,
             transport_fraction=fraction,
+            gmres_restart=gmres_restart,
+            workspace_limit_bytes=workspace_limit_bytes,
             local_balance_tolerance=tolerance,
             maximum_iterations=0 if audit_only else 30,
             state_observer=report_state if progress_observer is not None else None,
@@ -134,7 +147,7 @@ def _attempt(case, state, fraction, index, observer, *, audit_only=False, progre
     return outcome, data
 
 
-def _endpoint_prediction(previous, last):
+def _endpoint_prediction(previous, last, *, workspace_limit_bytes=2**30):
     """One secant prediction, guarded by the exact MC merit and SI audit.
 
     This is continuation initialization, not a bordered Newton correction.
@@ -145,7 +158,11 @@ def _endpoint_prediction(previous, last):
     if previous.case != last.case or not 0 <= old < new < 1:
         raise ValueError("Ordered accepted stages of the same case required")
     for result in (previous, last):
-        stage = LimitedLoadProbe(result.case, transport_fraction=result.transport_fraction)
+        stage = LimitedLoadProbe(
+            result.case,
+            transport_fraction=result.transport_fraction,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
         if not audit_limited_state(stage, result.state)["numerically_accepted"]:
             raise ValueError("Prediction source fails independent stage audit")
     factor = (1.0 - new) / (new - old)
@@ -166,7 +183,7 @@ def _endpoint_prediction(previous, last):
     if not np.all(np.isfinite(candidate)):
         data["reason"] = "Nonfinite secant prediction"
         return None, data
-    probe = LimitedLoadProbe(last.case)
+    probe = LimitedLoadProbe(last.case, workspace_limit_bytes=workspace_limit_bytes)
     if not probe.feasible(candidate):
         data["reason"] = "Prediction violates original pressure/content/film bounds"
         return None, data
@@ -205,6 +222,7 @@ def _endpoint_prediction(previous, last):
 def continue_limited_transport(
     case, initial_state=None, *, maximum_attempts=24, stage_observer=None,
     endpoint_prediction=True, progress_observer=None, initial_transport_fraction=0.0,
+    gmres_restart=60, workspace_limit_bytes=2**30,
 ):
     """Conservative donor->MC homotopy, plus bounded bisection/rollback.
 
@@ -214,8 +232,14 @@ def continue_limited_transport(
     diagnostics to prevent path-history memory scaling as attempts*all vectors.
     """
     _options(maximum_attempts, stage_observer)
-    if progress_observer is not None and not callable(progress_observer):
-        raise ValueError("progress_observer must be callable")
+    if (
+        (progress_observer is not None and not callable(progress_observer))
+        or type(gmres_restart) is not int
+        or not 1 <= gmres_restart <= 60
+        or type(workspace_limit_bytes) is not int
+        or workspace_limit_bytes < 1
+    ):
+        raise ValueError("Invalid progress observer or GMRES/workspace options")
     if type(endpoint_prediction) is not bool:
         raise ValueError("endpoint_prediction must be boolean")
     if (
@@ -246,7 +270,11 @@ def continue_limited_transport(
     failure = None
     state = None if initial_state is None else np.array(initial_state, dtype=np.float64, copy=True)
     if initial_transport_fraction > 0:
-        probe = LimitedLoadProbe(case, transport_fraction=initial_transport_fraction)
+        probe = LimitedLoadProbe(
+            case,
+            transport_fraction=initial_transport_fraction,
+            workspace_limit_bytes=workspace_limit_bytes,
+        )
         audit = audit_limited_state(probe, state, direct=True)
         if (
             not audit["numerically_accepted"]
@@ -274,6 +302,8 @@ def continue_limited_transport(
             stage_observer,
             audit_only=target == 1.0,
             progress_observer=progress_observer,
+            gmres_restart=gmres_restart,
+            workspace_limit_bytes=workspace_limit_bytes,
         )
         if pending_prediction is not None:
             data["initialization"] = pending_prediction
@@ -295,11 +325,15 @@ def continue_limited_transport(
             return LimitedPath(last, tuple(attempts), "transport")
         # A nearby blended root may already satisfy the exact MC gates;
         # explicitly run the fraction-one final audit instead of promoting it.
-        probe = LimitedLoadProbe(case)
+        probe = LimitedLoadProbe(case, workspace_limit_bytes=workspace_limit_bytes)
         if audit_limited_state(probe, state)["numerically_accepted"]:
             pending = [1.0]
         elif endpoint_prediction and previous is not None:
-            candidate, diagnostic = _endpoint_prediction(previous, last)
+            candidate, diagnostic = _endpoint_prediction(
+                previous,
+                last,
+                workspace_limit_bytes=workspace_limit_bytes,
+            )
             data["endpoint_prediction_probe"] = diagnostic
             if candidate is not None:
                 pending = [1.0]

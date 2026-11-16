@@ -33,13 +33,22 @@ evaluated: an independent exact-flux audit of the accepted donor seed fails
 the local mass gate (`1.682e-2` versus `1e-10`), so a nonlinear correction is
 necessary. The existing CPU limited solver's 1025 resource preflight cannot
 pass its 2 GiB ceiling even from the GMRES-basis lower bound at its configured
-restart 60; its preflight would otherwise perform the sparse factorization
-before applying that ceiling. We did not launch that factorization or a solver.
-No accepted 513x513 Ciulli MC root exists in the saved archives. A single
-513x513 MC root would measure same-grid scheme sensitivity, not MC-grid
-convergence, so defer it until a safe 1025 MC solve is resource-admissible.
-Do not infer that the higher-order flux improves convergence from this
-uncompleted endpoint.
+restart 60. The limited-path runner now validates restart, process-memory and
+FFT-workspace settings and checks a dimension-based memory estimate before
+loading/interpolating a seed or constructing a probe/matrix. A 513x513
+development trial was then made from the accepted donor root at restart 20,
+with a 32 GiB configured process limit and 1 GiB workspace cap. Its adjusted
+peak estimate was 18.90 GB against a 24.08 GiB effective ceiling, so the
+static resource gate passed. However, both the exact-MC field and bordered
+SuperLU factors failed on the initial active set. A direct one-correction
+trial also failed before GMRES and spent more than 16 CPU minutes in the
+solver's structural active-set recovery; it was stopped with no accepted
+state. The restart-30 and restart-40 trials were not run because restart length
+cannot remedy a factorization failure that occurs before GMRES. No accepted
+513x513 Ciulli MC root exists, and the exact MC endpoint remains **untested,
+not disproven**. Do not run 1025x1025 MC or 2049x2049 yet, and do not infer
+that the higher-order flux improves convergence. See the latest trial record
+in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but
@@ -3002,16 +3011,15 @@ The overlay and raw locus CSV/JSON are local under the retry-3
 `_outlet_locus/` directory; exported numerical fields and profiles are
 uncapped.
 
-**Next:** do not launch 2049x2049 or tune physical parameters. First make the
-exact MC Newton/preconditioner resource-admissible at 1025 without weakening
-the existing residual or final-audit gates, and make its resource preflight
-reject oversized configurations before constructing/factorizing the full
-bordered matrix. Then retry `transport_fraction=1` from the saved donor root.
-The current donor seed does not satisfy the exact MC mass equation, and the
-endpoint solve is still untested at this grid. Defer a 513x513 MC run: alone
-it cannot establish refinement convergence and there is no accepted 1025 MC
-root to pair with it. Nonuniform local refinement remains a later option
-because `PointContactCase` constructs uniform axes and the elastic convolution
-and coupled solver need matching nonuniform-grid verification. Equation
-closure is verified at the donor roots; MC-grid convergence and experimental
-validation remain open.
+**Next:** do not launch 1025x1025 MC or 2049x2049 and do not tune physical
+parameters. Diagnose why the exact-MC field and bordered active-set matrices
+both fail SuperLU at the accepted 513x513 donor seed, and why structural
+active-set recovery is so expensive. Preserve the exact equations, Krylov
+tolerance, true-residual checks and final audits. Once a preconditioner
+configuration reaches GMRES without exhausting bounded resources, repeat the
+restart-20/30/40 comparison and seek an accepted 513x513 MC root. Only then
+reassess a safely preflighted 1025x1025 solve. Nonuniform local refinement
+remains a later option because `PointContactCase` constructs uniform axes and
+the elastic convolution and coupled solver need matching nonuniform-grid
+verification. Equation closure is verified at the donor roots; MC-grid
+convergence and experimental validation remain open.

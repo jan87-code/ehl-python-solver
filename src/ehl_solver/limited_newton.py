@@ -303,12 +303,7 @@ def solve_limited_load(
                         gmres_restart=gmres_restart,
                         schur_tolerance=1e-10,
                     )
-                    if correction_solver is None:
-                        report_heartbeat("linear_solve", iteration, recovery=recovery)
-                        linear = solve_cavitating_correction(
-                            model, state, **correction_options
-                        )
-                    else:
+                    if heartbeat_observer is not None:
                         def correction_progress(_iteration=iteration, **progress):
                             stage = progress.pop("stage", "gmres")
                             emit = progress.pop("emit", False)
@@ -316,14 +311,13 @@ def solve_limited_load(
                                 stage, _iteration, emit=emit, **progress
                             )
 
-                        if heartbeat_observer is not None:
-                            correction_options["progress_callback"] = (
-                                correction_progress
-                            )
-                        report_heartbeat("linear_solve", iteration, recovery=recovery)
-                        linear = correction_solver(
-                            model, state, **correction_options
-                        )
+                        correction_options["progress_callback"] = correction_progress
+                    report_heartbeat("linear_solve", iteration, recovery=recovery)
+                    solver = (
+                        solve_cavitating_correction
+                        if correction_solver is None else correction_solver
+                    )
+                    linear = solver(model, state, **correction_options)
                 except CavitatingLinearError as exc:
                     entry.update(
                         status="linear_rejected", reason=str(exc), diagnostics=exc.diagnostics
@@ -334,10 +328,15 @@ def solve_limited_load(
                         recovery=recovery,
                         warning=str(exc),
                     )
+                    report_heartbeat("structural_matching", iteration, recovery=recovery, emit=True)
                     pivots = (
                         _structural_content_pivots(model, full)
                         if active_recovery
                         else np.array([], dtype=int)
+                    )
+                    report_heartbeat(
+                        "structural_matching_complete", iteration, recovery=recovery,
+                        pivot_count=len(pivots), emit=True,
                     )
                     entry["structural_content_pivots"] = pivots.tolist()
                     if len(pivots):
@@ -347,6 +346,7 @@ def solve_limited_load(
                         mode = "material" if mode == "local" else "local"
                     continue
                 direction = linear.direction
+                report_heartbeat("correction_verification", iteration, recovery=recovery)
                 model_residual = model.residual(state)
                 measured = float(
                     np.linalg.norm(model.jacobian_vector(state, direction) + model_residual)

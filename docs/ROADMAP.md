@@ -50,6 +50,13 @@ not disproven**. Do not run 1025x1025 MC or 2049x2049 yet, and do not infer
 that the higher-order flux improves convergence. See the latest trial record
 in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
+The subsequent bounded 513x513 transport continuation remains in progress.
+As of 2026-11-17 11:24 CET it accepted stages through tau `0.9921875`; its
+tau `0.99609375` stage was not yet accepted. These blended roots are not exact
+MC results. For future runs the CPU continuation records detailed scalar
+heartbeats through linear solves and recovery; the running process retains
+its original code and cannot acquire these diagnostics without a restart.
+
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but
 fixed-neighborhood pressure averages/integrals and the peak on a nested

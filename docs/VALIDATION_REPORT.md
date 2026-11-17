@@ -6675,3 +6675,33 @@ collection error. `ruff check docs examples src tests` and `git diff --check`
 pass. Repository-wide `ruff check .` reports one pre-existing E501 in the
 untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; that
 unrelated user file was not changed.
+
+## 39. In-progress 513x513 continuation and future CPU heartbeats (2026-11-17)
+
+At the accepted donor seed, frozen field matrices for tau 0, 0.5, 0.9 and
+0.99 had no structurally empty columns; at tau 1, 1,053 deficit columns were
+empty. All 1,053 belonged to cavitated active-set cells, whose complementary
+rows constrain pressure instead of deficit. Twelve sampled unit deficit
+directions agreed with the full frozen JVP to at most `5.04e-17` in norm.
+The bordered force row has no deficit entries, so it cannot repair these
+empty columns. This identifies a singular selected linearization at that
+seed, not proof that the exact nonlinear endpoint does not exist.
+
+The resumed bounded continuation had, at 11:24 CET, accepted fractions 0.75,
+0.875, 0.9375, 0.96875, 0.984375 and 0.9921875. Its last accepted
+relative local balance was `9.47e-13`. The ongoing tau `0.99609375` stage
+had reduced its local balance from `8.52e-5` to `2.98e-12`, but had not
+passed the tighter intermediate-stage `1e-12` gate. This is a timestamped
+snapshot, not a final result. Exact tau 1 remains unaccepted; no MC mesh
+comparison or physical-convergence claim follows.
+
+For subsequent runs, the path runner writes scalar `heartbeat.jsonl` records
+for Newton, sparse assembly, SuperLU, CPU JVP, GMRES estimates and true
+residuals, structural matching, line search, audits and checkpoints. The
+running process continues unchanged with its original coarse progress
+reporting. See [LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md) for limitations.
+The focused continuation/heartbeat suite passed 83 tests. The
+Windows-compatible CPU suite passed 793 tests with 81 skips; the unfiltered
+suite cannot collect the POSIX `resource`-dependent joint-refinement test.
+`ruff check docs examples src tests` passes; repository-wide Ruff still reports
+the pre-existing E501 in the unrelated untracked `.kilo` file noted above.

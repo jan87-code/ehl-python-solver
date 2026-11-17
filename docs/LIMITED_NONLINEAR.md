@@ -110,6 +110,18 @@ Each stage saves `state.npz` with SI coordinates/pressure/film/displacement,
 content and the explicit dimensionless state, plus a JSON history/audit.
 Top-level `summary.json` distinguishes `rejected_path` from
 `accepted_numerical_root`; read the exact transport fraction and audit.
+Future runs also write flushed scalar records to `heartbeat.jsonl`, including
+the transport attempt, Newton iteration, correction/stage elapsed times,
+matrix assembly, SuperLU factorization and application, CPU JVP, GMRES
+iteration/residual/restart counts, structural matching, line search and audit
+stages. The GMRES callback reports the preconditioned residual estimate; the
+independently recomputed true relative residual is reported after each solve.
+The periodic writer cannot guarantee an update while native code holds the
+Python GIL. CPU-only runs do not report GPU or transfer timings. These
+diagnostics do not change the equations, stopping rules or acceptance gates.
+The large-grid factor preflight checks the first blended target from the
+initial or resumed fraction, not the exact endpoint; a passed preflight
+does not guarantee later stages or endpoint factorization.
 Source snapshots and checksums preserve both successful and rejected attempts.
 These research drivers do not implement the planned GUI or application API.
 

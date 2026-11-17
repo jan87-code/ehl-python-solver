@@ -21,6 +21,7 @@ from scipy.fft import next_fast_len
 from scipy.interpolate import RegularGridInterpolator
 from scipy.sparse.linalg import splu
 
+from ehl_solver.heartbeat import SolverHeartbeat
 from ehl_solver.limited_comparison import file_sha256, load_limited_path
 from ehl_solver.limited_continuation import (
     MAXIMUM_STAGE_ATTEMPTS,
@@ -411,12 +412,19 @@ def resource_preflight(
     case,
     state,
     *,
+    transport_fraction=1.0,
     gmres_restart=60,
     memory_limit_bytes=_DEFAULT_MEMORY_LIMIT_BYTES,
     workspace_limit_bytes=2**30,
     use_measured_peak=True,
 ):
     """Check a conservative estimate before constructing/factorizing sparse matrices."""
+    if (
+        isinstance(transport_fraction, bool)
+        or not np.isfinite(transport_fraction)
+        or not 0 <= transport_fraction <= 1
+    ):
+        raise ValueError("transport_fraction must be finite in [0,1]")
     estimate = estimate_resource_requirements(
         case,
         gmres_restart=gmres_restart,
@@ -433,6 +441,7 @@ def resource_preflight(
         known_vector_relative_residual=None,
         field_preflight_passed=None,
         factor_preflight_passed=None,
+        factor_preflight_transport_fraction=float(transport_fraction),
         use_measured_peak=use_measured_peak,
     )
     if not estimate["memory_preflight_passed"]:
@@ -459,7 +468,7 @@ def resource_preflight(
     before = _process_memory_snapshot() if use_measured_peak else None
     probe = LimitedLoadProbe(
         case,
-        transport_fraction=1.0,
+        transport_fraction=transport_fraction,
         workspace_limit_bytes=workspace_limit_bytes,
     )
     guide = np.zeros(probe.size, dtype=np.float64)
@@ -469,7 +478,7 @@ def resource_preflight(
         guide,
         preconditioner="local",
         active_full=state[: probe.n] >= state[probe.n : 2 * probe.n],
-        transport_fraction=1.0,
+        transport_fraction=transport_fraction,
         workspace_limit_bytes=workspace_limit_bytes,
     )
     matrix = model.frozen_matrix(state)
@@ -779,6 +788,10 @@ def main(
         _write_json_atomic(output / "summary.json", report)
 
     def stage(index, stage_case, fraction, outcome):
+        heartbeat.update(
+            stage="stage_checkpoint", attempt=index + 1,
+            transport_fraction=fraction, emit=True,
+        )
         folder = output / f"attempt_{index:03d}"
         folder.mkdir(exist_ok=False)
         probe = LimitedLoadProbe(
@@ -830,8 +843,10 @@ def main(
                 state_sha256=digest(checkpoint_path),
             )
         write()
+        heartbeat.update(stage="stage_checkpoint_complete", emit=True)
 
     write()
+    heartbeat = SolverHeartbeat(output / "heartbeat.jsonl", interval_seconds=progress_interval)
     active_progress = {}
     previous_sigterm = signal.signal(signal.SIGTERM, _termination_handler)
     result = None
@@ -847,6 +862,7 @@ def main(
                 preflight = resource_preflight(
                     case,
                     initial_for_preflight,
+                    transport_fraction=0.5 * (1.0 + resume_fraction),
                     gmres_restart=gmres_restart,
                     memory_limit_bytes=memory_limit_bytes,
                     workspace_limit_bytes=workspace_limit_bytes,
@@ -873,6 +889,13 @@ def main(
 
         def observe_progress(attempt, fraction, iteration, audit, status):
             progress.update(attempt, fraction, iteration, audit, status)
+            if status != "Newton correction":
+                heartbeat.update(
+                    stage=status.replace(" ", "_"),
+                    attempt=None if attempt is None else attempt + 1,
+                    transport_fraction=fraction,
+                    emit=True,
+                )
             active_progress.update(
                 attempt=attempt,
                 transport_fraction=fraction,
@@ -887,6 +910,37 @@ def main(
                 force_n=None if audit is None else audit.get("force_n"),
             )
 
+        def observe_heartbeat(attempt, fraction, **event):
+            stage_name = event.pop("stage")
+            iteration = event.pop("iteration", None)
+            emit = event.pop("emit", False)
+            if stage_name == "correction_start":
+                heartbeat.begin_correction(
+                    iteration,
+                    maximum_newton_iterations=event.pop("maximum_newton_iterations"),
+                    maximum_gmres_iterations=event.pop("maximum_gmres_iterations"),
+                )
+            if stage_name == "linear_solve":
+                event.update(
+                    gmres_iterations=0,
+                    gmres_restart_count=0,
+                    gmres_stagnation_restarts=0,
+                    gmres_residual_estimate=None,
+                    gmres_true_relative_residual=None,
+                    cumulative_jvp_seconds=0.0,
+                    cumulative_preconditioner_seconds=0.0,
+                    cumulative_superlu_seconds=0.0,
+                )
+            heartbeat.update(
+                stage=stage_name,
+                iteration=iteration,
+                emit=emit,
+                attempt=attempt + 1,
+                transport_fraction=fraction,
+                gpu_enabled=False,
+                **event,
+            )
+
         with _ProgressReporter(progress_interval) as progress:
             observe_progress(None, None, None, None, "continuation starting")
             path = continue_limited_transport(
@@ -896,6 +950,7 @@ def main(
                 stage_observer=stage,
                 endpoint_prediction=endpoint_prediction,
                 progress_observer=observe_progress,
+                heartbeat_observer=observe_heartbeat,
                 initial_transport_fraction=resume_fraction,
                 gmres_restart=gmres_restart,
                 workspace_limit_bytes=workspace_limit_bytes,
@@ -928,6 +983,7 @@ def main(
         )
     finally:
         signal.signal(signal.SIGTERM, previous_sigterm)
+        heartbeat.close(status="failed" if report["status"] == "running" else report["status"])
     if result is not None:
         np.savez_compressed(output / "last_accepted_state.npz", state_dimensionless=result.state)
         report["last_accepted_state_sha256"] = digest(output / "last_accepted_state.npz")

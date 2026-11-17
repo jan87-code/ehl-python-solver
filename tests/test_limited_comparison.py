@@ -587,6 +587,65 @@ def test_runner_rejects_resource_limit_before_loading_or_interpolating_seed(
     )
 
 
+def test_transport_path_preflights_first_blended_stage(tmp_path, monkeypatch):
+    case = PointContactCase(ny=513, nx=513, maximum_physical_nodes=300000)
+    case_path = tmp_path / "case.json"
+    case_path.write_text(json.dumps(asdict(case)))
+    output = tmp_path / "continuation"
+    seen = {}
+
+    def preflight(_case, _state, **kwargs):
+        seen.update(kwargs)
+        return {"passed": True, "factor_preflight_transport_fraction": kwargs["transport_fraction"]}
+
+    def stop_after_preflight(*_args, **_kwargs):
+        raise RuntimeError("continuation reached after preflight")
+
+    monkeypatch.setattr(limited_runner, "resource_preflight", preflight)
+    monkeypatch.setattr(limited_runner, "continue_limited_transport", stop_after_preflight)
+    with pytest.raises(RuntimeError, match="continuation reached after preflight"):
+        limited_runner.main(
+            case_path,
+            None,
+            output,
+            1,
+            memory_limit_bytes=64 * 1024**3,
+            workspace_limit_bytes=2 * 1024**3,
+            use_measured_peak=False,
+        )
+    assert seen["transport_fraction"] == 0.5
+
+
+def test_transport_runner_archives_detailed_cpu_heartbeat(accepted_mc_path, tmp_path, monkeypatch):
+    root = accepted_mc_path[0].result
+    case_path = tmp_path / "case.json"
+    case_path.write_text(json.dumps(asdict(root.case)))
+    output = tmp_path / "heartbeat-run"
+
+    def continuation(_case, _state, **kwargs):
+        observe = kwargs["heartbeat_observer"]
+        observe(
+            2, 0.75, stage="correction_start", iteration=4,
+            maximum_newton_iterations=30, maximum_gmres_iterations=600,
+        )
+        observe(
+            2, 0.75, stage="structural_matching", iteration=4, emit=True,
+        )
+        return type("PathResult", (), {"result": root, "attempts": ()})()
+
+    monkeypatch.setattr(limited_runner, "continue_limited_transport", continuation)
+    assert limited_runner.main(case_path, None, output, 1) == 0
+    records = [
+        json.loads(line) for line in (output / "heartbeat.jsonl").read_text().splitlines()
+    ]
+    matching = next(record for record in records if record["stage"] == "structural_matching")
+    assert matching["attempt"] == 3
+    assert matching["transport_fraction"] == 0.75
+    assert matching["iteration"] == 4
+    assert matching["gpu_enabled"] is False
+    assert records[-1]["heartbeat_status"] == "accepted_numerical_root"
+
+
 def test_runner_loads_audited_donor_archive_as_unaccepted_mc_seed(
     accepted_mc_path, tmp_path, monkeypatch
 ):

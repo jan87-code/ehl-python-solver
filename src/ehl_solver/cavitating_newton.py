@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -232,6 +233,7 @@ def solve_cavitating_correction(
     maximum_krylov_cycles=20,
     gmres_restart=80,
     schur_tolerance=1e-10,
+    progress_callback=None,
 ):
     """Verified pressure/content block solves and optional h0 Schur correction.
 
@@ -251,20 +253,87 @@ def solve_cavitating_correction(
         for n in (maximum_krylov_cycles, gmres_restart)
     ):
         raise ValueError("Krylov limits must be positive integers")
+    if progress_callback is not None and not callable(progress_callback):
+        raise ValueError("progress_callback must be callable")
+    jvp_seconds = 0.0
+    preconditioner_seconds = 0.0
+    iterations = 0
+
+    def report(stage, **metrics):
+        if progress_callback is not None:
+            progress_callback(
+                stage=stage,
+                cumulative_jvp_seconds=jvp_seconds,
+                cumulative_preconditioner_seconds=preconditioner_seconds,
+                cumulative_superlu_seconds=preconditioner_seconds,
+                **metrics,
+            )
+
+    def action(v):
+        nonlocal jvp_seconds
+        if progress_callback is None:
+            return system.jacobian_vector(state, v)
+        report("jvp")
+        started = time.perf_counter()
+        result = system.jacobian_vector(state, v)
+        jvp_seconds += time.perf_counter() - started
+        report("jvp_complete", emit=False)
+        return result
+
+    report("linear_residual")
     residual = system.residual(state)
     operator = LinearOperator(
         (system.size, system.size),
-        matvec=lambda v: system.jacobian_vector(state, v),
+        matvec=action,
         dtype=np.float64,
     )
+    report("matrix_assembly")
     matrix = system.frozen_matrix(state)
     true_residuals, counts, traces = [], [], []
     field_setup_failures = []
     field_factorization = getattr(system, "field_factorization", "full")
 
     def linear_solve(op, rhs, lu):
+        nonlocal preconditioner_seconds, iterations
         count = []
-        preconditioner = LinearOperator(op.shape, matvec=lu.solve, dtype=np.float64)
+        restart_residuals = []
+
+        def precondition(v):
+            nonlocal preconditioner_seconds
+            if progress_callback is None:
+                return lu.solve(v)
+            report("superlu_solve")
+            started = time.perf_counter()
+            result = lu.solve(v)
+            preconditioner_seconds += time.perf_counter() - started
+            report("superlu_solve_complete", emit=False)
+            return result
+
+        def on_iteration(value):
+            nonlocal iterations
+            count.append(float(value))
+            iterations += 1
+            if progress_callback is not None:
+                restart_count = len(count) // gmres_restart
+                if len(count) % gmres_restart == 0:
+                    restart_residuals.append(float(value))
+                stagnant = 0
+                for previous, current in zip(
+                    restart_residuals, restart_residuals[1:], strict=False
+                ):
+                    stagnant = stagnant + 1 if current >= 0.99 * previous else 0
+                report(
+                    "gmres_restart" if len(count) % gmres_restart == 0 else "gmres",
+                    gmres_iterations=iterations,
+                    gmres_restart_count=restart_count,
+                    gmres_stagnation_restarts=stagnant,
+                    gmres_residual_estimate=(
+                        float(value) if math.isfinite(value) else None
+                    ),
+                )
+
+        preconditioner = LinearOperator(op.shape, matvec=precondition, dtype=np.float64)
+        report("gmres_start")
         answer, info = gmres(
             op,
             rhs,
@@ -273,7 +342,7 @@ def solve_cavitating_correction(
             atol=0,
             maxiter=maximum_krylov_cycles,
             restart=gmres_restart,
-            callback=lambda value: count.append(float(value)),
+            callback=on_iteration,
             callback_type="pr_norm",
         )
         norm = float(np.linalg.norm(rhs))
@@ -282,6 +351,11 @@ def solve_cavitating_correction(
         counts.append(len(count))
         traces.append(tuple(count))
         true_residuals.append(measured)
+        report(
+            "gmres_true_residual",
+            gmres_true_relative_residual=measured if math.isfinite(measured) else None,
+            emit=True,
+        )
         return answer, info == 0 and math.isfinite(measured) and measured <= 5 * krylov_rtol
 
     def error(message):
@@ -299,12 +373,17 @@ def solve_cavitating_correction(
 
     if not np.any(residual):
         return CavitatingCorrection(np.zeros_like(residual), 0.0, 0, False, None, ())
+    report("superlu_factorization", factorization="field", emit=True)
+    factor_started = time.perf_counter()
     try:
         lu = (system.reduced_field_factor(state, matrix) if field_factorization == "reduced"
               else splu(matrix[: 2 * system.n, : 2 * system.n]))
     except RuntimeError as exc:
         field_setup_failures.append({"factorization": field_factorization, "reason": str(exc)})
         lu = None
+    finally:
+        preconditioner_seconds += time.perf_counter() - factor_started
+    report("superlu_factorization_complete", factorization="field", emit=True)
     if system.target_load_n is None:
         if lu is None:
             error("frozen-film active-set preconditioner failed")
@@ -356,10 +435,15 @@ def solve_cavitating_correction(
                             tuple(traces),
                             tuple(field_setup_failures),
                         )
+    report("superlu_factorization", factorization="bordered", emit=True)
+    factor_started = time.perf_counter()
     try:
         full_lu = splu(matrix)
     except RuntimeError:
         error("full bordered active-set preconditioner failed")
+    finally:
+        preconditioner_seconds += time.perf_counter() - factor_started
+    report("superlu_factorization_complete", factorization="bordered", emit=True)
     correction, good = linear_solve(operator, -residual, full_lu)
     if not good:
         error("true bordered Krylov residual check failed")

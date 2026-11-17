@@ -173,6 +173,24 @@ def test_progress_observer_receives_stage_and_newton_status(cold_path, monkeypat
     assert events[2][4] == "accepted_stage"
 
 
+def test_continuation_forwards_detailed_heartbeat_with_stage_context(cold_path, monkeypatch):
+    root = cold_path[1][0]
+    events = []
+
+    def solve(_case, _state, **kwargs):
+        kwargs["heartbeat_observer"](stage="structural_matching", iteration=4, emit=True)
+        return root
+
+    monkeypatch.setattr(module, "solve_limited_load", solve)
+    module._attempt(
+        root.case, root.state, 0.5, 3, None,
+        heartbeat_observer=lambda attempt, fraction, **event: events.append(
+            (attempt, fraction, event)
+        ),
+    )
+    assert events == [(3, 0.5, {"stage": "structural_matching", "iteration": 4, "emit": True})]
+
+
 def test_continuation_passes_explicit_gmres_and_workspace_settings(cold_path, monkeypatch):
     _, stages = cold_path
     result = stages[0]

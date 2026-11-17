@@ -97,6 +97,25 @@ def test_complete_correction_true_residual_and_schur_reconstruction():
     assert model.merit_slope(z, residual, correction.direction) == expected_slope
 
 
+def test_cpu_correction_heartbeat_reports_steps_without_changing_correction():
+    case, z, guide = state_and_guide(load=1.0, content=1.0, ny=5, nx=7)
+    model = LimitedLoadLinearization(case, z, guide, preconditioner="material")
+    reference = solve_cavitating_correction(model, z, maximum_krylov_cycles=10, gmres_restart=60)
+    events = []
+    actual = solve_cavitating_correction(
+        model, z, maximum_krylov_cycles=10, gmres_restart=60,
+        progress_callback=lambda **event: events.append(event),
+    )
+    np.testing.assert_array_equal(actual.direction, reference.direction)
+    assert actual.true_linear_residual == reference.true_linear_residual
+    stages = {event["stage"] for event in events}
+    assert {"matrix_assembly", "superlu_factorization", "superlu_solve", "jvp", "gmres"} <= stages
+    assert any(event.get("gmres_iterations", 0) > 0 for event in events)
+    assert any(event.get("gmres_true_relative_residual") is not None for event in events)
+    assert events[-1]["cumulative_jvp_seconds"] >= 0
+    assert events[-1]["cumulative_preconditioner_seconds"] > 0
+
+
 def test_forced_full_bordered_recovery_retains_true_linear_checks():
     case, z, g = state_and_guide(load=1.0, content=1.0, ny=5, nx=7)
     model = LimitedLoadLinearization(case, z, g, preconditioner="local")

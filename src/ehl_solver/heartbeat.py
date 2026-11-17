@@ -147,7 +147,7 @@ class SolverHeartbeat:
             warnings.append("preconditioner_setup_over_60_seconds")
         if stage == "audit" and stage_elapsed >= 60:
             warnings.append("audit_over_60_seconds")
-        if stage in {
+        if self._state.get("gpu_enabled", True) and stage in {
             "preconditioner_setup",
             "preconditioner_apply",
             "superlu_factorization",

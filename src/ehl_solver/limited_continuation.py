@@ -103,6 +103,7 @@ def _attempt(
     audit_only=False,
     progress_observer=None,
     heartbeat_observer=None,
+    intermediate_stagnation_check=False,
     gmres_restart=60,
     workspace_limit_bytes=2**30,
 ):
@@ -124,6 +125,7 @@ def _attempt(
             gmres_restart=gmres_restart,
             workspace_limit_bytes=workspace_limit_bytes,
             local_balance_tolerance=tolerance,
+            intermediate_stagnation_check=intermediate_stagnation_check and 0 < fraction < 1,
             maximum_iterations=0 if audit_only else 30,
             state_observer=report_state if progress_observer is not None else None,
             heartbeat_observer=(
@@ -228,6 +230,7 @@ def continue_limited_transport(
     case, initial_state=None, *, maximum_attempts=24, stage_observer=None,
     endpoint_prediction=True, progress_observer=None, initial_transport_fraction=0.0,
     gmres_restart=60, workspace_limit_bytes=2**30, heartbeat_observer=None,
+    intermediate_stagnation_check=False,
 ):
     """Conservative donor->MC homotopy, plus bounded bisection/rollback.
 
@@ -240,6 +243,7 @@ def continue_limited_transport(
     if (
         (progress_observer is not None and not callable(progress_observer))
         or (heartbeat_observer is not None and not callable(heartbeat_observer))
+        or type(intermediate_stagnation_check) is not bool
         or type(gmres_restart) is not int
         or not 1 <= gmres_restart <= 60
         or type(workspace_limit_bytes) is not int
@@ -309,6 +313,7 @@ def continue_limited_transport(
             audit_only=target == 1.0,
             progress_observer=progress_observer,
             heartbeat_observer=heartbeat_observer,
+            intermediate_stagnation_check=intermediate_stagnation_check,
             gmres_restart=gmres_restart,
             workspace_limit_bytes=workspace_limit_bytes,
         )

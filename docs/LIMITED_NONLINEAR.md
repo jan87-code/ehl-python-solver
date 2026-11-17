@@ -74,6 +74,17 @@ stage, the exact tau=1 equation is independently audited. Only if that passes
 is an audit-only tau=1 stage scheduled, including the final direct elasticity
 check. A nearby blended root is never relabeled as an MC root.
 
+The optional `--intermediate-stagnation-check` rejects an intermediate stage
+when its relative local mass balance remains above its requested gate and has
+decreased by less than 10% over five completed Newton corrections. It retains
+the failed attempt and follows the existing rollback and tau-step bisection,
+using the last accepted stage as seed. An increase also triggers the check.
+The option is off by default and never applies to tau 0 or the exact tau 1
+audit. It is an early-retry heuristic, not evidence that a root is absent;
+temporary plateaus can cause a retry that the full correction budget might
+have avoided. Final equations, tolerances and independent acceptance remain
+unchanged. The chosen policy is recorded in the run summary.
+
 A separate SI force path preserves the physical grid, pressure, content and
 signed offset while changing load scales. Failure halves the load increment
 and rolls back to the last accepted root. Its regression exercises a small

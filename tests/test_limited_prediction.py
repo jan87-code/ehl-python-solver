@@ -216,6 +216,24 @@ def test_continuation_passes_explicit_gmres_and_workspace_settings(cold_path, mo
     assert captured["workspace_limit_bytes"] == 1536 * 1024**2
 
 
+@pytest.mark.parametrize(("fraction", "expected"), [(0.0, False), (0.5, True), (1.0, False)])
+def test_stagnation_check_applies_only_to_intermediate_stages(
+    cold_path, monkeypatch, fraction, expected
+):
+    root = cold_path[1][0]
+    captured = {}
+
+    def solve(_case, _state, **kwargs):
+        captured.update(kwargs)
+        return root
+
+    monkeypatch.setattr(module, "solve_limited_load", solve)
+    module._attempt(
+        root.case, root.state, fraction, 0, None, intermediate_stagnation_check=True,
+    )
+    assert captured["intermediate_stagnation_check"] is expected
+
+
 def test_continuation_resumes_from_a_reaudited_accepted_fraction(cold_path, monkeypatch):
     _, stages = cold_path
     checkpoint = stages[1]

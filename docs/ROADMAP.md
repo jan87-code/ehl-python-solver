@@ -56,6 +56,10 @@ tau `0.99609375` stage was not yet accepted. These blended roots are not exact
 MC results. For future runs the CPU continuation records detailed scalar
 heartbeats through linear solves and recovery; the running process retains
 its original code and cannot acquire these diagnostics without a restart.
+An optional future-run intermediate-stagnation check can reject an above-gate
+stage with less than 10% local mass reduction over five corrections and retry
+from the last accepted state at half the tau step. This heuristic does not
+change the endpoint audit and can reject a temporarily slow but viable stage.
 
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but

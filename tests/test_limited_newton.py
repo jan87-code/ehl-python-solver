@@ -287,6 +287,60 @@ def test_partial_transport_root_is_not_promoted_to_full_limited(donor_root):
 
 
 @pytest.mark.parametrize(
+    ("enabled", "balances", "reason"),
+    [
+        (True, [1e-8] * 6, "local mass balance stagnated"),
+        (False, [1e-8] * 6, "correction budget exhausted"),
+        (True, [1e-8] * 5 + [8.9e-9], "correction budget exhausted"),
+        (True, [1e-13] * 6, "correction budget exhausted"),
+    ],
+)
+def test_intermediate_stagnation_rejects_only_above_gate_slow_progress(
+    donor_root, monkeypatch, enabled, balances, reason
+):
+    import ehl_solver.limited_newton as module
+
+    original_audit = module.audit_limited_state
+    original_search = module._line_search
+    observed = []
+    events = []
+
+    def audit(probe, state, **kwargs):
+        result = original_audit(probe, state, **kwargs)
+        result["numerically_accepted"] = False
+        result["mass"]["relative_local_balance"] = balances[len(observed)]
+        observed.append(result["mass"]["relative_local_balance"])
+        return result
+
+    def short_step(probe, state, direction, merit, slope):
+        trial, trials, bound = original_search(probe, state, direction, merit, slope)
+        assert trial is not None
+        trial = state + 0.01 * (trial - state)
+        residual = probe.residual(trial)
+        trials[-1]["alpha"] *= 0.01
+        trials[-1]["merit"] = float(residual @ residual / (2 * probe.size))
+        return trial, trials, bound
+
+    monkeypatch.setattr(module, "audit_limited_state", audit)
+    monkeypatch.setattr(module, "_line_search", short_step)
+    initial = donor_root.state.copy()
+    initial[0] += 1e-4
+    with pytest.raises(LimitedNewtonError, match=reason) as exc:
+        solve_limited_load(
+            donor_root.case, initial, transport_fraction=0.5,
+            local_balance_tolerance=1e-12, maximum_iterations=5,
+            intermediate_stagnation_check=enabled,
+            heartbeat_observer=lambda **event: events.append(event),
+        )
+    assert len(observed) == 6
+    if "stagnated" in reason:
+        assert exc.value.audit["intermediate_stagnation"]["detected"]
+        assert any(event["stage"] == "intermediate_stagnation" for event in events)
+    else:
+        assert not any(event["stage"] == "intermediate_stagnation" for event in events)
+
+
+@pytest.mark.parametrize(
     "options",
     [
         {"maximum_iterations": 31},
@@ -302,6 +356,8 @@ def test_partial_transport_root_is_not_promoted_to_full_limited(donor_root):
         {"local_balance_tolerance": 1e-9},
         {"local_balance_tolerance": 0.0},
         {"local_balance_tolerance": True},
+        {"intermediate_stagnation_check": 1},
+        {"intermediate_stagnation_check": True, "transport_fraction": 1.0},
     ],
 )
 def test_solver_budgets_and_fraction_are_enforced(options):
@@ -416,6 +472,37 @@ def test_transport_retry_retains_last_stage_and_never_uses_rejected_partial(
     assert seen[1][0] == 0.5 and seen[2][0] == 0.25
     np.testing.assert_array_equal(seen[1][1], seen[2][1])
     assert exc.value.attempts[-1]["status"] == "rejected_stage"
+
+
+def test_stagnant_intermediate_retries_at_midpoint_from_last_accepted_root(
+    donor_root, monkeypatch
+):
+    import ehl_solver.limited_continuation as module
+
+    original = module.solve_limited_load
+    seen = []
+
+    def reject_stagnant(case, state, **kwargs):
+        seen.append(
+            (kwargs["transport_fraction"], state.copy(), kwargs["intermediate_stagnation_check"])
+        )
+        if kwargs["transport_fraction"] > 0:
+            raise LimitedNewtonError(
+                "Intermediate local mass balance stagnated", state + 123, [], {}
+            )
+        return original(case, state, **kwargs)
+
+    monkeypatch.setattr(module, "solve_limited_load", reject_stagnant)
+    with pytest.raises(LimitedPathError) as exc:
+        continue_limited_transport(
+            donor_root.case, donor_root.state, maximum_attempts=3,
+            intermediate_stagnation_check=True,
+        )
+    assert [item[0] for item in seen] == [0, 0.5, 0.25]
+    assert [item[2] for item in seen] == [False, True, True]
+    np.testing.assert_array_equal(seen[1][1], seen[2][1])
+    assert exc.value.attempts[1]["status"] == "rejected_stage"
+    assert "stagnated" in exc.value.attempts[1]["reason"]
 
 
 def test_continuation_option_and_seed_audit_failures(donor_root):

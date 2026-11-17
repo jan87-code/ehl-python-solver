@@ -6705,3 +6705,15 @@ Windows-compatible CPU suite passed 793 tests with 81 skips; the unfiltered
 suite cannot collect the POSIX `resource`-dependent joint-refinement test.
 `ruff check docs examples src tests` passes; repository-wide Ruff still reports
 the pre-existing E501 in the unrelated untracked `.kilo` file noted above.
+
+An opt-in `--intermediate-stagnation-check` is available for future runs.
+It rejects only an above-gate blended stage whose local mass balance improves
+by less than 10% over five corrections; the existing continuation then rolls
+back to the last accepted root and bisects the step. The current running
+process does not use this option. Regression tests exercise slow versus
+adequate improvement, already-satisfied mass gates, disabled mode, endpoint
+scope and retry seed preservation. This is a bounded early-retry heuristic,
+not proof that any rejected stage lacks a solution. The focused
+continuation/heartbeat suite passed 93 tests; the Windows-compatible CPU
+suite passed 803 tests with 81 skips. The existing unfiltered Windows
+collection and untracked-file Ruff limitations remain unchanged.

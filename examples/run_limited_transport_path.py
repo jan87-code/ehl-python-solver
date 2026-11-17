@@ -616,6 +616,7 @@ def main(
     gmres_restart=60,
     memory_limit_bytes=_DEFAULT_MEMORY_LIMIT_BYTES,
     workspace_limit_bytes=2**30,
+    intermediate_stagnation_check=False,
 ):
     if (
         isinstance(progress_interval, bool)
@@ -627,6 +628,7 @@ def main(
         or memory_limit_bytes < 1
         or type(workspace_limit_bytes) is not int
         or workspace_limit_bytes < 1
+        or type(intermediate_stagnation_check) is not bool
     ):
         raise ValueError("Invalid progress, GMRES, memory or workspace setting")
     if sum(value is not None for value in (seed, limited_seed, resume_from)) > 1:
@@ -758,6 +760,7 @@ def main(
         maximum_attempts=maximum_attempts,
         maximum_physical_nodes=case.maximum_physical_nodes,
         endpoint_prediction_enabled=endpoint_prediction,
+        intermediate_stagnation_check=intermediate_stagnation_check,
         maximum_corrections_per_attempt=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
@@ -951,6 +954,7 @@ def main(
                 endpoint_prediction=endpoint_prediction,
                 progress_observer=observe_progress,
                 heartbeat_observer=observe_heartbeat,
+                intermediate_stagnation_check=intermediate_stagnation_check,
                 initial_transport_fraction=resume_fraction,
                 gmres_restart=gmres_restart,
                 workspace_limit_bytes=workspace_limit_bytes,
@@ -1017,6 +1021,11 @@ if __name__ == "__main__":
         "--no-endpoint-prediction", dest="endpoint_prediction", action="store_false"
     )
     parser.add_argument(
+        "--intermediate-stagnation-check",
+        action="store_true",
+        help="Retry an above-gate intermediate stage after <10%% mass reduction in 5 corrections",
+    )
+    parser.add_argument(
         "--no-measured-peak", dest="use_measured_peak", action="store_false",
         help="Disable measured peak memory tracking during preflight (uses estimate only)"
     )
@@ -1057,5 +1066,6 @@ if __name__ == "__main__":
             gmres_restart=args.gmres_restart,
             memory_limit_bytes=args.memory_limit_mib * 1024**2,
             workspace_limit_bytes=args.workspace_limit_mib * 1024**2,
+            intermediate_stagnation_check=args.intermediate_stagnation_check,
         )
     )

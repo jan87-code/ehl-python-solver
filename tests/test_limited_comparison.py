@@ -623,6 +623,7 @@ def test_transport_runner_archives_detailed_cpu_heartbeat(accepted_mc_path, tmp_
     output = tmp_path / "heartbeat-run"
 
     def continuation(_case, _state, **kwargs):
+        assert kwargs["intermediate_stagnation_check"] is True
         observe = kwargs["heartbeat_observer"]
         observe(
             2, 0.75, stage="correction_start", iteration=4,
@@ -634,7 +635,11 @@ def test_transport_runner_archives_detailed_cpu_heartbeat(accepted_mc_path, tmp_
         return type("PathResult", (), {"result": root, "attempts": ()})()
 
     monkeypatch.setattr(limited_runner, "continue_limited_transport", continuation)
-    assert limited_runner.main(case_path, None, output, 1) == 0
+    assert limited_runner.main(
+        case_path, None, output, 1, intermediate_stagnation_check=True
+    ) == 0
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["intermediate_stagnation_check"] is True
     records = [
         json.loads(line) for line in (output / "heartbeat.jsonl").read_text().splitlines()
     ]

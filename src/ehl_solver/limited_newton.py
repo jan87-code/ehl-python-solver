@@ -128,6 +128,7 @@ def solve_limited_load(
     transport_fraction=1.0,
     reference_recovery=False,
     local_balance_tolerance=1e-10,
+    intermediate_stagnation_check=False,
 ):
     """Experimental bounded solve from an explicitly unaccepted ND guess.
 
@@ -151,6 +152,7 @@ def solve_limited_load(
         or not np.isfinite(local_balance_tolerance)
         or not 0 < local_balance_tolerance <= 1e-10
         or type(reference_recovery) is not bool
+        or type(intermediate_stagnation_check) is not bool
         or type(active_recovery) is not bool
         or preconditioner not in ("material", "local")
         or (state_observer is not None and not callable(state_observer))
@@ -164,6 +166,8 @@ def solve_limited_load(
         transport_fraction=transport_fraction,
         workspace_limit_bytes=workspace_limit_bytes,
     )
+    if intermediate_stagnation_check and not 0 < probe.transport_fraction < 1:
+        raise ValueError("Stagnation rejection is only valid for intermediate transport stages")
     state = (
         hertz_guess(case, probe.system)[0]
         if initial_state is None
@@ -172,6 +176,7 @@ def solve_limited_load(
     if state.shape != (probe.size,) or not np.all(np.isfinite(state)):
         raise ValueError("Finite full P,D,h0/Href initial state required")
     history = []
+    mass_balance_history = []
     audit = None
     guide = np.zeros_like(state)
 
@@ -203,6 +208,26 @@ def solve_limited_load(
             audit["requested_tolerance_satisfied"] = (
                 audit["mass"]["relative_local_balance"] <= local_balance_tolerance
             )
+            if intermediate_stagnation_check:
+                balance = audit["mass"]["relative_local_balance"]
+                if not np.isfinite(balance):
+                    raise RuntimeError(
+                        "Nonfinite relative local mass balance during stagnation check"
+                    )
+                mass_balance_history.append(balance)
+                if len(mass_balance_history) > 5:
+                    previous = mass_balance_history[-6]
+                    stagnant = (
+                        balance > local_balance_tolerance
+                        and balance > 0.9 * previous
+                    )
+                    audit["intermediate_stagnation"] = dict(
+                        window_corrections=5,
+                        previous_relative_local_balance=previous,
+                        current_relative_local_balance=balance,
+                        required_reduction_fraction=0.1,
+                        detected=stagnant,
+                    )
             report_heartbeat(
                 "audit_complete",
                 iteration,
@@ -239,6 +264,17 @@ def solve_limited_load(
                 snapshot.setflags(write=False)
                 return LimitedNewtonResult(
                     case, snapshot, tuple(history), final, probe.transport_fraction
+                )
+            if audit.get("intermediate_stagnation", {}).get("detected", False):
+                report_heartbeat(
+                    "intermediate_stagnation", iteration, emit=True,
+                    warning="less_than_10_percent_mass_reduction_over_5_corrections",
+                    relative_local_balance=balance,
+                    previous_relative_local_balance=previous,
+                )
+                raise RuntimeError(
+                    "Intermediate local mass balance stagnated: less than 10% reduction "
+                    "over 5 corrections"
                 )
             if iteration == maximum_iterations:
                 raise RuntimeError("Limited Newton correction budget exhausted")

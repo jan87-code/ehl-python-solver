@@ -648,6 +648,8 @@ def test_transport_runner_archives_detailed_cpu_heartbeat(accepted_mc_path, tmp_
     assert matching["transport_fraction"] == 0.75
     assert matching["iteration"] == 4
     assert matching["gpu_enabled"] is False
+    assert matching["timing_total_seconds"] >= 0
+    assert "timing_active_set_recovery_seconds" in matching
     assert records[-1]["heartbeat_status"] == "accepted_numerical_root"
 
 

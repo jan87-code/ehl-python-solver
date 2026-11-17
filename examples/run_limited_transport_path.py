@@ -922,14 +922,19 @@ def main(
                     iteration,
                     maximum_newton_iterations=event.pop("maximum_newton_iterations"),
                     maximum_gmres_iterations=event.pop("maximum_gmres_iterations"),
+                    timing_enabled=True,
                 )
             if stage_name == "linear_solve":
                 event.update(
                     gmres_iterations=0,
+                    gmres_solve_iteration=0,
+                    gmres_rhs_kind=None,
                     gmres_restart_count=0,
                     gmres_stagnation_restarts=0,
                     gmres_residual_estimate=None,
                     gmres_true_relative_residual=None,
+                    linear_iterations=None,
+                    linear_true_residual=None,
                     cumulative_jvp_seconds=0.0,
                     cumulative_preconditioner_seconds=0.0,
                     cumulative_superlu_seconds=0.0,

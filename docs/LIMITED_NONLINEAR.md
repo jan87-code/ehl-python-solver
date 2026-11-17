@@ -127,6 +127,28 @@ matrix assembly, SuperLU factorization and application, CPU JVP, GMRES
 iteration/residual/restart counts, structural matching, line search and audit
 stages. The GMRES callback reports the preconditioned residual estimate; the
 independently recomputed true relative residual is reported after each solve.
+For each correction, `timing_*_seconds` partitions elapsed wall time into
+exclusive phase totals across all recovery models. GMRES total is an
+overlapping subtotal, not an additional phase: its vector/orthogonalization
+category includes callback and observer overhead, while JVP and
+preconditioner applications are counted separately. JVP time outside GMRES
+is also included in the JVP category. True-residual time excludes JVPs
+reported separately by the linear solver. Coefficient assembly includes
+frozen-model setup and its active/limiter signature; matrix construction
+is timed separately. The
+`other` includes unclassified transitions and bookkeeping. The checkpoint
+category covers correction-level observer I/O, not stage archives written
+after a correction. The timers are wall-clock instrumentation, not a CPU
+profile; they include observer overhead in the phase where it occurs.
+
+Each GMRES invocation identifies `gmres_rhs_kind` and its own
+`gmres_solve_iteration`; `gmres_iterations` remains cumulative across the
+linear model's solves. Starting a new right-hand side clears the prior
+estimate and true residual. SciPy's `pr_norm` callback estimates the
+left-preconditioned residual normalized by the unpreconditioned right-hand
+side norm, whereas the separate true residual uses the unpreconditioned
+equation. These values and values for different right-hand sides must not be
+compared as a single monotone sequence.
 The periodic writer cannot guarantee an update while native code holds the
 Python GIL. CPU-only runs do not report GPU or transfer timings. These
 diagnostics do not change the equations, stopping rules or acceptance gates.

@@ -6756,3 +6756,182 @@ processes to reach their respective peaks together. A complete multithreaded
 correction benchmark is therefore deferred until the active run is no longer
 using those resources. Keep the existing thread defaults and acceptance gates;
 the exact MC endpoint is not established by this probe.
+
+## 41. Interrupted MC continuation and correction timing (2026-11-17)
+
+The last accepted 513x513 blended stage is tau `0.9990234375`, with local
+mass balance `9.52967269798906e-13`. Its checkpoint is
+`results/ciulli_20261116_mc_513_tau_continuation_resume1/attempt_008/state.npz`,
+SHA-256 `2e7dcb12426b9500667cf624dcb1b7e2987eeba57053bca262c82d575cfa9147`.
+The original tau `0.99951171875` attempt was rejected. Its retry from the
+accepted state was cleanly interrupted by `KeyboardInterrupt`; the new
+directory `results/ciulli_20261117_mc_513_detailed_resume/` retains its
+heartbeat and interrupted summary, but no new accepted checkpoint. The
+in-flight state was not accepted. Restart from the verified source checkpoint,
+not the interrupted retry directory. There is no accepted exact-MC root.
+
+In the interrupted iteration 5, recovery model 0 solved two different field
+systems. After the field-residual solve, the reported callback estimate was
+`1.854e-7` and the recomputed true relative residual was `2.532e-10`.
+Five iterations into the subsequent offset-response solve, the callback
+estimate was `236.2` while the displayed `2.532e-10` was stale from the
+previous solve. The offset-response solve then independently reached
+`2.788e-10`. SciPy 1.18.1 reports its left-preconditioned residual estimate
+divided by the unpreconditioned right-hand-side norm, not the true residual;
+the two different right-hand sides also have different scales. Thus the
+apparent jump is a reporting/association issue combined with expected
+preconditioned-residual scaling, not evidence by itself of a Krylov failure.
+The successful true-residual checks do not prove orthogonality in general.
+
+The CPU heartbeat now labels each right-hand side and solve-local iteration,
+clears the previous residuals at the next solve, and records exclusive
+per-correction wall-time categories across all recovery models. GMRES total
+is a separately reported overlapping subtotal. These changes do not alter
+the equations, tolerances, linear solves or acceptance gates. The detailed
+timing definitions and limitations are in
+[LIMITED_NONLINEAR.md](LIMITED_NONLINEAR.md).
+
+### One bounded saved-state correction
+
+The profile used the **rejected**, not accepted, terminal state from
+`attempt_009/state.npz`, SHA-256
+`66b09b181eabde9649fa34382ad4c4b9f198fd234d4ebc744926b41291b1ce51`,
+at tau `0.99951171875`. It was used solely as a near-stagnation diagnostic
+input, not as a continuation seed or accepted result. One CPU float64 Newton
+correction was attempted with one BLAS/OMP thread, restart 60, ten Krylov
+cycles, the unchanged `1e-9` Krylov tolerance and `1e-12` intermediate local
+mass gate. The static memory estimate was 19.73 GB against a 24.06 GB
+effective ceiling; measured field and bordered factor preflight passed with
+known-vector relative residual `4.86e-16`. Peak private and working-set
+measurements across preflight and probe were 16.30 GB and 13.66 GB.
+
+The correction took 431.126 s, spanning eight recovery models and 561 total
+GMRES iterations across 16 right-hand sides. The best feasible Armijo trial
+was from model 0 with step length `0.015625`; it is a Newton trial, not an
+accepted continuation stage. The following audit had local balance
+`2.767e-10`, above `1e-12`, and the one-correction budget terminated the
+probe. Each reconstructed model correction's true relative residual was
+between `8.44e-11` and `2.01e-10`; all individual GMRES true checks passed.
+
+| Exclusive correction phase | Wall time [s] | Share |
+| --- | ---: | ---: |
+| Residual assembly | 2.091 | 0.49% |
+| Frozen coefficients and model signature | 10.776 | 2.50% |
+| Sparse matrix construction | 16.613 | 3.85% |
+| Active-set/recovery bookkeeping | 0.119 | 0.03% |
+| SuperLU factorization | 89.499 | 20.76% |
+| GMRES vector/orthogonalization and callback overhead | 17.565 | 4.07% |
+| JVP, including calls outside GMRES | 173.856 | 40.33% |
+| Preconditioner applications | 82.136 | 19.05% |
+| True-residual and correction checks, excluding separately timed JVPs | 4.923 | 1.14% |
+| Line search | 32.708 | 7.59% |
+| Audit | 0.349 | 0.08% |
+| Correction checkpoint/observer I/O | 0.000 | 0.00% |
+| Other/unaccounted | 0.492 | 0.11% |
+
+The named phases account for 99.89% of correction wall time. GMRES total
+was 264.635 s (61.38%), **overlapping** JVP, preconditioner application and
+vector work; it must not be added to the table. The probe did not register a
+state-checkpoint observer, so its I/O figure is not a measurement of production
+checkpoint cost. For context, the matching observer interval in interrupted
+iteration 5 was 0.00121 s; stage-archive writes occur outside the correction.
+The coefficient/matrix split above was reconstructed from emitted model-start
+and linear-solve timestamps; the new timer records the split directly.
+Timings include reporting overhead and characterize this one rejected-state
+probe, not an end-to-end continuation speedup.
+
+The previously displayed 11 s JVP and 16 s SuperLU values reset at each
+recovery model; comparing them to the accumulated correction wall time
+omitted earlier recoveries. The dominant inclusive cost is the repeated
+GMRES work; JVP is the largest exclusive phase, with SuperLU factorization
+and applications also substantial. The eight distinct bounded recovery
+models amplify all of these costs. No optimization or change to recovery
+selection was made.
+
+As a separate small hotspot check, a warmed local frozen model was constructed
+from the same rejected state with a zero guide and the initial active mask.
+Three JVPs of a fixed seeded random direction took 0.857 s under `cProfile`
+while the regression suite was also running. Their six calls to
+`donor_flux_direction` accounted for 0.371 s cumulative, and the three
+elastic deformation calls accounted for 0.352 s. The former is evaluated
+twice per blended JVP: once inside the limited flux action and once for the
+donor blend. These instrumented samples are not a controlled speed benchmark.
+
+The smallest targeted optimization to test next is to reuse the donor
+directional flux **within each blended JVP**, retaining the existing
+arithmetic/order, rather than computing it twice. This must not cache a flux
+across different Krylov directions. Verify complete JVPs at limiter switches,
+direction/true-residual parity and bounded full-correction timing before
+adopting it. It applies to tau below 1; it does not by itself accelerate the
+exact tau=1 endpoint. No speedup or endpoint benefit is claimed yet.
+
+To reproduce the bounded correction on Windows with the local archives,
+choose a fresh heartbeat file and run the following from the repository root.
+The profile does not archive or promote its computed state:
+
+```powershell
+$env:PYTHONPATH='.;src'
+$env:OPENBLAS_NUM_THREADS='1'; $env:OMP_NUM_THREADS='1'; $env:MKL_NUM_THREADS='1'
+@'
+import hashlib, json
+from pathlib import Path
+import numpy as np
+from ehl_solver.heartbeat import SolverHeartbeat
+from ehl_solver.limited_newton import LimitedNewtonError, solve_limited_load
+from ehl_solver.prototype import PointContactCase
+from examples.run_limited_transport_path import estimate_resource_requirements, resource_preflight
+
+root = Path(r"results\ciulli_20261116_mc_513_tau_continuation_resume1")
+summary = json.loads((root / "summary.json").read_text())
+stage = summary["stages"][9]
+assert stage["status"] == "rejected_stage"
+case = PointContactCase(**summary["case"])
+opts = dict(gmres_restart=60, memory_limit_bytes=24576 * 2**20, workspace_limit_bytes=2**30)
+estimate = estimate_resource_requirements(case, **opts)
+assert estimate["memory_preflight_passed"] and estimate["workspace_preflight_passed"]
+path = root / "attempt_009" / "state.npz"
+assert hashlib.sha256(path.read_bytes()).hexdigest() == stage["state_sha256"]
+with np.load(path, allow_pickle=False) as archive:
+    state = archive["state_dimensionless"].copy()
+tau = stage["transport_fraction"]
+assert resource_preflight(case, state, transport_fraction=tau, **opts)["passed"]
+output = Path(r"results\my_mc_one_correction_heartbeat.jsonl")
+if output.exists():
+    raise FileExistsError(output)
+heartbeat = SolverHeartbeat(output, interval_seconds=30)
+def observe(**event):
+    name = event.pop("stage")
+    iteration = event.pop("iteration", None)
+    emit = event.pop("emit", False)
+    if name == "correction_start":
+        heartbeat.begin_correction(
+            iteration, maximum_newton_iterations=event.pop("maximum_newton_iterations"),
+            maximum_gmres_iterations=event.pop("maximum_gmres_iterations"), timing_enabled=True,
+        )
+    if name == "linear_solve":
+        event.update(gmres_iterations=0, gmres_solve_iteration=0, gmres_rhs_kind=None,
+                     gmres_restart_count=0, gmres_stagnation_restarts=0,
+                     gmres_residual_estimate=None, gmres_true_relative_residual=None,
+                     linear_iterations=None, linear_true_residual=None,
+                     cumulative_jvp_seconds=0.0, cumulative_preconditioner_seconds=0.0,
+                     cumulative_superlu_seconds=0.0)
+    heartbeat.update(stage=name, iteration=iteration, emit=emit,
+                     transport_fraction=tau, gpu_enabled=False, **event)
+try:
+    try:
+        solve_limited_load(case, state, transport_fraction=tau, maximum_iterations=1,
+                           gmres_restart=60, workspace_limit_bytes=2**30,
+                           local_balance_tolerance=1e-12, heartbeat_observer=observe)
+    except LimitedNewtonError as exc:
+        print("Diagnostic stopped:", exc)
+finally:
+    heartbeat.close(status="profiling_finished")
+'@ | py -3.13 -
+```
+
+Verification: 96 focused tests passed, and the Windows-compatible suite
+passed 806 tests with 81 skipped. Unfiltered `pytest -q` cannot collect
+`tests/test_joint_refinement.py` because Windows lacks the POSIX `resource`
+module. Scoped Ruff passes; repository-wide `ruff check .` reports the
+pre-existing E501 in the unrelated untracked `.kilo/` file. Pylance reports
+no syntax errors in the four changed Python implementation files.

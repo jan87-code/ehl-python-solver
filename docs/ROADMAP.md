@@ -50,13 +50,17 @@ not disproven**. Do not run 1025x1025 MC or 2049x2049 yet, and do not infer
 that the higher-order flux improves convergence. See the latest trial record
 in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
-The subsequent bounded 513x513 transport continuation remains in progress.
-As of 2026-11-17 11:24 CET it accepted stages through tau `0.9921875`; its
-tau `0.99609375` stage was not yet accepted. These blended roots are not exact
-MC results. For future runs the CPU continuation records detailed scalar
-heartbeats through linear solves and recovery; the running process retains
-its original code and cannot acquire these diagnostics without a restart.
-An optional future-run intermediate-stagnation check can reject an above-gate
+The 513x513 transport continuation was cleanly interrupted on 2026-11-17.
+Its latest accepted blended stage is tau `0.9990234375`; the subsequent
+tau `0.99951171875` attempt was rejected. A heartbeat-enabled retry from that
+accepted state was interrupted during an unaccepted correction, and its
+heartbeat and interrupted summary were preserved. The resume source remains
+the verified `attempt_008/state.npz` in
+`results/ciulli_20261116_mc_513_tau_continuation_resume1/`; the newer
+interrupted directory has no newly accepted stage. No continuation is running.
+These blended roots are not exact MC results. CPU continuation records detailed
+scalar heartbeats through linear solves and recovery. An optional
+intermediate-stagnation check can reject an above-gate
 stage with less than 10% local mass reduction over five corrections and retry
 from the last accepted state at half the tau step. This heuristic does not
 change the endpoint audit and can reject a temporarily slow but viable stage.
@@ -64,8 +68,20 @@ On 2026-11-17 a bounded 513x513 saved-correction JVP probe found identical JVP
 arrays at one and four BLAS threads, with median times 0.317 and 0.301 s over
 three samples. This is not a full-correction or end-to-end solver speedup.
 Do not change the default thread count based on this probe. A comparable
-complete correction and numerical parity test remains pending until it can
-be run without risking the active continuation's host-memory headroom.
+complete correction and numerical parity test remains pending.
+
+A separate bounded 513x513 rejected-state correction profile accounted for
+99.89% of 431.126 s: GMRES occupied 264.635 s inclusive, with JVP the largest
+exclusive phase at 173.856 s. Eight recovery models caused repeated linear
+solves; the old per-model counters had obscured their accumulated cost. The
+GMRES estimate jump crossed different right-hand sides and was displayed with
+a stale true residual; it is not itself a Krylov failure. CPU heartbeats now
+identify the right-hand side and partition correction wall time. One short
+JVP profile confirmed that blended transport computes the same donor-direction
+flux twice. Next, if optimization is authorized, test reuse within each JVP
+with complete JVP/correction parity and bounded timing; do not cache across
+directions or assume this improves tau=1. See
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md) for measurements and limits.
 
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but

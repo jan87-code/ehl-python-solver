@@ -422,6 +422,7 @@ def solve_limited_load(
                 entry["slope"] = slope
                 trial, trials, bound = _line_search(probe, state, direction, merit, slope)
                 entry.update(trials=trials, fraction_to_boundary=bound)
+                report_heartbeat("active_set_recovery", iteration, recovery=recovery, emit=False)
                 predicted = state + direction
                 proposed = full.copy()
                 proposed[predicted[: probe.n] < -1e-10] = False

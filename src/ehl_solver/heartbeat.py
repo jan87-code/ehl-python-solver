@@ -8,6 +8,74 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+_TIMING_PHASES = {
+    "audit": "audit",
+    "final_audit": "audit",
+    "checkpoint": "checkpoint_io",
+    "diagnostic_checkpoint": "checkpoint_io",
+    "setup": "residual_assembly",
+    "linear_residual": "residual_assembly",
+    "model_setup": "coefficient_assembly",
+    "matrix_assembly": "matrix_construction",
+    "superlu_factorization": "superlu_factorization",
+    "superlu_solve": "preconditioner_application",
+    "jvp": "jvp",
+    "gmres_start": "gmres_vector",
+    "gmres": "gmres_vector",
+    "gmres_restart": "gmres_vector",
+    "gmres_end": "true_residual",
+    "gmres_true_residual": "other",
+    "correction_verification": "true_residual",
+    "line_search": "line_search",
+    "line_search_trials": "line_search",
+    "active_set_recovery": "active_set_recovery",
+    "linear_rejected": "active_set_recovery",
+    "structural_matching": "active_set_recovery",
+}
+
+
+class _CorrectionTiming:
+    """Exclusive phase wall times; GMRES total is an overlapping subtotal."""
+
+    def __init__(self, now):
+        self.started = self.last = now
+        self.phase = "other"
+        self.previous_phase = None
+        self.gmres_active = False
+        self.gmres_seconds = 0.0
+        self.phases = {
+            name: 0.0 for name in sorted(set(_TIMING_PHASES.values()) | {"other"})
+        }
+
+    def advance(self, stage, now):
+        elapsed = now - self.last
+        self.phases[self.phase] += elapsed
+        if self.gmres_active:
+            self.gmres_seconds += elapsed
+        self.last = now
+        if stage == "gmres_start":
+            self.gmres_active = True
+        elif stage == "gmres_end":
+            self.gmres_active = False
+        if stage in ("jvp", "superlu_solve"):
+            self.previous_phase = self.phase
+        if stage in ("jvp_complete", "superlu_solve_complete"):
+            self.phase = self.previous_phase or "other"
+            self.previous_phase = None
+        else:
+            self.phase = _TIMING_PHASES.get(stage, "other")
+
+    def snapshot(self, now):
+        phases = self.phases.copy()
+        elapsed = now - self.last
+        phases[self.phase] += elapsed
+        gmres = self.gmres_seconds + (elapsed if self.gmres_active else 0.0)
+        return {
+            **{f"timing_{name}_seconds": value for name, value in phases.items()},
+            "timing_gmres_total_seconds": gmres,
+            "timing_total_seconds": now - self.started,
+        }
+
 
 class SolverHeartbeat:
     def __init__(self, path, *, interval_seconds=30.0, stream=None):
@@ -31,6 +99,7 @@ class SolverHeartbeat:
         self._state = {"stage": "starting", "heartbeat_status": "running"}
         self._sequence = 0
         self._last_emitted_gmres_iteration = 0
+        self._timing = None
         self._error = None
         self._thread = threading.Thread(
             target=self._run, name="ehl-solver-heartbeat", daemon=True
@@ -39,7 +108,8 @@ class SolverHeartbeat:
         self.update(stage="run_start", emit=True)
 
     def begin_correction(
-        self, iteration, *, maximum_newton_iterations, maximum_gmres_iterations
+        self, iteration, *, maximum_newton_iterations, maximum_gmres_iterations,
+        timing_enabled=False,
     ):
         self._raise_if_failed()
         with self._lock:
@@ -47,6 +117,7 @@ class SolverHeartbeat:
             self._correction_started = now
             self._stage_started = now
             self._last_jvp_at = now
+            self._timing = _CorrectionTiming(now) if timing_enabled else None
             self._state = {
                 "iteration": int(iteration),
                 "stage": "checkpoint",
@@ -68,6 +139,8 @@ class SolverHeartbeat:
                 raise ValueError(f"heartbeat field {name!r} must be finite")
         with self._lock:
             now = time.perf_counter()
+            if self._timing is not None:
+                self._timing.advance(stage, now)
             previous_stage = self._state.get("stage")
             if previous_stage != stage:
                 self._stage_started = now
@@ -166,7 +239,9 @@ class SolverHeartbeat:
             and iteration >= max_newton - 2
         ):
             warnings.append("approaching_newton_iteration_limit")
-        gmres_iterations = self._state.get("gmres_iterations")
+        gmres_iterations = self._state.get(
+            "gmres_solve_iteration", self._state.get("gmres_iterations")
+        )
         max_gmres = self._state.get("maximum_gmres_iterations")
         if (
             isinstance(gmres_iterations, int)
@@ -184,6 +259,8 @@ class SolverHeartbeat:
             "stage_elapsed_seconds": stage_elapsed,
             **self._state,
         }
+        if self._timing is not None:
+            record.update(self._timing.snapshot(now))
         if stage in {
             "preconditioner_setup",
             "preconditioner_apply",

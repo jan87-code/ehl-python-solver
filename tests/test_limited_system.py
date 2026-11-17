@@ -112,6 +112,16 @@ def test_cpu_correction_heartbeat_reports_steps_without_changing_correction():
     assert {"matrix_assembly", "superlu_factorization", "superlu_solve", "jvp", "gmres"} <= stages
     assert any(event.get("gmres_iterations", 0) > 0 for event in events)
     assert any(event.get("gmres_true_relative_residual") is not None for event in events)
+    starts = [event for event in events if event["stage"] == "gmres_start"]
+    assert [event["gmres_rhs_kind"] for event in starts] == [
+        "field_residual", "offset_response"
+    ]
+    assert all(
+        event["gmres_solve_iteration"] == 0
+        and event["gmres_residual_estimate"] is None
+        and event["gmres_true_relative_residual"] is None
+        for event in starts
+    )
     assert events[-1]["cumulative_jvp_seconds"] >= 0
     assert events[-1]["cumulative_preconditioner_seconds"] > 0
 

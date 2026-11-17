@@ -293,7 +293,7 @@ def solve_cavitating_correction(
     field_setup_failures = []
     field_factorization = getattr(system, "field_factorization", "full")
 
-    def linear_solve(op, rhs, lu):
+    def linear_solve(op, rhs, lu, rhs_kind):
         nonlocal preconditioner_seconds, iterations
         count = []
         restart_residuals = []
@@ -325,6 +325,7 @@ def solve_cavitating_correction(
                 report(
                     "gmres_restart" if len(count) % gmres_restart == 0 else "gmres",
                     gmres_iterations=iterations,
+                    gmres_solve_iteration=len(count),
                     gmres_restart_count=restart_count,
                     gmres_stagnation_restarts=stagnant,
                     gmres_residual_estimate=(
@@ -333,7 +334,16 @@ def solve_cavitating_correction(
                 )
 
         preconditioner = LinearOperator(op.shape, matvec=precondition, dtype=np.float64)
-        report("gmres_start")
+        report(
+            "gmres_start",
+            emit=True,
+            gmres_rhs_kind=rhs_kind,
+            gmres_solve_iteration=0,
+            gmres_restart_count=0,
+            gmres_stagnation_restarts=0,
+            gmres_residual_estimate=None,
+            gmres_true_relative_residual=None,
+        )
         answer, info = gmres(
             op,
             rhs,
@@ -345,6 +355,7 @@ def solve_cavitating_correction(
             callback=on_iteration,
             callback_type="pr_norm",
         )
+        report("gmres_end", emit=False)
         norm = float(np.linalg.norm(rhs))
         error = float(np.linalg.norm(op @ answer - rhs))
         measured = error / norm if norm > 0 else error
@@ -387,7 +398,7 @@ def solve_cavitating_correction(
     if system.target_load_n is None:
         if lu is None:
             error("frozen-film active-set preconditioner failed")
-        correction, good = linear_solve(operator, -residual, lu)
+        correction, good = linear_solve(operator, -residual, lu, "field_residual")
         if not good:
             error("true Krylov residual check failed")
         return CavitatingCorrection(
@@ -407,12 +418,14 @@ def solve_cavitating_correction(
             dtype=np.float64,
             matvec=lambda v: (operator @ np.r_[v, 0.0])[: 2 * system.n],
         )
-        pressure, good_pressure = linear_solve(block, -residual[: 2 * system.n], lu)
+        pressure, good_pressure = linear_solve(
+            block, -residual[: 2 * system.n], lu, "field_residual"
+        )
         if good_pressure:
             h0_direction = np.zeros(system.size)
             h0_direction[-1] = 1
             column = (operator @ h0_direction)[: 2 * system.n]
-            response, good_response = linear_solve(block, column, lu)
+            response, good_response = linear_solve(block, column, lu, "offset_response")
             if good_response:
                 load_row = matrix[-1, : 2 * system.n].toarray().ravel()
                 denominator = -float(load_row @ response)
@@ -421,6 +434,7 @@ def solve_cavitating_correction(
                 if math.isfinite(indicator) and indicator > schur_tolerance:
                     dh0 = (-residual[-1] - load_row @ pressure) / denominator
                     correction = np.r_[pressure - response * dh0, dh0]
+                    report("correction_verification")
                     measured = float(
                         np.linalg.norm(operator @ correction + residual) / np.linalg.norm(residual)
                     )
@@ -444,7 +458,7 @@ def solve_cavitating_correction(
     finally:
         preconditioner_seconds += time.perf_counter() - factor_started
     report("superlu_factorization_complete", factorization="bordered", emit=True)
-    correction, good = linear_solve(operator, -residual, full_lu)
+    correction, good = linear_solve(operator, -residual, full_lu, "bordered_residual")
     if not good:
         error("true bordered Krylov residual check failed")
     return CavitatingCorrection(

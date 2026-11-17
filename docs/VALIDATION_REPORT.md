@@ -6717,3 +6717,42 @@ not proof that any rejected stage lacks a solution. The focused
 continuation/heartbeat suite passed 93 tests; the Windows-compatible CPU
 suite passed 803 tests with 81 skips. The existing unfiltered Windows
 collection and untracked-file Ruff limitations remain unchanged.
+
+## 40. Bounded CPU-thread probe while continuation runs (2026-11-17)
+
+The active continuation was started with `OPENBLAS_NUM_THREADS=1`,
+`OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1`. A 10-second process-thread
+sample showed 9.97 CPU seconds on one thread out of five OS threads. This
+is a snapshot, not a profile of all stages.
+
+A separate bounded probe used the accepted tau `0.998046875` checkpoint
+`results/ciulli_20261116_mc_513_tau_continuation_resume1/attempt_007/state.npz`
+and the first model's saved guide, active mask and Newton direction from
+`attempt_008/summary.json`, with target tau `0.9990234375`. Both checkpoint
+SHA-256 hashes were checked against their summaries. Separate Python 3.13
+processes set the three thread environment variables above to 1 or 4 before
+importing NumPy, rebuilt the same local `LimitedLoadLinearization`, warmed
+its matrix-free JVP once, and timed three JVPs. They also timed 100
+`np.dot(direction, direction)` calls and independently reconstructed
+`||J*direction + residual||_2 / ||residual||_2`.
+
+| BLAS/OMP threads | JVP samples [s] | Median JVP [s] | Mean dot [s] | True relative correction residual |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | 0.3196, 0.3168, 0.3101 | 0.3168 | 0.0001494 | 5.308235531418265e-10 |
+| 4 | 0.3186, 0.3006, 0.2862 | 0.3006 | 0.0001029 | 5.308235531418269e-10 |
+
+Both JVP arrays had SHA-256
+`770b7652c552708e3251c426b3e5f85382e86b8b0a52cfd52fa57687ffbaa6a4`.
+The 5.1% median JVP difference is based on three samples while another solve
+was active. It is not evidence of an end-to-end speedup or a validated
+thread configuration; no full correction, sparse factorization, GMRES
+iteration count, or nonlinear solve was rerun.
+
+The host had 26.31 GB free during the concurrency check. The existing
+513x513 restart-60 adjusted estimate is 19.73 GB, and the active solver's
+earlier measured preflight working-set increase was 11.82 GB. Its current
+working set was 5.91 GB, leaving too little conservative headroom for both
+processes to reach their respective peaks together. A complete multithreaded
+correction benchmark is therefore deferred until the active run is no longer
+using those resources. Keep the existing thread defaults and acceptance gates;
+the exact MC endpoint is not established by this probe.

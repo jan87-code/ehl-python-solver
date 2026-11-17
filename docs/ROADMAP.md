@@ -60,6 +60,12 @@ An optional future-run intermediate-stagnation check can reject an above-gate
 stage with less than 10% local mass reduction over five corrections and retry
 from the last accepted state at half the tau step. This heuristic does not
 change the endpoint audit and can reject a temporarily slow but viable stage.
+On 2026-11-17 a bounded 513x513 saved-correction JVP probe found identical JVP
+arrays at one and four BLAS threads, with median times 0.317 and 0.301 s over
+three samples. This is not a full-correction or end-to-end solver speedup.
+Do not change the default thread count based on this probe. A comparable
+complete correction and numerical parity test remains pending until it can
+be run without risking the active continuation's host-memory headroom.
 
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but

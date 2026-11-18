@@ -7112,3 +7112,25 @@ or evidence that the GPU path is robust at other states/grids. No GPU
 preconditioner, equation, tolerance, continuation rule, or acceptance gate
 was changed. The 513x513 exact-MC endpoint, physical validation, and mesh
 convergence remain open.
+
+### Hybrid continuation resumed (in progress)
+
+After all saved-state gates passed, continuation was resumed from the accepted
+`tau=0.9991455078125` state into the fresh directory
+`results/ciulli_20261118_mc_513_tau_hybrid_cuda_resume/`. The source checkpoint
+hash is recorded in the run summary as
+`529d2b12594126b44a1e09d07c93476f18e8d76d1f2b017ac5a806f69cdb1f7d`. The
+measured resource and sparse-factor preflight passed: peak process memory was
+`14,596,210,688` bytes, peak working set was `12,664,061,952` bytes, and the
+conservative adjusted estimate (`19,732,633,545` bytes) was below the
+preflight ceiling (`21,201,199,104` bytes). The known-vector factor audit
+relative residual was `4.97e-16`. Hybrid CUDA initialization completed in
+`0.77 s`, and the run summary identifies the active backend as
+`hybrid_cuda_cpu_superlu`.
+
+At the latest recorded heartbeat, the first resumed target
+`tau=0.99957275390625` was in its GMRES correction. No new transport stage
+has yet been formally accepted, and no in-flight state is treated as a
+solution. The run retains the existing heartbeat, retry, stagnation and
+independent audit logic. Exact-MC completion and physical validation remain
+unverified while this continuation is in progress.

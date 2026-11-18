@@ -3102,5 +3102,9 @@ The reproducible measurements and limitations are in
 `examples/benchmark_limited_hybrid_correction.py`. The next bounded action is
 to resume from the accepted tau `0.9991455078125` checkpoint using the hybrid
 path, retaining the existing heartbeat, retry, stagnation and independent
-audit logic. Continue to tau 1 only through formally accepted stages; never
-promote an in-flight state.
+audit logic. This was started in
+`results/ciulli_20261118_mc_513_tau_hybrid_cuda_resume/`; the measured
+resource/sparse-factor preflight passed, and the hybrid CUDA/CPU-SuperLU
+backend initialized. The first target `tau=0.99957275390625` is in progress;
+no new stage has been accepted yet. Continue to tau 1 only through formally
+accepted stages; never promote an in-flight state.

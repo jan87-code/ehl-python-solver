@@ -106,6 +106,7 @@ def _attempt(
     intermediate_stagnation_check=False,
     gmres_restart=60,
     workspace_limit_bytes=2**30,
+    correction_solver=None,
 ):
     if progress_observer is not None:
         progress_observer(index, fraction, None, None, "starting stage")
@@ -128,6 +129,7 @@ def _attempt(
             intermediate_stagnation_check=intermediate_stagnation_check and 0 < fraction < 1,
             maximum_iterations=0 if audit_only else 30,
             state_observer=report_state if progress_observer is not None else None,
+            correction_solver=correction_solver,
             heartbeat_observer=(
                 None if heartbeat_observer is None
                 else lambda **event: heartbeat_observer(index, fraction, **event)
@@ -231,6 +233,7 @@ def continue_limited_transport(
     endpoint_prediction=True, progress_observer=None, initial_transport_fraction=0.0,
     gmres_restart=60, workspace_limit_bytes=2**30, heartbeat_observer=None,
     intermediate_stagnation_check=False,
+    correction_solver=None,
 ):
     """Conservative donor->MC homotopy, plus bounded bisection/rollback.
 
@@ -243,6 +246,7 @@ def continue_limited_transport(
     if (
         (progress_observer is not None and not callable(progress_observer))
         or (heartbeat_observer is not None and not callable(heartbeat_observer))
+        or (correction_solver is not None and not callable(correction_solver))
         or type(intermediate_stagnation_check) is not bool
         or type(gmres_restart) is not int
         or not 1 <= gmres_restart <= 60
@@ -316,6 +320,7 @@ def continue_limited_transport(
             intermediate_stagnation_check=intermediate_stagnation_check,
             gmres_restart=gmres_restart,
             workspace_limit_bytes=workspace_limit_bytes,
+            correction_solver=correction_solver,
         )
         if pending_prediction is not None:
             data["initialization"] = pending_prediction

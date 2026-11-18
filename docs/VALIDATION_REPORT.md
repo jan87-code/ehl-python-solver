@@ -7012,7 +7012,103 @@ used only for bounded timing; it is not a restart or accepted solution. The
 adaptive continuation is now running in
 `results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/` from
 `attempt_008` with the verified hash, GMRES restart 60, and the intermediate
-stagnation check enabled. Its initial summary and heartbeat show `running`;
-no new stage had yet been accepted at the first status check. An exact-MC root,
-mesh convergence study, and physical validation against experiment remain
-outstanding.
+stagnation check enabled. Its initial summary and heartbeat showed `running`;
+no new stage had yet been accepted at the first status check. Its later
+accepted intermediate stage and hybrid saved-correction assessment are
+recorded in Section 42. An exact-MC root, mesh convergence study, and physical
+validation against experiment remain outstanding.
+
+## 42. Saved-state blended-MC hybrid CUDA correction (2026-11-18)
+
+### Accepted restart state and stop boundary
+
+The heartbeat-enabled continuation subsequently accepted the intermediate
+stage `tau=0.9991455078125`. Its preserved checkpoint is
+`results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/attempt_002/state.npz`,
+SHA-256
+`529d2b12594126b44a1e09d07c93476f18e8d76d1f2b017ac5a806f69cdb1f7d`.
+The earlier accepted `tau=0.9990234375` checkpoint remains intact at
+`results/ciulli_20261116_mc_513_tau_continuation_resume1/attempt_008/state.npz`,
+SHA-256
+`2e7dcb12426b9500667cf624dcb1b7e2987eeba57053bca262c82d575cfa9147`.
+Both are accepted **intermediate transport stages**, not
+`transport_fraction=1` roots.
+
+The stop landed just after the requested boundary: the next target,
+`tau=0.999267578125`, had entered `model_setup` before interruption. No state
+checkpoint or stage summary was written for that target, and it was not
+accepted. The interrupted run summary, heartbeat log and stop record remain
+preserved. No continuation process was active during the saved-correction
+benchmarks.
+
+### Frozen limited-MC CUDA operator parity
+
+The new bounded benchmark
+`examples/benchmark_limited_hybrid_correction.py` compares the CPU
+reference with CUDA float64 residual/JVP and resident GMRES, retaining the
+existing CPU local SuperLU/Schur preconditioner. It uses the two accepted
+513x513 states above, a zero guide, restart 60, relative Krylov tolerance
+`1e-9`, ten cycles, and the same CPU-model active set. It does not resume a
+nonlinear path. Reproduction:
+
+```powershell
+python -m examples.benchmark_limited_hybrid_correction `
+  --case-summary results\ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume\summary.json `
+  --checkpoint results\ciulli_20261116_mc_513_tau_continuation_resume1\attempt_008\state.npz `
+  --transport-fraction 0.9990234375 `
+  --checkpoint results\ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume\attempt_002\state.npz `
+  --transport-fraction 0.9991455078125 `
+  --output results\ciulli_20261118_hybrid_saved_corrections\benchmark_verified.json `
+  --workspace-limit-mib 1024
+```
+
+The first device-local limiter-branch selection produced about `1.4e-7`
+relative JVP disagreement on the saved state. Near-zero MC slopes make branch
+selection sensitive to roundoff even when the fields and residuals agree.
+The CPU Newton model now retains its guide-selected discrete limiter branches
+and transfers only those integer branch arrays once to the device per
+linearization; repeated JVP work remains device-resident. This preserves the
+CPU generalized derivative, equations and acceptance gates. Saved-state JVP
+relative-L2 differences are now `1.79e-16` and `1.81e-16`.
+
+The CUDA residual differs from the CPU residual by absolute Linf
+`1.22e-14` on both near-root states. The relative-L2 differences are 2.01%
+and 3.29% only because the CPU residual norms are already near floating-point
+roundoff; relative residual parity is therefore reported but not used as a
+gate. The residual gate remains the existing absolute Linf `1e-10`. The CPU
+residual is transferred once and used as the Krylov right-hand side as well
+as for device-side parity checking. This avoids allowing roundoff in a
+near-zero CUDA residual to change the solved right-hand side.
+
+| Transport fraction | Residual Linf | JVP relative L2 | Correction relative L2 | CPU true residual | Hybrid true residual |
+|---:|---:|---:|---:|---:|---:|
+| 0.9990234375 | 1.22e-14 | 1.79e-16 | 3.58e-10 | 6.90e-10 | 5.89e-13 |
+| 0.9991455078125 | 1.22e-14 | 1.81e-16 | 6.88e-11 | 1.55e-10 | 5.05e-14 |
+
+Both corrections pass the existing CPU/GPU residual, complete-correction
+parity, Krylov and independently recomputed true-residual gates. The true
+residuals were recomputed through the CPU Jacobian for both corrections.
+
+### Bounded correction timing and memory
+
+| `tau` | CPU correction [s] | Hybrid correction [s] | CPU / hybrid speedup | CPU JVP [s] | CUDA JVP [s] | CPU preconditioner/SuperLU [s] | Hybrid CPU preconditioner/SuperLU [s] |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.9990234375 | 33.43 | 23.44 | 1.43x | 13.05 | 1.99 | 16.71 | 16.78 |
+| 0.9991455078125 | 38.42 | 25.76 | 1.49x | 15.88 | 2.18 | 18.59 | 19.10 |
+
+Including the one-time CUDA operator initialization (`0.714 s`), the
+setup-inclusive speedups for these one-correction probes are `1.38x` and
+`1.45x`. Measured transfer totals are `0.102` and `0.127 s`; they include
+the residual RHS, state/guide/mask and limiter-branch setup transfers,
+CPU-preconditioner vector transfers and final correction transfer. Peak CUDA
+allocation is `473,683,456` bytes (about 452 MiB), with peak reservation
+`511,705,088` bytes (about 488 MiB). No iterative full-field CPU fallback was
+introduced.
+
+The dominant remaining cost is the unchanged CPU preconditioner: its setup
+and applications take `16.8--19.1 s`, compared with `2.0--2.2 s` for CUDA
+JVPs. This is a bounded saved-correction result, not a continuation speedup
+or evidence that the GPU path is robust at other states/grids. No GPU
+preconditioner, equation, tolerance, continuation rule, or acceptance gate
+was changed. The 513x513 exact-MC endpoint, physical validation, and mesh
+convergence remain open.

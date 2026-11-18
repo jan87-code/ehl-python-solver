@@ -617,6 +617,7 @@ def main(
     memory_limit_bytes=_DEFAULT_MEMORY_LIMIT_BYTES,
     workspace_limit_bytes=2**30,
     intermediate_stagnation_check=False,
+    hybrid_cuda=False,
 ):
     if (
         isinstance(progress_interval, bool)
@@ -629,6 +630,7 @@ def main(
         or type(workspace_limit_bytes) is not int
         or workspace_limit_bytes < 1
         or type(intermediate_stagnation_check) is not bool
+        or type(hybrid_cuda) is not bool
     ):
         raise ValueError("Invalid progress, GMRES, memory or workspace setting")
     if sum(value is not None for value in (seed, limited_seed, resume_from)) > 1:
@@ -761,6 +763,8 @@ def main(
         maximum_physical_nodes=case.maximum_physical_nodes,
         endpoint_prediction_enabled=endpoint_prediction,
         intermediate_stagnation_check=intermediate_stagnation_check,
+        hybrid_cuda_requested=hybrid_cuda,
+        correction_backend="cpu",
         maximum_corrections_per_attempt=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
@@ -891,6 +895,30 @@ def main(
                 return 1
             write()
 
+        correction_solver = None
+        if hybrid_cuda:
+            try:
+                from ehl_solver.hybrid_jfo import HybridJFOCorrectionSolver
+
+                correction_solver = HybridJFOCorrectionSolver(
+                    case, workspace_limit_bytes=workspace_limit_bytes
+                )
+            except (ImportError, MemoryError, RuntimeError, ValueError) as exc:
+                report["hybrid_cuda_setup"] = dict(
+                    status="unavailable_cpu_fallback",
+                    reason=f"{type(exc).__name__}: {exc}",
+                )
+            else:
+                report["hybrid_cuda_setup"] = dict(
+                    status="initialized",
+                    initialization_seconds=correction_solver.initialization_seconds,
+                    device=str(correction_solver.backend.device),
+                )
+                report["correction_backend"] = "hybrid_cuda_cpu_superlu"
+            write()
+
+        correction_backend = report["correction_backend"]
+
         def observe_progress(attempt, fraction, iteration, audit, status):
             progress.update(attempt, fraction, iteration, audit, status)
             if status != "Newton correction":
@@ -959,7 +987,8 @@ def main(
                 emit=emit,
                 attempt=attempt + 1,
                 transport_fraction=fraction,
-                gpu_enabled=False,
+                gpu_enabled=correction_solver is not None,
+                correction_backend=correction_backend,
                 **event,
             )
 
@@ -977,6 +1006,7 @@ def main(
                 initial_transport_fraction=resume_fraction,
                 gmres_restart=gmres_restart,
                 workspace_limit_bytes=workspace_limit_bytes,
+                correction_solver=correction_solver,
             )
         result = path.result
         report.update(
@@ -1045,6 +1075,14 @@ if __name__ == "__main__":
         help="Retry an above-gate intermediate stage after <10%% mass reduction in 5 corrections",
     )
     parser.add_argument(
+        "--hybrid-cuda",
+        action="store_true",
+        help=(
+            "Use CUDA residual/JVP and resident GMRES with the existing CPU "
+            "SuperLU preconditioner"
+        ),
+    )
+    parser.add_argument(
         "--no-measured-peak", dest="use_measured_peak", action="store_false",
         help="Disable measured peak memory tracking during preflight (uses estimate only)"
     )
@@ -1086,5 +1124,6 @@ if __name__ == "__main__":
             memory_limit_bytes=args.memory_limit_mib * 1024**2,
             workspace_limit_bytes=args.workspace_limit_mib * 1024**2,
             intermediate_stagnation_check=args.intermediate_stagnation_check,
+            hybrid_cuda=args.hybrid_cuda,
         )
     )

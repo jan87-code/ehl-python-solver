@@ -474,6 +474,37 @@ def test_transport_retry_retains_last_stage_and_never_uses_rejected_partial(
     assert exc.value.attempts[-1]["status"] == "rejected_stage"
 
 
+def test_transport_continuation_forwards_optional_correction_solver(
+    donor_root, monkeypatch
+):
+    import ehl_solver.limited_continuation as module
+
+    def marker(*_args, **_kwargs):
+        return None
+
+    seen = []
+
+    def reject_stage(case, state, **kwargs):
+        seen.append(kwargs["correction_solver"])
+        raise LimitedNewtonError("injected stage failure", state, [], {})
+
+    monkeypatch.setattr(module, "solve_limited_load", reject_stage)
+    with pytest.raises(LimitedPathError):
+        continue_limited_transport(
+            donor_root.case,
+            donor_root.state,
+            maximum_attempts=1,
+            correction_solver=marker,
+        )
+    assert seen == [marker]
+    with pytest.raises(ValueError, match="options"):
+        continue_limited_transport(
+            donor_root.case,
+            donor_root.state,
+            correction_solver=object(),
+        )
+
+
 def test_stagnant_intermediate_retries_at_midpoint_from_last_accepted_root(
     donor_root, monkeypatch
 ):

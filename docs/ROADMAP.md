@@ -50,21 +50,19 @@ not disproven**. Do not run 1025x1025 MC or 2049x2049 yet, and do not infer
 that the higher-order flux improves convergence. See the latest trial record
 in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
-The 513x513 transport continuation was cleanly interrupted on 2026-11-17.
-Its latest accepted blended stage is tau `0.9990234375`; the subsequent
-tau `0.99951171875` attempt was rejected. A heartbeat-enabled retry from that
-accepted state was interrupted during an unaccepted correction, and its
-heartbeat and interrupted summary were preserved. The resume source remains
-the verified `attempt_008/state.npz` in
-`results/ciulli_20261116_mc_513_tau_continuation_resume1/`; the newer
-interrupted directory has no newly accepted stage. On 2026-11-18 a fresh
-continuation was started in
-`results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/`, resuming
-from stage 8 at tau `0.9990234375` with the same state hash and
-`gmres_restart=60`; the intermediate-stagnation check is enabled. Its initial
-heartbeat and summary confirm `running`; no new stage had yet been accepted
-at that check. These blended roots are not exact MC results. CPU continuation
-records detailed scalar heartbeats through linear solves and recovery. An optional
+The 513x513 CPU continuation was interrupted on 2026-11-17 with its accepted
+blended stage at tau `0.9990234375`; a later attempt at `0.99951171875` was
+rejected. The heartbeat-enabled retry from that accepted state was interrupted
+during an unaccepted correction, preserving its heartbeat and summary. On
+2026-11-18 a fresh continuation resumed from the verified
+`attempt_008/state.npz` and accepted `tau=0.9991455078125` at
+`results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/attempt_002/state.npz`.
+Both checkpoint hashes and independent audits are recorded in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md). At interruption, the next target
+`tau=0.999267578125` had entered `model_setup`, but no state or stage summary
+was written and the target was not accepted. The accepted states remain
+intermediate blended roots, not exact MC results. CPU continuation records
+detailed scalar heartbeats through linear solves and recovery. An optional
 intermediate-stagnation check can reject an above-gate
 stage with less than 10% local mass reduction over five corrections and retry
 from the last accepted state at half the tau step. This heuristic does not
@@ -3068,3 +3066,41 @@ remains a later option because `PointContactCase` constructs uniform axes and
 the elastic convolution and coupled solver need matching nonuniform-grid
 verification. Equation closure is verified at the donor roots; MC-grid
 convergence and experimental validation remain open.
+
+## Hybrid CUDA blended limited-MC correction (2026-11-18)
+
+The accepted 513x513 intermediate stage `tau=0.9991455078125` is preserved
+with SHA-256
+`529d2b12594126b44a1e09d07c93476f18e8d76d1f2b017ac5a806f69cdb1f7d`.
+The previous accepted `tau=0.9990234375` checkpoint remains unchanged. The
+stop boundary was narrowly missed: the next target `tau=0.999267578125`
+entered `model_setup`, but no checkpoint or stage summary was written for it
+and it was not accepted. The preserved stages remain blended, not exact-MC
+roots.
+
+The hybrid correction now evaluates blended MC residuals and analytic frozen
+JVPs on CUDA and retains the existing CPU local SuperLU/Schur preconditioner.
+The CPU Newton model's selected MC limiter branches are transferred once per
+linearization; this avoids roundoff-driven branch changes near zero slopes
+while keeping repeated JVP work device-resident. The CPU residual is also
+transferred once for both the Krylov RHS and residual parity check. Neither
+change alters the discrete equations, nonlinear tolerances, continuation
+policy or acceptance gates.
+
+Saved-state CPU/CUDA checks at both accepted fractions pass residual parity
+(absolute Linf `1.22e-14`), JVP parity (relative L2 below `1.81e-16`),
+complete correction parity (relative L2 below `3.58e-10`), and independent
+CPU-recomputed true-residual gates. The 513x513 correction benchmarks improve
+end-to-end time from 33.43 to 23.44 s at tau `0.9990234375` (1.43x) and from
+38.42 to 25.76 s at tau `0.9991455078125` (1.49x). Peak CUDA allocation is
+about 452 MiB. The CPU SuperLU/preconditioner remains the dominant measured
+cost at 16.8-19.1 s per correction; this hybrid result does not validate a
+GPU preconditioner, exact-MC endpoint, or physical EHL model.
+
+The reproducible measurements and limitations are in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md), with the script
+`examples/benchmark_limited_hybrid_correction.py`. The next bounded action is
+to resume from the accepted tau `0.9991455078125` checkpoint using the hybrid
+path, retaining the existing heartbeat, retry, stagnation and independent
+audit logic. Continue to tau 1 only through formally accepted stages; never
+promote an in-flight state.

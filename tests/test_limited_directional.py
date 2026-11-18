@@ -82,7 +82,7 @@ def test_frozen_guide_map_is_additive_and_agrees_with_true_derivative_on_guide()
     rng = np.random.default_rng(234)
     a = [rng.normal(size=h.shape) * s for s in (1e-8, 1e6, 0.01)]
     b = [rng.normal(size=h.shape) * s for s in (1e-8, 1e6, 0.01)]
-    action = freeze_limited_flux_jvp(x, y, h, p, t, *a, fluid, 2.0)
+    action = freeze_limited_flux_jvp(x, y, h, p, t, *a, fluid, speed=2.0)
     for actual, expected in zip(
         action(*a), limited_flux_directional_derivative(x, y, h, p, t, *a, fluid, 2.0), strict=True
     ):

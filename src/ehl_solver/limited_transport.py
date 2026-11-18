@@ -107,12 +107,26 @@ def _slope_candidates(x, capacity):
     return np.stack([west, 2 * b]), interior
 
 
+def _select_limiter_branches(x, capacity, guide):
+    return tuple(
+        _minmod_branch(base, direction)
+        for base, direction in zip(
+            _slope_candidates(x, capacity),
+            _slope_candidates(x, guide),
+            strict=True,
+        )
+    )
+
+
 def _apply_branch(candidates, branch):
     selected = np.take_along_axis(candidates, np.maximum(branch, 0)[None], axis=0)[0]
     return np.where(branch >= 0, selected, 0.0)
 
 
-def freeze_limited_flux_jvp(x, y, h, p, theta, dh, dp, dt, fluid, speed, *, strength=1.0):
+def freeze_limited_flux_jvp(
+    x, y, h, p, theta, dh, dp, dt, fluid, speed, *, strength=1.0,
+    branches=None,
+):
     """Freeze a guide-selected flux linearization; return action(dh,dp,dt).
 
     Base fields are copied. The guide directions have SI units m, Pa and 1
@@ -134,11 +148,17 @@ def freeze_limited_flux_jvp(x, y, h, p, theta, dh, dp, dt, fluid, speed, *, stre
 
     capacity = rho * h * theta
     guide = capacity_direction(dh, dp, dt)
-    base_candidates = _slope_candidates(x, capacity)
-    guide_candidates = _slope_candidates(x, guide)
-    branches = [
-        _minmod_branch(v, g) for v, g in zip(base_candidates, guide_candidates, strict=True)
-    ]
+    if branches is None:
+        branches = _select_limiter_branches(x, capacity, guide)
+    else:
+        branches = tuple(np.asarray(branch, dtype=np.int64).copy() for branch in branches)
+        if (
+            len(branches) != 2
+            or branches[0].shape != (h.shape[0],)
+            or branches[1].shape != (h.shape[0], h.shape[1] - 2)
+            or any(np.any((branch < -1) | (branch > 2)) for branch in branches)
+        ):
+            raise ValueError("invalid frozen limiter branches")
     widths = np.diff(x)
 
     def action(dh, dp, dt, *, donor_flux=None):

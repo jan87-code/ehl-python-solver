@@ -2,23 +2,41 @@
 
 SI physical inputs; fields have shape (ny,nx), +x entrainment. Internal
 state is C-order interior P=p/p_ref, D=1-theta, followed by h0/h_ref.
-This snapshots the full-strength donor endpoint of LimitedLoadProbe.
+The transport fraction blends donor and MC-limited x-face fluxes.
 """
+
+import math
 
 from ehl_solver.backend import as_float64, make_backend
 from ehl_solver.device_donor import DeviceDonorFlux
+from ehl_solver.device_limited_transport import DeviceLimitedMCFlux
 from ehl_solver.elasticity import ElasticityOperator
 
 
 class DeviceDonorJFO:
-    """Evaluate the donor endpoint and its full-source elastic state JVP."""
+    """Evaluate donor/blended-MC JFO residuals and full-source state JVPs."""
 
-    def __init__(self, case, backend=None, *, memory_limit_bytes=2**30):
+    def __init__(
+        self,
+        case,
+        backend=None,
+        *,
+        transport_fraction=0.0,
+        memory_limit_bytes=2**30,
+    ):
         if case.transport != "donor":
             raise ValueError("device JFO requires donor transport")
+        if (
+            isinstance(transport_fraction, bool)
+            or not isinstance(transport_fraction, (int, float))
+            or not math.isfinite(transport_fraction)
+            or not 0 <= transport_fraction <= 1
+        ):
+            raise ValueError("transport_fraction must be finite in [0,1]")
         self.backend = make_backend("torch", "cuda") if backend is None else backend
         if self.backend.name != "torch":
             raise ValueError("device JFO requires a torch backend")
+        self.transport_fraction = float(transport_fraction)
         problem = case.problem()
         self.shape = problem.shape
         self.interior_shape = (self.shape[0] - 2, self.shape[1] - 2)
@@ -41,6 +59,7 @@ class DeviceDonorJFO:
         self.flux = DeviceDonorFlux(
             problem.x_m, problem.y_m, fluid, case.entrainment_m_s, self.backend
         )
+        self.limited_flux = DeviceLimitedMCFlux(self.flux)
         self.elasticity = ElasticityOperator(
             self.shape, self.dx, self.dy, problem.e_star_pa, self.backend,
             memory_limit_bytes=memory_limit_bytes,
@@ -107,7 +126,9 @@ class DeviceDonorJFO:
 
         z = self._vector(state)
         p, theta, h, _ = self.state_fields(z)
-        mass = self._mass(self.flux.fluxes(h, p, theta))
+        mass = self._mass(
+            self.limited_flux.fluxes(h, p, theta, self.transport_fraction)
+        )
         constraint = torch.minimum(z[:self.n], z[self.n:2 * self.n])
         load = (p[1:-1, 1:-1].sum() * (self.dx * self.dy) - self.target_load) / self.target_load
         return self._join(mass, constraint, load)
@@ -130,19 +151,27 @@ class DeviceDonorJFO:
         )
         return result
 
-    def _action(self, direction, fields, pressure_row):
+    def _action(self, direction, fields, pressure_row, flux_action=None):
         import torch
 
         v = self._vector(direction)
         p, theta, h, _ = fields
         dp, dt = self._expanded(v, direction=True)
         dh = self.elasticity(dp) + v[-1] * self.film_scale
-        mass = self._mass(self.flux.direction(h, p, theta, dh, dp, dt))
+        donor = self.flux.direction(h, p, theta, dh, dp, dt)
+        flux = (
+            donor
+            if flux_action is None
+            else flux_action(dh, dp, dt, donor_flux=donor)
+        )
+        mass = self._mass(flux)
         constraint = torch.where(pressure_row, v[:self.n], v[self.n:2 * self.n])
         load = dp[1:-1, 1:-1].sum() * (self.dx * self.dy / self.target_load)
         return self._join(mass, constraint, load)
 
-    def linearize(self, state, guide, *, active_full=None):
+    def linearize(
+        self, state, guide, *, active_full=None, limiter_branches=None
+    ):
         """Freeze state and a selected generalized derivative for Krylov use."""
         import torch
 
@@ -161,11 +190,37 @@ class DeviceDonorJFO:
             ):
                 raise ValueError("active_full must be a same-device boolean interior mask")
             pressure_row = ~active_full.clone()
-        return lambda direction: self._action(direction, fields, pressure_row)
+        flux_action = None
+        if self.transport_fraction > 0:
+            p, theta, h, _ = fields
+            dp_guide, dt_guide = self._expanded(g, direction=True)
+            dh_guide = self.elasticity(dp_guide) + g[-1] * self.film_scale
+            flux_action = self.limited_flux.linearize(
+                h,
+                p,
+                theta,
+                dh_guide,
+                dp_guide,
+                dt_guide,
+                self.transport_fraction,
+                branch_indices=limiter_branches,
+            )
+        return lambda direction: self._action(
+            direction, fields, pressure_row, flux_action
+        )
 
     def directional_derivative(self, state, direction):
         """True one-sided min(P,D) derivative, including exact ties."""
         z, v = self._vector(state), self._vector(direction)
         p, d = z[:self.n], z[self.n:2 * self.n]
         pressure_row = (p < d) | ((p == d) & (v[:self.n] <= v[self.n:2 * self.n]))
-        return self._action(v, self.state_fields(z), pressure_row)
+        fields = self.state_fields(z)
+        flux_action = None
+        if self.transport_fraction > 0:
+            pressure, theta, h, _ = fields
+            dp, dt = self._expanded(v, direction=True)
+            dh = self.elasticity(dp) + v[-1] * self.film_scale
+            flux_action = self.limited_flux.linearize(
+                h, pressure, theta, dh, dp, dt, self.transport_fraction
+            )
+        return self._action(v, fields, pressure_row, flux_action)

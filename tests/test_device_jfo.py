@@ -72,6 +72,69 @@ def test_complete_donor_residual_and_jvp_with_finite_differences(backend):
         assert error < 2e-7
 
 
+@pytest.mark.parametrize(
+    "transport_fraction", [0.0, 0.35, 0.9991455078125, 1.0]
+)
+def test_blended_mc_device_residual_and_frozen_jvp_match_cpu(
+    backend, transport_fraction, monkeypatch
+):
+    torch = pytest.importorskip("torch")
+    case, donor, state = _case_state()
+    rng = np.random.default_rng(20261118)
+    guide = rng.normal(size=donor.size) * 1e-3
+    direction = rng.normal(size=donor.size) * 1e-3
+    active_full = state[:donor.n] >= state[donor.n:2 * donor.n]
+    cpu = LimitedLoadLinearization(
+        case,
+        state,
+        guide,
+        active_full=active_full,
+        transport_fraction=transport_fraction,
+    )
+    device = DeviceDonorJFO(
+        case, backend, transport_fraction=transport_fraction
+    )
+    z, g, v = (
+        as_float64(value, backend) for value in (state, guide, direction)
+    )
+    expected_residual = cpu.residual(state)
+    expected_jvp = cpu.jacobian_vector(state, direction)
+    limiter_branches = (
+        None
+        if cpu.limiter_branches is None
+        else tuple(
+            backend.xp.as_tensor(
+                branch.copy(),
+                dtype=backend.xp.int64,
+                device=backend.device,
+            )
+            for branch in cpu.limiter_branches
+        )
+    )
+    mask = backend.xp.as_tensor(
+        active_full, dtype=backend.xp.bool, device=backend.device
+    )
+    actual_residual = device.linear_residual(z, mask)
+    action = device.linearize(
+        z, g, active_full=mask, limiter_branches=limiter_branches
+    )
+    actual_jvp = action(v)
+    np.testing.assert_allclose(
+        actual_residual.cpu().numpy(), expected_residual, rtol=2e-12, atol=2e-12
+    )
+    np.testing.assert_allclose(
+        actual_jvp.cpu().numpy(), expected_jvp, rtol=5e-11, atol=2e-12
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("unexpected host field transfer")
+
+    monkeypatch.setattr(torch.Tensor, "cpu", forbidden)
+    monkeypatch.setattr(torch.Tensor, "numpy", forbidden)
+    assert device.residual(z).device == z.device
+    assert action(v).device == z.device
+
+
 def test_ties_active_overrides_and_resident_operations(backend, monkeypatch):
     torch = pytest.importorskip("torch")
     case, cpu, state = _case_state()
@@ -216,7 +279,7 @@ def test_hybrid_cuda_operator_cpu_schur_correction_matches_reference(backend):
     full = state[:cpu.n] >= state[cpu.n:2 * cpu.n]
     model = LimitedLoadLinearization(
         case, state, np.zeros(cpu.size), preconditioner="local",
-        active_full=full, transport_fraction=0,
+        active_full=full, transport_fraction=0.5,
     )
     reference = solve_cavitating_correction(
         model, state, maximum_krylov_cycles=10, gmres_restart=60, krylov_rtol=1e-9
@@ -238,6 +301,7 @@ def test_hybrid_cuda_operator_cpu_schur_correction_matches_reference(backend):
     assert actual.timings["cpu_superlu_setup_seconds"] > 0
     assert actual.timings["cpu_superlu_solve_seconds"] > 0
     assert actual.timings["linear_rhs_h2d_bytes"] == model.size * 8
+    assert actual.timings["cpu_residual_parity_h2d_bytes"] == model.size * 8
     assert actual.timings["cpu_residual_parity_linf"] <= 1e-10
     assert any(event["stage"] == "preconditioner_setup" for event in progress)
     assert any(event["stage"] == "superlu_factorization" for event in progress)

@@ -12,6 +12,7 @@ from scipy.sparse import bmat, coo_matrix, csr_matrix, diags, hstack, vstack
 
 from ehl_solver.limited_transport import (
     _minmod_branch,
+    _select_limiter_branches,
     _slope_candidates,
     freeze_limited_flux_jvp,
     limited_flux_direction,
@@ -117,7 +118,7 @@ class LimitedLoadProbe:
         )
         return np.r_[self.mass(flux), complement, problem.load_n(dp) / self.case.load_n]
 
-    def freeze(self, state, guide):
+    def freeze(self, state, guide, *, branches=None):
         state = state.copy()
         p, t, h = self.fields(state)
         problem = self.system.problem
@@ -133,6 +134,7 @@ class LimitedLoadProbe:
             dt,
             self.case.fluid(),
             self.case.entrainment_m_s,
+            branches=branches,
         )
         pressure, deficit = state[: self.n], state[self.n : 2 * self.n]
         pressure_row = (pressure < deficit) | (
@@ -332,7 +334,21 @@ class LimitedLoadLinearization:
         self.guide.setflags(write=False)
         self.reference_state.setflags(write=False)
         self.probe.fields(self.state)
-        self.action = self.probe.freeze(self.reference_state, self.guide)
+        self.limiter_branches = None
+        if self.probe.transport_fraction > 0:
+            p, theta, h = self.probe.fields(self.reference_state)
+            rho, _, dr, _ = case.fluid().properties(p)
+            dh, dp, dt = self.probe.directions(self.reference_state, self.guide)
+            capacity = rho * h * theta
+            guide_capacity = (dr * dp * h + rho * dh) * theta + rho * h * dt
+            self.limiter_branches = _select_limiter_branches(
+                self.problem.x_m, capacity, guide_capacity
+            )
+            for branch in self.limiter_branches:
+                branch.setflags(write=False)
+        self.action = self.probe.freeze(
+            self.reference_state, self.guide, branches=self.limiter_branches
+        )
         self.active_full = None
         if active_full is not None:
             active_full = np.asarray(active_full)
@@ -374,17 +390,10 @@ class LimitedLoadLinearization:
 
     def signature(self):
         """Identify the actual frozen model, avoiding duplicate recovery work."""
-        p, theta, h = self.probe.fields(self.reference_state)
-        rho, _, dr, _ = self.probe.case.fluid().properties(p)
-        dh, dp, dt = self.probe.directions(self.reference_state, self.guide)
-        guide = (dr * dp * h + rho * dh) * theta + rho * h * dt
-        branches = tuple(
-            _minmod_branch(a, b).tobytes()
-            for a, b in zip(
-                _slope_candidates(self.problem.x_m, rho * h * theta),
-                _slope_candidates(self.problem.x_m, guide),
-                strict=True,
-            )
+        branches = (
+            ()
+            if self.limiter_branches is None
+            else tuple(branch.tobytes() for branch in self.limiter_branches)
         )
         if self.active_full is None:
             pressure, deficit = (
@@ -396,8 +405,6 @@ class LimitedLoadLinearization:
             )
         else:
             full = self.active_full
-        if self.probe.transport_fraction == 0:
-            branches = ()
         return (
             self.preconditioner,
             self.probe.transport_fraction,

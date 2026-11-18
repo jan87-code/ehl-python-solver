@@ -1,4 +1,4 @@
-"""Hybrid donor/JFO correction: CUDA matrix-free products, CPU SuperLU inverse."""
+"""Hybrid limited-JFO correction: CUDA matrix-free products, CPU SuperLU inverse."""
 
 import math
 import time
@@ -236,7 +236,7 @@ class HybridJFOCorrection:
 
 
 class HybridJFOCorrectionSolver:
-    """CUDA donor/JFO operator and resident GMRES with CPU SuperLU preconditioning.
+    """CUDA limited-JFO operator and resident GMRES with CPU SuperLU preconditioning.
 
     The outer nonlinear solver remains the existing CPU implementation. Only
     the pressure/content/load Krylov vectors and matrix-free residual/JVP live
@@ -262,6 +262,7 @@ class HybridJFOCorrectionSolver:
         self.backend = make_backend("torch", "cuda") if backend is None else backend
         if self.backend.name != "torch":
             raise ValueError("hybrid JFO correction requires a torch backend")
+        self.case = case
         initialization_started = time.perf_counter()
         self.evaluator = DeviceDonorJFO(
             case, self.backend, memory_limit_bytes=workspace_limit_bytes
@@ -283,15 +284,20 @@ class HybridJFOCorrectionSolver:
     ):
         import torch
 
+        state = np.asarray(state, dtype=np.float64)
+        model._check_state(state)
         if (
-            model.probe.transport_fraction != 0
+            model.probe.case != self.case
             or model.active_full is None
             or model.n != self.evaluator.n
             or model.size != self.evaluator.size
+            or not np.array_equal(model.reference_state, state)
         ):
-            raise ValueError("hybrid correction requires a donor endpoint active-set model")
-        state = np.asarray(state, dtype=np.float64)
-        model._check_state(state)
+            raise ValueError(
+                "hybrid correction requires a matching limited active-set model "
+                "frozen at the current state"
+            )
+        self.evaluator.transport_fraction = model.probe.transport_fraction
         if (
             not math.isfinite(krylov_rtol)
             or not 0 < krylov_rtol < 1
@@ -316,7 +322,9 @@ class HybridJFOCorrectionSolver:
         residual_seconds = 0.0
         linearization_setup_seconds = 0.0
         state_transfer_seconds = 0.0
-        right_hand_side_transfer_seconds = 0.0
+        limiter_branch_transfer_seconds = 0.0
+        limiter_branch_transfer_bytes = 0
+        cpu_residual_rhs_h2d_seconds = 0.0
 
         def report_progress(stage, *, emit=False, **metrics):
             if progress_callback is None:
@@ -351,7 +359,8 @@ class HybridJFOCorrectionSolver:
                     ),
                     "cumulative_transfer_seconds": (
                         state_transfer_seconds
-                        + right_hand_side_transfer_seconds
+                        + limiter_branch_transfer_seconds
+                        + cpu_residual_rhs_h2d_seconds
                         + preconditioner.device_to_host_seconds
                         + preconditioner.host_to_device_seconds
                     ),
@@ -366,7 +375,9 @@ class HybridJFOCorrectionSolver:
                     "preconditioner_setup_seconds": 0.0,
                     "cumulative_preconditioner_apply_cpu_seconds": 0.0,
                     "cumulative_transfer_seconds": (
-                        state_transfer_seconds + right_hand_side_transfer_seconds
+                        state_transfer_seconds
+                        + limiter_branch_transfer_seconds
+                        + cpu_residual_rhs_h2d_seconds
                     ),
                 }
             event = {
@@ -402,6 +413,21 @@ class HybridJFOCorrectionSolver:
         state_transfer_seconds = time.perf_counter() - transfer_started
         state_transfer_bytes = int((z.numel() + guide.numel()) * z.element_size())
         active_transfer_bytes = int(active.numel())
+        limiter_branches = None
+        if model.limiter_branches is not None:
+            transfer_started = time.perf_counter()
+            limiter_branches = tuple(
+                torch.tensor(
+                    branch.copy(), dtype=torch.int64, device=device
+                )
+                for branch in model.limiter_branches
+            )
+            synchronize()
+            limiter_branch_transfer_seconds = time.perf_counter() - transfer_started
+            limiter_branch_transfer_bytes = sum(
+                branch.numel() * branch.element_size()
+                for branch in limiter_branches
+            )
         report_progress("setup", emit=True)
 
         residual_started = time.perf_counter()
@@ -410,7 +436,12 @@ class HybridJFOCorrectionSolver:
         residual_seconds = time.perf_counter() - residual_started
         report_progress("cuda_residual", emit=True)
         linearization_started = time.perf_counter()
-        operator = self.evaluator.linearize(z, guide, active_full=active)
+        operator = self.evaluator.linearize(
+            z,
+            guide,
+            active_full=active,
+            limiter_branches=limiter_branches,
+        )
         synchronize()
         linearization_setup_seconds = time.perf_counter() - linearization_started
         report_progress("linearization_setup", emit=True)
@@ -418,13 +449,15 @@ class HybridJFOCorrectionSolver:
         cpu_validation_started = time.perf_counter()
         cpu_residual = model.residual(state)
         cpu_residual_seconds = time.perf_counter() - cpu_validation_started
-        device_residual = residual.detach().cpu().numpy()
-        residual_absolute_linf = float(np.max(np.abs(cpu_residual - device_residual)))
         transfer_started = time.perf_counter()
-        right_hand_side = as_float64(-cpu_residual, self.backend)
+        cpu_residual_device = as_float64(cpu_residual, self.backend)
         synchronize()
-        right_hand_side_transfer_seconds = time.perf_counter() - transfer_started
-        report_progress("right_hand_side_transfer", emit=True)
+        cpu_residual_rhs_h2d_seconds = time.perf_counter() - transfer_started
+        residual_absolute_linf = float(
+            torch.max(torch.abs(cpu_residual_device - residual))
+        )
+        right_hand_side = -cpu_residual_device
+        report_progress("cpu_residual_rhs_transfer", emit=True)
         matrix_started = time.perf_counter()
         report_progress("matrix_assembly", emit=True)
         matrix = model.frozen_matrix(state)
@@ -511,10 +544,14 @@ class HybridJFOCorrectionSolver:
             "state_guide_mask_h2d_seconds": state_transfer_seconds,
             "state_guide_h2d_bytes": state_transfer_bytes,
             "active_mask_h2d_bytes": active_transfer_bytes,
+            "limiter_branch_h2d_seconds": limiter_branch_transfer_seconds,
+            "limiter_branch_h2d_bytes": limiter_branch_transfer_bytes,
             "cuda_residual_seconds": residual_seconds,
             "cuda_linearization_setup_seconds": linearization_setup_seconds,
             "cpu_residual_seconds": cpu_residual_seconds,
-            "linear_rhs_h2d_seconds": right_hand_side_transfer_seconds,
+            "cpu_residual_parity_h2d_seconds": cpu_residual_rhs_h2d_seconds,
+            "cpu_residual_parity_h2d_bytes": int(cpu_residual.nbytes),
+            "linear_rhs_h2d_seconds": cpu_residual_rhs_h2d_seconds,
             "linear_rhs_h2d_bytes": int(cpu_residual.nbytes),
             "cpu_matrix_assembly_seconds": matrix_assembly_seconds,
             "cpu_preconditioner_setup_seconds": preconditioner.setup_seconds,

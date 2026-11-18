@@ -601,6 +601,14 @@ def test_transport_path_preflights_first_blended_stage(tmp_path, monkeypatch):
     def stop_after_preflight(*_args, **_kwargs):
         raise RuntimeError("continuation reached after preflight")
 
+    monkeypatch.setattr(
+        limited_runner,
+        "estimate_resource_requirements",
+        lambda *_args, **_kwargs: {
+            "memory_preflight_passed": True,
+            "workspace_preflight_passed": True,
+        },
+    )
     monkeypatch.setattr(limited_runner, "resource_preflight", preflight)
     monkeypatch.setattr(limited_runner, "continue_limited_transport", stop_after_preflight)
     with pytest.raises(RuntimeError, match="continuation reached after preflight"):
@@ -640,6 +648,8 @@ def test_transport_runner_archives_detailed_cpu_heartbeat(accepted_mc_path, tmp_
     ) == 0
     summary = json.loads((output / "summary.json").read_text())
     assert summary["intermediate_stagnation_check"] is True
+    assert summary["hybrid_cuda_requested"] is False
+    assert summary["correction_backend"] == "cpu"
     records = [
         json.loads(line) for line in (output / "heartbeat.jsonl").read_text().splitlines()
     ]
@@ -651,6 +661,53 @@ def test_transport_runner_archives_detailed_cpu_heartbeat(accepted_mc_path, tmp_
     assert matching["timing_total_seconds"] >= 0
     assert "timing_active_set_recovery_seconds" in matching
     assert records[-1]["heartbeat_status"] == "accepted_numerical_root"
+
+
+def test_transport_runner_records_hybrid_backend_and_forwards_solver(
+    accepted_mc_path, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    import ehl_solver.hybrid_jfo as hybrid_module
+
+    root = accepted_mc_path[0].result
+    case_path = tmp_path / "case.json"
+    case_path.write_text(json.dumps(asdict(root.case)))
+    output = tmp_path / "hybrid-run"
+    created = []
+
+    class FakeHybrid:
+        def __init__(self, _case, *, workspace_limit_bytes):
+            assert workspace_limit_bytes > 0
+            self.backend = SimpleNamespace(device="cuda:0")
+            self.initialization_seconds = 0.25
+            created.append(self)
+
+    def continuation(_case, _state, **kwargs):
+        assert kwargs["correction_solver"] is created[0]
+        kwargs["heartbeat_observer"](
+            0, 0.5, stage="linear_solve", iteration=1, emit=True
+        )
+        return type("PathResult", (), {"result": root, "attempts": ()})()
+
+    monkeypatch.setattr(
+        hybrid_module, "HybridJFOCorrectionSolver", FakeHybrid
+    )
+    monkeypatch.setattr(limited_runner, "continue_limited_transport", continuation)
+    assert limited_runner.main(
+        case_path, None, output, 1, hybrid_cuda=True
+    ) == 0
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["hybrid_cuda_requested"] is True
+    assert summary["correction_backend"] == "hybrid_cuda_cpu_superlu"
+    assert summary["hybrid_cuda_setup"]["status"] == "initialized"
+    record = next(
+        json.loads(line)
+        for line in (output / "heartbeat.jsonl").read_text().splitlines()
+        if json.loads(line)["stage"] == "linear_solve"
+    )
+    assert record["gpu_enabled"] is True
+    assert record["correction_backend"] == "hybrid_cuda_cpu_superlu"
 
 
 def test_runner_loads_audited_donor_archive_as_unaccepted_mc_seed(

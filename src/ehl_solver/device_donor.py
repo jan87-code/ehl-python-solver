@@ -87,6 +87,11 @@ class DeviceDonorFlux:
 
     def fluxes(self, h, p, theta):
         """Return x/y face mass fluxes [kg/(m s)] with no field clipping."""
+        fluxes, _ = self._fluxes_with_density(h, p, theta)
+        return fluxes
+
+    def _fluxes_with_density(self, h, p, theta):
+        """Return donor fluxes and the density field for limited reconstruction."""
         self._fields(h, p, theta)
         if bool((h <= 0).any()):
             raise ValueError("film must be positive")
@@ -95,7 +100,7 @@ class DeviceDonorFlux:
         qx = -0.5 * (mobility[:, 1:] + mobility[:, :-1]) * (p[:, 1:] - p[:, :-1]) / self.dx
         qx += self.speed * (rho * h * theta)[:, :-1]
         qy = -0.5 * (mobility[1:] + mobility[:-1]) * (p[1:] - p[:-1]) / self.dy
-        return self._checked_fluxes(qx, qy)
+        return self._checked_fluxes(qx, qy), rho
 
     def direction(self, h, p, theta, dh, dp, dt):
         """Return the analytic smooth face-flux JVP for supplied directions."""

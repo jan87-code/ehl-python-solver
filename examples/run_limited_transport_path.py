@@ -618,6 +618,8 @@ def main(
     workspace_limit_bytes=2**30,
     intermediate_stagnation_check=False,
     hybrid_cuda=False,
+    initial_transport_step=None,
+    stop_after_target=False,
 ):
     if (
         isinstance(progress_interval, bool)
@@ -631,6 +633,17 @@ def main(
         or workspace_limit_bytes < 1
         or type(intermediate_stagnation_check) is not bool
         or type(hybrid_cuda) is not bool
+        or type(stop_after_target) is not bool
+        or (
+            initial_transport_step is not None
+            and (
+                isinstance(initial_transport_step, bool)
+                or not isinstance(initial_transport_step, (int, float))
+                or not np.isfinite(initial_transport_step)
+                or not 0 < initial_transport_step <= 1
+                or resume_from is None
+            )
+        )
     ):
         raise ValueError("Invalid progress, GMRES, memory or workspace setting")
     if sum(value is not None for value in (seed, limited_seed, resume_from)) > 1:
@@ -765,6 +778,8 @@ def main(
         intermediate_stagnation_check=intermediate_stagnation_check,
         hybrid_cuda_requested=hybrid_cuda,
         correction_backend="cpu",
+        initial_transport_step=initial_transport_step,
+        stop_after_target=stop_after_target,
         maximum_corrections_per_attempt=30,
         maximum_models_per_correction=8,
         maximum_krylov_cycles=10,
@@ -1004,6 +1019,8 @@ def main(
                 heartbeat_observer=observe_heartbeat,
                 intermediate_stagnation_check=intermediate_stagnation_check,
                 initial_transport_fraction=resume_fraction,
+                initial_transport_step=initial_transport_step,
+                stop_after_target=stop_after_target,
                 gmres_restart=gmres_restart,
                 workspace_limit_bytes=workspace_limit_bytes,
                 correction_solver=correction_solver,
@@ -1017,13 +1034,32 @@ def main(
         )
     except LimitedPathError as exc:
         result = exc.last_result
-        report.update(
-            status="rejected_path",
-            reason=str(exc),
-            attempts=exc.attempts,
-            last_accepted_fraction=None if result is None else result.transport_fraction,
-            last_stage_audit=None if result is None else result.audit,
-        )
+        if stop_after_target:
+            report.update(
+                status="bounded_target_stopped",
+                bounded_target_outcome=(
+                    None if not exc.attempts else exc.attempts[-1].get("status")
+                ),
+                bounded_target_failure=(
+                    None if exc.last_failure is None else str(exc.last_failure)
+                ),
+                reason=str(exc),
+                attempts=exc.attempts,
+                last_accepted_fraction=(
+                    None if result is None else result.transport_fraction
+                ),
+                last_stage_audit=None if result is None else result.audit,
+            )
+        else:
+            report.update(
+                status="rejected_path",
+                reason=str(exc),
+                attempts=exc.attempts,
+                last_accepted_fraction=(
+                    None if result is None else result.transport_fraction
+                ),
+                last_stage_audit=None if result is None else result.audit,
+            )
     except KeyboardInterrupt as exc:
         checkpoint = report.get("latest_accepted_checkpoint")
         report.update(
@@ -1073,6 +1109,16 @@ if __name__ == "__main__":
         "--intermediate-stagnation-check",
         action="store_true",
         help="Retry an above-gate intermediate stage after <10%% mass reduction in 5 corrections",
+    )
+    parser.add_argument(
+        "--initial-transport-step",
+        type=float,
+        help="One explicit first transport-fraction increment when resuming an accepted state",
+    )
+    parser.add_argument(
+        "--stop-after-target",
+        action="store_true",
+        help="Stop after one target completes; do not back off or start another target",
     )
     parser.add_argument(
         "--hybrid-cuda",
@@ -1125,5 +1171,7 @@ if __name__ == "__main__":
             workspace_limit_bytes=args.workspace_limit_mib * 1024**2,
             intermediate_stagnation_check=args.intermediate_stagnation_check,
             hybrid_cuda=args.hybrid_cuda,
+            initial_transport_step=args.initial_transport_step,
+            stop_after_target=args.stop_after_target,
         )
     )

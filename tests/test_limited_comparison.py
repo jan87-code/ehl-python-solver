@@ -710,6 +710,71 @@ def test_transport_runner_records_hybrid_backend_and_forwards_solver(
     assert record["correction_backend"] == "hybrid_cuda_cpu_superlu"
 
 
+def test_runner_forwards_and_records_one_bounded_resume_target(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    case = PointContactCase(ny=9, nx=13, maximum_physical_nodes=20000)
+    interior = (case.ny - 2) * (case.nx - 2)
+    state = np.zeros(2 * interior + 1, dtype=np.float64)
+    source = tmp_path / "source"
+    attempt = source / "attempt_000"
+    attempt.mkdir(parents=True)
+    state_path = attempt / "state.npz"
+    np.savez_compressed(state_path, state_dimensionless=state)
+    source_summary = {
+        "status": "interrupted",
+        "case": asdict(case),
+        "stages": [
+            {
+                "status": "accepted_stage",
+                "transport_fraction": 0.5,
+                "case": asdict(case),
+                "state_sha256": limited_runner.digest(state_path),
+            }
+        ],
+    }
+    (source / "summary.json").write_text(json.dumps(source_summary))
+    output = tmp_path / "single-target"
+    seen = {}
+
+    def stop_after_target(_case, _state, **kwargs):
+        seen.update(kwargs)
+        accepted = SimpleNamespace(
+            state=state,
+            audit={"numerically_accepted": True},
+            transport_fraction=0.625,
+        )
+        raise limited_runner.LimitedPathError(
+            "Stopped after the single requested transport target",
+            accepted,
+            ({"status": "accepted_stage", "transport_fraction": 0.625},),
+        )
+
+    monkeypatch.setattr(
+        limited_runner, "continue_limited_transport", stop_after_target
+    )
+    assert limited_runner.main(
+        None,
+        None,
+        output,
+        1,
+        resume_from=source,
+        initial_transport_step=0.125,
+        stop_after_target=True,
+    ) == 1
+
+    summary = json.loads((output / "summary.json").read_text())
+    assert seen["initial_transport_fraction"] == 0.5
+    assert seen["initial_transport_step"] == 0.125
+    assert seen["stop_after_target"] is True
+    assert seen["maximum_attempts"] == 1
+    assert summary["initial_transport_step"] == 0.125
+    assert summary["stop_after_target"] is True
+    assert summary["status"] == "bounded_target_stopped"
+    assert summary["bounded_target_outcome"] == "accepted_stage"
+    assert summary["last_accepted_fraction"] == 0.625
+
+
 def test_runner_loads_audited_donor_archive_as_unaccepted_mc_seed(
     accepted_mc_path, tmp_path, monkeypatch
 ):

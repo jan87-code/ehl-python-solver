@@ -474,6 +474,86 @@ def test_transport_retry_retains_last_stage_and_never_uses_rejected_partial(
     assert exc.value.attempts[-1]["status"] == "rejected_stage"
 
 
+def test_bounded_transport_target_stops_after_acceptance_without_endpoint_probe(
+    donor_root, monkeypatch
+):
+    import ehl_solver.limited_continuation as module
+
+    calls = []
+    audits = []
+
+    def audit(*_args, **_kwargs):
+        audits.append(True)
+        return {"numerically_accepted": True, "mass": {"relative_local_balance": 0.0}}
+
+    def accept_one(case, state, fraction, *_args, **_kwargs):
+        calls.append((fraction, state.copy()))
+        outcome = replace(
+            donor_root,
+            case=case,
+            state=state.copy(),
+            transport_fraction=fraction,
+        )
+        return outcome, {"status": "accepted_stage", "transport_fraction": fraction}
+
+    monkeypatch.setattr(module, "audit_limited_state", audit)
+    monkeypatch.setattr(module, "_attempt", accept_one)
+    step = 0.125
+    with pytest.raises(LimitedPathError) as exc:
+        continue_limited_transport(
+            donor_root.case,
+            donor_root.state,
+            maximum_attempts=1,
+            initial_transport_fraction=0.5,
+            initial_transport_step=step,
+            stop_after_target=True,
+        )
+
+    assert len(calls) == 1
+    assert calls[0][0] == pytest.approx(0.625)
+    np.testing.assert_array_equal(calls[0][1], donor_root.state)
+    assert exc.value.last_result.transport_fraction == pytest.approx(0.625)
+    assert exc.value.attempts[0]["status"] == "accepted_stage"
+    assert len(audits) == 1
+
+
+def test_bounded_transport_target_stops_after_failure_without_backoff(
+    donor_root, monkeypatch
+):
+    import ehl_solver.limited_continuation as module
+
+    calls = []
+
+    def audit(*_args, **_kwargs):
+        return {"numerically_accepted": True, "mass": {"relative_local_balance": 0.0}}
+
+    def reject_one(_case, state, fraction, *_args, **_kwargs):
+        calls.append((fraction, state.copy()))
+        return (
+            LimitedNewtonError("bounded target failed", state + 123.0, [], {}),
+            {"status": "rejected_stage", "transport_fraction": fraction},
+        )
+
+    monkeypatch.setattr(module, "audit_limited_state", audit)
+    monkeypatch.setattr(module, "_attempt", reject_one)
+    with pytest.raises(LimitedPathError) as exc:
+        continue_limited_transport(
+            donor_root.case,
+            donor_root.state,
+            maximum_attempts=1,
+            initial_transport_fraction=0.5,
+            initial_transport_step=0.125,
+            stop_after_target=True,
+        )
+
+    assert len(calls) == 1
+    assert calls[0][0] == pytest.approx(0.625)
+    np.testing.assert_array_equal(calls[0][1], donor_root.state)
+    assert exc.value.last_result.transport_fraction == 0.5
+    assert exc.value.attempts[0]["status"] == "rejected_stage"
+    assert str(exc.value.last_failure) == "bounded target failed"
+
+
 def test_transport_continuation_forwards_optional_correction_solver(
     donor_root, monkeypatch
 ):

@@ -231,6 +231,7 @@ def _endpoint_prediction(previous, last, *, workspace_limit_bytes=2**30):
 def continue_limited_transport(
     case, initial_state=None, *, maximum_attempts=24, stage_observer=None,
     endpoint_prediction=True, progress_observer=None, initial_transport_fraction=0.0,
+    initial_transport_step=None, stop_after_target=False,
     gmres_restart=60, workspace_limit_bytes=2**30, heartbeat_observer=None,
     intermediate_stagnation_check=False,
     correction_solver=None,
@@ -248,6 +249,7 @@ def continue_limited_transport(
         or (heartbeat_observer is not None and not callable(heartbeat_observer))
         or (correction_solver is not None and not callable(correction_solver))
         or type(intermediate_stagnation_check) is not bool
+        or type(stop_after_target) is not bool
         or type(gmres_restart) is not int
         or not 1 <= gmres_restart <= 60
         or type(workspace_limit_bytes) is not int
@@ -264,6 +266,16 @@ def continue_limited_transport(
         or (initial_transport_fraction > 0 and initial_state is None)
     ):
         raise ValueError("Resuming requires a finite accepted fraction in [0,1) and its state")
+    if initial_transport_step is not None and (
+        isinstance(initial_transport_step, bool)
+        or not isinstance(initial_transport_step, (int, float, np.number))
+        or not np.isfinite(initial_transport_step)
+        or not 0 < initial_transport_step <= 1
+        or initial_transport_fraction == 0
+    ):
+        raise ValueError(
+            "initial_transport_step requires a resumed state and a finite step in (0,1]"
+        )
     pending = [
         0.0,
         0.5,
@@ -303,9 +315,16 @@ def continue_limited_transport(
         if not pending:
             if last is None:
                 break
-            next_fraction = 0.5 * (1.0 + last.transport_fraction)
+            if initial_transport_step is None:
+                next_fraction = 0.5 * (1.0 + last.transport_fraction)
+            else:
+                next_fraction = min(
+                    1.0, last.transport_fraction + float(initial_transport_step)
+                )
+                initial_transport_step = None
             if next_fraction <= last.transport_fraction or next_fraction >= 1.0:
-                break
+                if next_fraction < 1.0:
+                    break
             pending = [next_fraction]
         target = pending.pop(0)
         outcome, data = _attempt(
@@ -328,7 +347,7 @@ def continue_limited_transport(
         attempts.append(data)
         if isinstance(outcome, LimitedNewtonError):
             failure = outcome
-            if last is None:
+            if last is None or stop_after_target:
                 break
             mid = 0.5 * (last.transport_fraction + target)
             if mid - last.transport_fraction < 1e-12:
@@ -340,6 +359,8 @@ def continue_limited_transport(
         state = last.state.copy()
         if target == 1.0:
             return LimitedPath(last, tuple(attempts), "transport")
+        if stop_after_target:
+            break
         # A nearby blended root may already satisfy the exact MC gates;
         # explicitly run the fraction-one final audit instead of promoting it.
         probe = LimitedLoadProbe(case, workspace_limit_bytes=workspace_limit_bytes)
@@ -356,12 +377,13 @@ def continue_limited_transport(
                 pending = [1.0]
                 state = candidate
                 pending_prediction = diagnostic
-    raise LimitedPathError(
-        "Transport continuation incomplete; full limited root not established",
-        last,
-        attempts,
-        failure,
+    message = (
+        "Stopped after the single requested transport target; "
+        "full limited root not established"
+        if stop_after_target
+        else "Transport continuation incomplete; full limited root not established"
     )
+    raise LimitedPathError(message, last, attempts, failure)
 
 
 def continue_limited_load(

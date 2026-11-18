@@ -7008,6 +7008,11 @@ values.
 The last accepted 513x513 blended continuation source remains
 `results/ciulli_20261116_mc_513_tau_continuation_resume1/attempt_008/state.npz`
 at `tau=0.9990234375`. The profiled `attempt_009` state is rejected and was
-used only for bounded timing; it is not a restart or accepted solution. A
-blended continuation, exact-MC root, mesh convergence study, and physical
-validation against experiment remain outstanding.
+used only for bounded timing; it is not a restart or accepted solution. The
+adaptive continuation is now running in
+`results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/` from
+`attempt_008` with the verified hash, GMRES restart 60, and the intermediate
+stagnation check enabled. Its initial summary and heartbeat show `running`;
+no new stage had yet been accepted at the first status check. An exact-MC root,
+mesh convergence study, and physical validation against experiment remain
+outstanding.

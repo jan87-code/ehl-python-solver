@@ -57,9 +57,14 @@ accepted state was interrupted during an unaccepted correction, and its
 heartbeat and interrupted summary were preserved. The resume source remains
 the verified `attempt_008/state.npz` in
 `results/ciulli_20261116_mc_513_tau_continuation_resume1/`; the newer
-interrupted directory has no newly accepted stage. No continuation is running.
-These blended roots are not exact MC results. CPU continuation records detailed
-scalar heartbeats through linear solves and recovery. An optional
+interrupted directory has no newly accepted stage. On 2026-11-18 a fresh
+continuation was started in
+`results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/`, resuming
+from stage 8 at tau `0.9990234375` with the same state hash and
+`gmres_restart=60`; the intermediate-stagnation check is enabled. Its initial
+heartbeat and summary confirm `running`; no new stage had yet been accepted
+at that check. These blended roots are not exact MC results. CPU continuation
+records detailed scalar heartbeats through linear solves and recovery. An optional
 intermediate-stagnation check can reject an above-gate
 stage with less than 10% local mass reduction over five corrections and retry
 from the last accepted state at half the tau step. This heuristic does not

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "case_name": "ciulli_15n_donor",
+  "load_n": 15.0,
+  "grid_ny_nx": [
+    1025,
+    1025
+  ],
+  "formulation": "donor-flux",
+  "status": "accepted_numerical_root",
+  "status_label": "ACCEPTED",
+  "backend": "Hybrid CUDA operator / CPU SuperLU (NVIDIA RTX A2000 Laptop GPU)",
+  "runtime_seconds": 30.48795170000085,
+  "newton_corrections": 0,
+  "force_audit": {
+    "relative_force_error": 2.220446049250313e-16
+  },
+  "metrics": {
+    "central_film_m": 4.6112585326375483e-07,
+    "minimum_film_m": 2.7628802139815585e-07,
+    "minimum_film_xy_m": [
+      2.500000000000001e-05,
+      -8.203125000000002e-05
+    ],
+    "minimum_film_locations_m": [
+      [
+        2.500000000000001e-05,
+        -8.203125000000002e-05
+      ],
+      [
+        2.500000000000001e-05,
+        8.203125000000002e-05
+      ]
+    ],
+    "centerline_minimum_film_m": 3.965512031836003e-07,
+    "centerline_minimum_x_m": 9.453125000000005e-05,
+    "maximum_pressure_pa": 896066263.8815417,
+    "maximum_pressure_locations_m": [
+      [
+        5.3125000000000004e-05,
+        -5.937500000000002e-05
+      ],
+      [
+        5.3125000000000004e-05,
+        5.937500000000002e-05
+      ]
+    ],
+    "centerline_outlet_peak": null,
+    "film_display_range_nm": [
+      275.0,
+      1000.0
+    ],
+    "film_display_cap_nm": 1000.0,
+    "film_clipped_below_range": false,
+    "film_clipped_above_range": true,
+    "centerline_film_clipped_below_range": false,
+    "centerline_film_clipped_above_range": true,
+    "analytic_contact_references": {
+      "hertz_radius_m": 0.00010000000000000005,
+      "hertz_peak_pressure_pa": 716197243.9135283,
+      "hamrock_dowson_central_film_m": 4.5880405849015045e-07,
+      "hamrock_dowson_minimum_film_m": 2.6872973609857753e-07
+    }
+  },
+  "analytic_contact_references": {
+    "hertz_radius_m": 0.00010000000000000005,
+    "hertz_peak_pressure_pa": 716197243.9135283,
+    "hamrock_dowson_central_film_m": 4.5880405849015045e-07,
+    "hamrock_dowson_minimum_film_m": 2.6872973609857753e-07
+  },
+  "pressure_display_range_gpa": [
+    -1.2112672570210776e-28,
+    0.8960662638815418
+  ],
+  "film_display_range_nm": [
+    275.0,
+    1000.0
+  ],
+  "film_display_cap_nm": 1000.0,
+  "full_field_archive": "state.npz",
+  "outputs": {
+    "summary_png": "ciulli_15n_donor_15N_1025x1025_donor-flux_ACCEPTED_summary.png",
+    "combined_profiles_csv": "ciulli_15n_donor_15N_1025x1025_donor-flux_ACCEPTED_summary_profiles.csv",
+    "pressure_profile_csv": "ciulli_15n_donor_15N_1025x1025_donor-flux_ACCEPTED_summary_pressure_profile.csv",
+    "film_profile_csv": "ciulli_15n_donor_15N_1025x1025_donor-flux_ACCEPTED_summary_film_profile.csv"
+  }
+}

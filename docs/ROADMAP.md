@@ -3105,6 +3105,10 @@ path, retaining the existing heartbeat, retry, stagnation and independent
 audit logic. This was started in
 `results/ciulli_20261118_mc_513_tau_hybrid_cuda_resume/`; the measured
 resource/sparse-factor preflight passed, and the hybrid CUDA/CPU-SuperLU
-backend initialized. The first target `tau=0.99957275390625` is in progress;
-no new stage has been accepted yet. Continue to tau 1 only through formally
-accepted stages; never promote an in-flight state.
+backend initialized. The first `tau=0.99957275390625` attempt was rejected by
+the configured intermediate-stagnation gate. Its half-step retry accepted
+`tau=0.999359130859375` at `attempt_001/state.npz`; the next attempt toward
+`tau=0.99957275390625` is in progress. The rejected state remains marked only
+as a rejected stage. Checkpoint hashes and audits are in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md). Continue to tau 1 only through
+formally accepted stages; never promote an in-flight state.

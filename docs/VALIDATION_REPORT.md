@@ -7128,9 +7128,22 @@ relative residual was `4.97e-16`. Hybrid CUDA initialization completed in
 `0.77 s`, and the run summary identifies the active backend as
 `hybrid_cuda_cpu_superlu`.
 
-At the latest recorded heartbeat, the first resumed target
-`tau=0.99957275390625` was in its GMRES correction. No new transport stage
-has yet been formally accepted, and no in-flight state is treated as a
-solution. The run retains the existing heartbeat, retry, stagnation and
-independent audit logic. Exact-MC completion and physical validation remain
-unverified while this continuation is in progress.
+The first attempt at `tau=0.99957275390625` was rejected by the existing
+intermediate-stagnation gate: local mass balance changed from
+`4.9466e-10` to `4.7422e-10` over five corrections, short of the required
+10% reduction. It remains labeled `rejected_stage` in `attempt_000`; this
+state is diagnostic only and is not an accepted solution. The configured
+half-step retry formally accepted `tau=0.999359130859375` in
+`attempt_001/state.npz`, SHA-256
+`6c79f3921c3662478b823e07372d3da9d63784528c3d40d5b5b4b2bba67946f2`.
+Its independently checked audit reports local mass balance `4.90e-13`,
+global balance `3.78e-17`, complementarity `2.03e-26`, force
+`14.999999999999998 N` (relative error `-1.11e-16`), and minimum film
+`2.73379e-7 m`; the requested `1e-12` local tolerance passed. Independent
+elasticity reconstruction used `scipy.signal.fftconvolve`.
+
+The run remains active on `hybrid_cuda_cpu_superlu`. Its next attempt toward
+`tau=0.99957275390625` had entered GMRES at the latest heartbeat. No
+in-flight state is treated as a solution. The run retains the existing
+heartbeat, retry, stagnation and independent audit logic. Exact-MC completion
+and physical validation remain unverified while continuation is in progress.

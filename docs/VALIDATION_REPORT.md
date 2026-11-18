@@ -7418,3 +7418,160 @@ the circular point-contact validation phase, the remaining blockers are:
 The exact MC endpoint is a separate unresolved transport research question,
 not a blocker to the donor-specific numerical comparison. Do not resume
 continuation or launch another uniform EHL solve as part of this closeout.
+
+## Region-resolved Ciulli comparison and validation decision (2026-11-18)
+
+This addendum refines the Figure 13 comparison above using the same accepted
+65x65 through 1025x1025 donor/JFO roots and the digitized `S=0` points. It is
+saved-field post-processing only: no EHL solve, parameter tuning or solver
+physics change was performed. The 1025x1025 field was generated with the
+verified hybrid CUDA JFO-JVP / CPU residual and SuperLU backend; comparisons
+use CPU interpolation and metrics.
+
+The four profile regions are declared before computing errors:
+longitudinal bulk `x in [-70,70] um`, outlet/constriction `x in [80,100] um`,
+transverse bulk `y in [-60,60] um`, and transverse side-constrictions
+`70 <= |y| <= 100 um`. These masks partition the 10 um digitized points
+into central and feature-specific groups; upstream longitudinal points
+`x<-70 um` are outside the requested bulk/outlet comparison. Transition
+points at `|x|=80` and `|y|=70 um` are excluded from the corresponding bulk
+regions. RMSE, signed bias and maximum absolute deviation are computed as
+model minus digitized thickness. Per-point bars are the existing plot-read-off
+estimates; the digitization RMS is a descriptive scale, not a statistical
+confidence interval. The approximately +/-2 um coordinate read-off error is
+not propagated.
+
+### Regional film-profile agreement
+
+| Figure 13 region | Points | RMSE [nm] | Bias [nm] | Maximum absolute deviation [nm] | Digitization RMS estimate [nm] | Within per-point estimate |
+|---|---:|---:|---:|---:|---:|---:|
+| Longitudinal bulk, `y=0` | 15 | 4.05 | +0.23 | 7.50 | 20.00 | 15/15 |
+| Longitudinal outlet/constriction, `y=0` | 3 | 92.45 | -7.95 | 138.10 | 33.67 | 0/3 |
+| Transverse bulk, `x=0` | 13 | 13.70 | +11.24 | 22.30 | 20.00 | 9/13 |
+| Transverse side-constrictions, `x=0` | 8 | 35.81 | +21.40 | 61.42 | 30.82 | 5/8 |
+
+The longitudinal bulk profile agrees closely with the digitized values within
+the estimated read-off bars. Transverse bulk agreement is good in aggregate,
+but four of thirteen points lie outside their individual bars. The
+longitudinal outlet/constriction does not agree within the available
+digitization estimates. The transverse side constrictions show partial
+agreement, not a pointwise pass. Do not interpret the coverage counts as
+probabilities.
+
+The change from 513x513 to 1025x1025 sampled at these same points is smaller
+than the digitization RMS in each region:
+
+| Region | 513->1025 profile-difference RMS [nm] | Digitization RMS estimate [nm] | Ratio |
+|---|---:|---:|---:|
+| Longitudinal bulk | 4.54 | 20.00 | 0.227 |
+| Longitudinal outlet/constriction | 2.80 | 33.67 | 0.083 |
+| Transverse bulk | 4.19 | 20.00 | 0.210 |
+| Transverse side-constrictions | 2.57 | 30.82 | 0.083 |
+
+The full five-grid region-wise RMS changes, in grid order
+65->129, 129->257, 257->513 and 513->1025, are respectively
+`6.75, 11.61, 8.00, 4.54 nm` longitudinal bulk;
+`23.47, 1.57, 4.11, 2.80 nm` longitudinal outlet;
+`5.84, 10.60, 7.37, 4.19 nm` transverse bulk; and
+`10.90, 5.49, 4.27, 2.57 nm` transverse side-constrictions.
+The late changes are small compared with the estimated point-read-off
+uncertainties, but the sequences are not uniformly monotone and are not formal
+continuum-error bounds.
+
+The primary zoomed comparison and the pointwise residual plot display the
+read-off bars and the declared region masks:
+
+- [`figure13_donor_profile_regions.png`](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/figure13_donor_profile_regions.png)
+- [`figure13_profile_residuals.png`](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/figure13_profile_residuals.png)
+- [`profile_region_agreement_1025.csv`](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/profile_region_agreement_1025.csv)
+- [`profile_region_grid_sensitivity.csv`](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/profile_region_grid_sensitivity.csv)
+
+### Central and minimum film thickness
+
+| Quantity / cut | Model [nm] | Digitized [nm] | Model minus digitized [nm] | Read-off estimate [nm] | Interpretation |
+|---|---:|---:|---:|---:|---|
+| `h_c`, longitudinal origin | 461.13 | 460 | +1.13 | +/-20 | Within the Figure 13 read-off estimate |
+| `h_c`, transverse origin | 461.13 | 460 | +1.13 | +/-20 | Within the Figure 13 read-off estimate |
+| Longitudinal cut minimum (`y=0`) | 396.55 at `x=94.53 um` | 360 at `x=90 um` | +36.55 in minimum value | +/-30 | Outside the read-off estimate; minima are separated by 4.53 um |
+| Transverse cut minimum (`x=0`) | 296.76 at `|y|=85.94 um` | 250 at `|y|=80 um` | +46.76 in minimum value | +/-30 | Outside the read-off estimate; minima are separated by 5.94 um |
+
+At the digitized minimum coordinates themselves, the model-minus-measurement
+differences are +52.37 nm at longitudinal `x=90 um` and +61.42 nm at
+transverse `|y|=80 um`. The global 1025-grid `h_min` is `276.288 nm` at
+`(x,y)=(25.000,-82.031) um`, and changes by `-2.224 nm` from 513x513. Its
+nominal difference from the lowest digitized profile point (`250 +/- 30 nm`)
+is +26.29 nm, but that is **not a direct `h_min` comparison**: the Figure 13
+transverse cut is at `x=0`, while the numerical global minimum is at
+`x=25 um`. The Figure 13 profiles therefore do not validate global `h_min`.
+
+### Bulk pressure and outlet integrals
+
+There are no pressure data in Figure 13. The existing bulk/main-contact
+513->1025 pressure sensitivity remains 2.678% relative L2 and 14.787 MPa RMS;
+it is numerical sensitivity only, not pressure validation. The fixed
+absolute-pressure corridor integral over `x=[75,100] um`, `|y|<=100 um`
+increases from `0.497460 N` to `0.505040 N` (+1.524%) on the last refinement.
+This fixed-rectangle integral includes background pressure and is neither
+total load nor a baseline-subtracted outlet spike.
+
+A separate integral over the grid-dependent centerline half-prominence width
+and `|y|<=100 um` falls from `0.060804 N` at 513x513 to `0.035419 N` at
+1025x1025 (-41.75%). Its detected x-window narrows from about
+`[84.586,87.289] um` to `[85.856,87.581] um`; this moving-window diagnostic
+is a sharp-feature sensitivity, not a fixed-window convergence measure or an
+engineering-use pressure result. See
+[`outlet_pressure_integrals.csv`](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/outlet_pressure_integrals.csv).
+The local `p_max`, exact peak location and Petrusevich width remain unresolved.
+
+### Uncertainty separation and use decision
+
+Keep the evidence sources distinct:
+
+1. **Grid/discretization:** observed five-grid differences and last-pair
+   sensitivities above. No asymptotic order, Richardson/GCI estimate or
+   formal continuum uncertainty is claimed.
+2. **Experimental/digitization:** per-point Figure 13 plot-read-off bars
+   (`+/-20 nm` in smooth areas, `+/-30-40 nm` near steep features). The paper
+   did not pressure-correct the optical refractive index and estimates an
+   additional effect of about `10 nm`; this optical effect is not included
+   in the CSV read-off bars or combined with them here.
+3. **Constitutive/input-model:** Roelands viscosity matched only to the
+   reported ambient pressure-viscosity slope and assumed Dowson-Higginson
+   density coefficients remain model choices. Their existing alternative
+   model sensitivity is reported separately above; no physical input was
+   tuned to improve this profile match.
+4. **Transport discretization:** donor versus accepted
+   `tau=0.999359130859375` remains sensitivity evidence only, not an exact-MC
+   comparison.
+
+For preliminary engineering screening under this specific declared model,
+`h_c` and the longitudinal bulk film profile are the best-supported outputs;
+their last-grid differences are below the plotted read-off scale, and the
+central film lies within the Figure 13 estimate. The transverse bulk profile
+is also reasonable in aggregate but not uniformly within pointwise bars.
+This is not design-grade or fully validated EHL prediction. Do not use global
+`h_min`, local outlet/side-constriction minima, `p_max`, peak location, ridge
+width or the moving-window outlet integral as resolved engineering values.
+Pressure has no experimental comparison in Figure 13.
+
+Another automatic uniform refinement to 2049x2049 is **not justified** for
+the present central/bulk film comparison: the 513->1025 profile changes are
+already much smaller than the digitization estimates, while uniform
+refinement would not reduce constitutive or optical-reference uncertainty.
+If sharp outlet pressure or the global minimum is required, the next numerical
+work should be a separately scoped local-resolution/discretization study with
+explicit acceptance metrics, not an automatic uniform doubling.
+
+The strongest supported conclusion is that the donor/JFO implementation has
+accepted discrete roots, verified equation closure, and physical agreement
+with Ciulli's longitudinal bulk film and central film thickness within the
+available plot-read-off estimates. Agreement is incomplete in the transverse
+bulk and absent at the longitudinal outlet constriction; the transverse side
+constrictions are only partially within those estimates. The circular
+point-contact physical-validation phase cannot yet be closed. Remaining
+blockers are a defensible high-pressure lubricant property law and its
+uncertainty, resolution/verification of sharp outlet and global-minimum
+features if those outputs are required, and independent pressure/cavitation
+or matched numerical-benchmark evidence. Original interferograms and
+pressure-dependent optical properties remain optional improvements to the
+experimental reference, not prerequisites for the initial comparison.

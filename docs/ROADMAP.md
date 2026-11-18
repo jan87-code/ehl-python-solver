@@ -34,6 +34,23 @@ sharp-feature diagnostics; do not launch another automatic uniform mesh.
 The reproducible saved-field analysis and figures are documented at the end
 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
+The region-resolved Figure 13 follow-up (2026-11-18) finds 1025-grid
+longitudinal-bulk RMSE/bias/max deviation of `4.05/+0.23/7.50 nm` and
+transverse-bulk values of `13.70/+11.24/22.30 nm`. Central film is
+`461.13 nm`, `+1.13 nm` from the digitized `460 +/- 20 nm`. The longitudinal
+outlet region remains discrepant (RMSE `92.45 nm`), and the transverse side
+constrictions only partially lie within digitization estimates (RMSE
+`35.81 nm`, 5/8 points within their per-point bars). The 513-to-1025
+profile changes at measured points are below digitization RMS in all four
+regions, but neither this nor the broader five-grid sequence supplies formal
+continuum uncertainty. The global `h_min` is not directly sampled by either
+Figure 13 midplane cut, and pressure has no Figure 13 comparison. Use `h_c`
+and longitudinal bulk film only for preliminary screening under declared
+inputs; do not claim design-grade physical validation. Do not start a
+uniform 2049x2049 solve. If sharp-feature outputs are required, define a
+separate targeted-resolution study. The final regional figures and tables are
+listed in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+
 MC continuation is stopped. The highest accepted blended diagnostic remains
 `tau=0.999359130859375`; the one authorized smaller target
 `tau=0.9994659423828125` was rejected by the existing stagnation gate. No

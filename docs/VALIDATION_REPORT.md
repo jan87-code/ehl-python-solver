@@ -7113,37 +7113,138 @@ preconditioner, equation, tolerance, continuation rule, or acceptance gate
 was changed. The 513x513 exact-MC endpoint, physical validation, and mesh
 convergence remain open.
 
-### Hybrid continuation resumed (in progress)
+### Final bounded hybrid target and donor/near-MC comparison (2026-11-18)
 
-After all saved-state gates passed, continuation was resumed from the accepted
-`tau=0.9991455078125` state into the fresh directory
-`results/ciulli_20261118_mc_513_tau_hybrid_cuda_resume/`. The source checkpoint
-hash is recorded in the run summary as
-`529d2b12594126b44a1e09d07c93476f18e8d76d1f2b017ac5a806f69cdb1f7d`. The
-measured resource and sparse-factor preflight passed: peak process memory was
-`14,596,210,688` bytes, peak working set was `12,664,061,952` bytes, and the
-conservative adjusted estimate (`19,732,633,545` bytes) was below the
-preflight ceiling (`21,201,199,104` bytes). The known-vector factor audit
-relative residual was `4.97e-16`. Hybrid CUDA initialization completed in
-`0.77 s`, and the run summary identifies the active backend as
-`hybrid_cuda_cpu_superlu`.
-
-The first attempt at `tau=0.99957275390625` was rejected by the existing
-intermediate-stagnation gate: local mass balance changed from
-`4.9466e-10` to `4.7422e-10` over five corrections, short of the required
-10% reduction. It remains labeled `rejected_stage` in `attempt_000`; this
-state is diagnostic only and is not an accepted solution. The configured
-half-step retry formally accepted `tau=0.999359130859375` in
-`attempt_001/state.npz`, SHA-256
+The hybrid run's first attempt at `tau=0.99957275390625` was rejected by the
+existing intermediate-stagnation gate. Its half-step retry formally accepted
+`tau=0.999359130859375` in
+`results/ciulli_20261118_mc_513_tau_hybrid_cuda_resume/attempt_001/state.npz`,
+SHA-256
 `6c79f3921c3662478b823e07372d3da9d63784528c3d40d5b5b4b2bba67946f2`.
-Its independently checked audit reports local mass balance `4.90e-13`,
-global balance `3.78e-17`, complementarity `2.03e-26`, force
-`14.999999999999998 N` (relative error `-1.11e-16`), and minimum film
-`2.73379e-7 m`; the requested `1e-12` local tolerance passed. Independent
-elasticity reconstruction used `scipy.signal.fftconvolve`.
+The accepted-state audit reports local mass balance `4.90e-13`, global
+balance `3.78e-17`, complementarity `2.03e-26`, force
+`14.999999999999998 N` (relative error `-1.11e-16`), minimum film
+`2.73379e-7 m`, and direct elasticity reconstruction with
+`scipy.signal.fftconvolve`. The source run summary still says `running`
+because its interruption did not write a terminal status; the bounded runner
+selected the latest completed accepted stage, verified its checksum, and did
+not use the rejected or in-flight state. The source summary SHA-256 recorded
+by the bounded run is
+`34f0d29c02b31c95827bcb2fc34ca77b56f8c8867cfde6d57ddfeaddb77d7e5f`.
 
-The run remains active on `hybrid_cuda_cpu_superlu`. Its next attempt toward
-`tau=0.99957275390625` had entered GMRES at the latest heartbeat. No
-in-flight state is treated as a solution. The run retains the existing
-heartbeat, retry, stagnation and independent audit logic. Exact-MC completion
-and physical validation remain unverified while continuation is in progress.
+Exactly one smaller continuation target was then requested:
+`0.999359130859375 + 0.0001068115234375 = 0.9994659423828125`. The first
+launch stopped at preflight because the default memory ceiling was 2 GiB; no
+continuation target started in that output directory. A fresh run used the
+same hybrid CUDA / CPU-SuperLU path and a 20,220 MiB configured ceiling. Its
+adjusted estimate was `19,732,633,545` bytes, below the configured
+`21,202,206,720` bytes, with `28,784,214,016` bytes available at preflight.
+The existing equations, tolerances, solver budgets and acceptance gates were
+unchanged. The run is
+`results/ciulli_20261118_mc_513_final_bounded_tau_target_run1/`.
+
+The single target was rejected by the existing five-correction stagnation
+gate. Relative local balance changed from `2.6269158774e-10` to
+`2.5709349607e-10`, only a `2.13%` reduction versus the required `10%`;
+the requested local-balance tolerance remains `1e-12`. The rejected stage
+also had exact `15 N` force balance and relative global balance
+`1.13e-16`, but those do not override the failed local gate. The run records
+one target, status `bounded_target_stopped`, and the stage as
+`rejected_stage`; no backoff or subsequent target ran. The highest accepted
+fraction therefore remains `0.999359130859375`. The runner's
+`last_accepted_state.npz` is array-equal to the verified accepted source
+checkpoint; its compressed-archive SHA-256 is
+`d717dd4640939fcaf147434d9a8a0c4e64da3abd0b22a3463a30514dcf3f0fa6`.
+The rejected target is diagnostic only, not a root.
+
+#### Same-grid donor versus highest accepted near-MC root
+
+The comparison uses the checksum-verified 513x513 donor root
+`results/ciulli_20261111_donor_513_fixed/state.npz` (SHA-256
+`4d6376f51c0056f0414a8bed3cab8916c88f27db8f738d8ab77f060ffcf0ce06`)
+and the accepted `tau=0.999359130859375` checkpoint above. Both are on the
+same physical grid and case: `15 N`, `R=5.1595 mm`, `E'=58.044375 GPa`,
+`eta_0=0.497 Pa s`, `rho_0=892 kg/m^3`, `alpha_p=2.87e-8 Pa^-1`,
+`u_e=0.2 m/s`, and `12 deg C`. Fields were reconstructed from the accepted
+near-MC state at its explicit transport fraction and compared on identical
+native coordinates; there is no interpolation. Arrays are `(ny,nx)`, with
+`+x` the entrainment direction.
+
+| Quantity | Donor | Accepted near-MC | Near-MC minus donor |
+|---|---:|---:|---:|
+| Central film `h_c` | 465.649 nm | 455.429 nm | -10.219 nm (-2.20%) |
+| Minimum film `h_min` | 278.512 nm | 273.379 nm | -5.133 nm (-1.84%) |
+| Maximum pressure `p_max` | 812.881 MPa | 803.845 MPa | -9.036 MPa |
+
+Over the full film field, RMS and maximum absolute differences are `7.865 nm`
+and `10.493 nm`; relative L2 difference is `0.0700%`. For the profiles,
+film RMS/Linf differences are `8.482/10.493 nm` longitudinally (`y=0`) and
+`7.897/10.219 nm` transversely (`x=0`). Pressure-profile RMS/Linf differences
+are `4.272/84.437 MPa` longitudinally and `3.699/44.841 MPa` transversely.
+The corresponding pressure-profile relative L2 differences are `1.405%` and
+`1.277%`.
+
+For the full pressure fields, measured over the union of nodes above 1 kPa,
+RMS difference is `5.485 MPa`, relative L2 is `3.675%`, and Linf is
+`270.229 MPa`. In the fixed main-contact region
+`x=[-100,60] um`, `y=[-75,75] um`, the same positive-pressure support gives
+`15.617 MPa` RMS and `2.848%` relative L2. The localized Linf is not
+representative of the bulk field by itself; `p_max` is likewise not used
+alone to judge the formulation difference. The Linf occurs at
+`(x,y)=(56.25,57.8125) um`, where pressure is `445.725 MPa` for donor and
+`715.954 MPa` for near-MC. This is a localized core-ridge discrepancy; the
+donor 257-to-513 main-field intergrid Linf is `296.020 MPa` in the same
+region, so the feature is not resolved well enough to attribute the pointwise
+change to transport formulation alone.
+
+The existing downstream peak tracker classifies both roots as having one
+sampled connected curved pressure-maximum locus. The donor locus spans 77
+rows through `|y|=59.375 um`; the near-MC locus spans 79 rows through
+`|y|=60.9375 um`. Their strict common interval contains 77 rows over
+`y=[-59.375,59.375] um`. Across those rows, the near-MC peak location shifts
+by `1.068 um` RMS and at most `1.5625 um` (one grid cell). At `y=0` both
+peaks are at `x=85.9375 um`; their pressures are `689.502` and `695.497 MPa`
+(near-MC higher by `5.995 MPa`). Across the common locus the peak-pressure
+difference is `38.171 MPa` RMS and `74.477 MPa` Linf.
+
+Using the same `+/-5 um` x-window centered on the donor peak at each common
+transverse row, the centerline pressure integral is `4410.309` versus
+`4478.564 N/m` (`+1.55%`). Integrating those matched rowwise windows over
+the common connected interval gives `0.576233` versus `0.592577 N`
+(`+2.84%`); this is an outlet-window integral, not total load. As a
+window-placement sensitivity check, centering each row's `+/-5 um` window on
+its own tracked peak instead gives `0.576233` versus `0.554191 N`
+(`-3.83%`). This sign change is consistent with the one-cell ridge
+displacement and shows that the outlet integral is window-sensitive.
+
+The tracked film constriction moves from `x=93.75 um` to `95.3125 um` on the
+centerline. Across the 77 common transverse rows its location shift is
+`0.642 um` RMS and at most one cell (`1.5625 um`); the tracked minimum-film
+value differs by `6.50 nm` RMS and `7.16 nm` Linf.
+
+These formulation differences are comparable to the current discretization
+evidence, not a physical-accuracy bound. On the donor branch, 257-to-513
+refinement changes `h_c` by `1.69%`, `h_min` by `1.24%`, and the main
+pressure field by `3.451%` relative L2 (`19.075 MPa` RMS); the corresponding
+near-MC-versus-donor main-pressure difference is `2.848%` (`15.617 MPa`
+RMS). The intergrid pressure metric uses the report's 0.5 um common grid,
+while the formulation comparison uses identical native 513-grid nodes; this
+is a scale comparison, not a formally matched error estimate. The near-MC
+film-field relative L2 difference is small, while its central/minimum film
+shifts are of the same order as the last donor-grid changes. Its
+longitudinal/transverse profile RMS differences (`8.482/7.897 nm`) are below
+the current Figure 13 digitization RMS estimates (`24.20/24.69 nm`), which
+are not formal confidence bounds. The outlet locus moves by only one cell and
+its integral varies by a few percent depending on the fixed-window anchor.
+The mesh sequence is not asymptotic and does not provide a formal uncertainty
+estimate.
+
+**Decision:** further brute-force transport-fraction continuation is not
+justified by this comparison. Use the donor formulation as the current
+production formulation for the validated 513x513 Ciulli equation-closure
+case, and prioritize numerical-uncertainty work and the Ciulli Figure 13
+physical-validation comparison. Retain the accepted near-MC state as
+robustness evidence, not an exact-MC result. The exact `tau=1` endpoint,
+physical load/cavitation validation, and defensible mesh uncertainty remain
+unverified; none of these numerical-root comparisons constitutes a complete
+physical EHL validation.

@@ -3108,7 +3108,17 @@ resource/sparse-factor preflight passed, and the hybrid CUDA/CPU-SuperLU
 backend initialized. The first `tau=0.99957275390625` attempt was rejected by
 the configured intermediate-stagnation gate. Its half-step retry accepted
 `tau=0.999359130859375` at `attempt_001/state.npz`; the next attempt toward
-`tau=0.99957275390625` is in progress. The rejected state remains marked only
-as a rejected stage. Checkpoint hashes and audits are in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md). Continue to tau 1 only through
-formally accepted stages; never promote an in-flight state.
+`tau=0.99957275390625` was rejected. Exactly one smaller target,
+`tau=0.9994659423828125`, was then attempted from that accepted checkpoint and
+rejected by the unchanged five-correction stagnation gate. The last accepted
+fraction remains `0.999359130859375`; no retry or next target ran, and the
+rejected target is not a solution. A same-grid donor-versus-near-MC comparison
+shows differences comparable to current mesh-discretization evidence, so
+further brute-force MC continuation is not justified. Use donor as the current
+production formulation for the validated 513x513 Ciulli equation-closure
+case; prioritize numerical-uncertainty work and Ciulli Figure 13 physical
+validation. The localized core-ridge pressure field remains grid-sensitive
+and belongs in that uncertainty work; the current evidence does not attribute
+it to transport fraction alone. Exact `tau=1` remains unverified. Hashes,
+audit details, comparison definitions, measured differences and limitations
+are in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).

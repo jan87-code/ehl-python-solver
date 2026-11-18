@@ -29,6 +29,7 @@ if TYPE_CHECKING:
         MonolithicLoadSolution,
         PreconditionerBenchmark,
     )
+    from ehl_solver.prototype import PointContactCase
     from ehl_solver.pseudo_arclength import PseudoArclengthResult
 
 
@@ -135,6 +136,32 @@ def _contact_film_display_range(
     return (lower, upper), cap if np.max(film_nm) > cap else None
 
 
+def _analytic_contact_references(
+    reference_case: PointContactCase | None,
+) -> dict[str, Any] | None:
+    if reference_case is None:
+        return None
+    hertz = getattr(reference_case, "hertz", None)
+    correlation = getattr(reference_case, "correlation", None)
+    if hertz is None or not callable(correlation):
+        raise ValueError("reference_case must provide hertz and correlation()")
+    film = correlation()
+    values = (
+        hertz.radius_m,
+        hertz.peak_pressure_pa,
+        film.central_film_m,
+        film.minimum_film_m,
+    )
+    if not all(np.isfinite(value) and value > 0 for value in values):
+        raise ValueError("Analytic contact references must be positive and finite")
+    return {
+        "hertz_radius_m": float(hertz.radius_m),
+        "hertz_peak_pressure_pa": float(hertz.peak_pressure_pa),
+        "hamrock_dowson_central_film_m": float(film.central_film_m),
+        "hamrock_dowson_minimum_film_m": float(film.minimum_film_m),
+    }
+
+
 def _extremum_locations(
     field: NDArray[np.float64],
     x_m: NDArray[np.float64],
@@ -165,6 +192,7 @@ def plot_run_summary(
     backend: str = "CPU",
     runtime_seconds: float | None = None,
     film_display_range_nm: tuple[float, float] | None = None,
+    reference_case: PointContactCase | None = None,
 ) -> tuple[Figure, dict[str, NDArray[np.float64]], dict[str, Any]]:
     """Create the standard 2x2 summary and raw y=0 profiles.
 
@@ -193,6 +221,7 @@ def plot_run_summary(
         or film_display_range_nm[0] >= film_display_range_nm[1]
     ):
         raise ValueError("film_display_range_nm must be a finite increasing pair")
+    references = _analytic_contact_references(reference_case)
 
     center_y, center_pressure = interpolate_cross_section(
         x, y, pressure, axis="x", coordinate_m=0.0
@@ -283,6 +312,13 @@ def plot_run_summary(
         if runtime_seconds is not None
         else "runtime=n/a",
         centerline_spike_text,
+        (
+            "Hamrock-Dowson h_cen="
+            f"{references['hamrock_dowson_central_film_m'] * 1e9:.4g} nm, "
+            f"h_min={references['hamrock_dowson_minimum_film_m'] * 1e9:.4g} nm"
+            if references is not None
+            else "Hamrock-Dowson reference=n/a"
+        ),
     ]
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -453,6 +489,21 @@ def plot_run_summary(
 
     centerline_x_mm = center_y * 1e3
     axes[1, 0].plot(centerline_x_mm, center_pressure * 1e-9, linewidth=1.0)
+    if references is not None:
+        hertz_x = references["hertz_radius_m"]
+        hertz_pressure = references["hertz_peak_pressure_pa"] * np.sqrt(
+            np.maximum(1.0 - (center_y / hertz_x) ** 2, 0.0)
+        )
+        axes[1, 0].plot(
+            centerline_x_mm,
+            hertz_pressure * 1e-9,
+            linestyle="--",
+            linewidth=1.0,
+            label=(
+                "Dry Hertz reference "
+                f"(p0={references['hertz_peak_pressure_pa'] * 1e-9:.4g} GPa)"
+            ),
+        )
     if centerline_spike is not None:
         axes[1, 0].scatter(
             [centerline_spike["x_m"] * 1e3],
@@ -462,6 +513,7 @@ def plot_run_summary(
             zorder=3,
             label="Outlet local peak",
         )
+    if references is not None or centerline_spike is not None:
         axes[1, 0].legend(loc="best", fontsize=8)
     axes[1, 0].set(
         xlabel="x [mm]",
@@ -532,6 +584,7 @@ def plot_run_summary(
         "film_clipped_above_range": film_clipped_above,
         "centerline_film_clipped_below_range": centerline_film_clipped_below,
         "centerline_film_clipped_above_range": centerline_film_clipped_above,
+        "analytic_contact_references": references,
     }
     return fig, profiles, metrics
 
@@ -553,6 +606,7 @@ def write_run_summary(
     runtime_seconds: float | None = None,
     film_display_range_nm: tuple[float, float] | None = None,
     field_archive_path: str | Path | None = None,
+    reference_case: PointContactCase | None = None,
 ) -> tuple[Path, Path]:
     """Save a standardized figure, raw centerline profiles, and run metadata."""
     case = re.sub(r"[^A-Za-z0-9_.-]+", "_", case_name).strip("._")
@@ -586,6 +640,7 @@ def write_run_summary(
         backend=backend,
         runtime_seconds=runtime_seconds,
         film_display_range_nm=film_display_range_nm,
+        reference_case=reference_case,
     )
     try:
         figure.savefig(figure_path, dpi=240)
@@ -669,6 +724,7 @@ def write_run_summary(
         "newton_corrections": newton_corrections,
         "force_audit": audit_metadata,
         "metrics": metrics,
+        "analytic_contact_references": metrics["analytic_contact_references"],
         "pressure_display_range_gpa": [
             float(np.min(_final_field_numpy(pressure_pa)) * 1e-9),
             float(np.max(_final_field_numpy(pressure_pa)) * 1e-9),

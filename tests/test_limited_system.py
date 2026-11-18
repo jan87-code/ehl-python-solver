@@ -7,6 +7,7 @@ from ehl_solver.cavitating_newton import CavitatingLinearError, solve_cavitating
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.limited_transport import freeze_limited_flux_jvp
 from ehl_solver.prototype import PointContactCase
+from ehl_solver.transport_candidate import donor_flux_direction
 
 
 def state_and_guide(*, load=200.0, content=0.65, ny=9, nx=13):
@@ -116,14 +117,70 @@ def test_cpu_correction_heartbeat_reports_steps_without_changing_correction():
     assert [event["gmres_rhs_kind"] for event in starts] == [
         "field_residual", "offset_response"
     ]
+    assert starts[0]["gmres_true_residual_status"] == "not_computed"
+    assert starts[1]["gmres_true_residual_status"] == "stale"
+    assert starts[1]["gmres_true_residual_rhs_kind"] == "field_residual"
+    assert starts[1]["gmres_true_relative_residual"] == actual.linear_true_residuals[0]
     assert all(
         event["gmres_solve_iteration"] == 0
         and event["gmres_residual_estimate"] is None
-        and event["gmres_true_relative_residual"] is None
         for event in starts
     )
+    estimates = [event for event in events if event["stage"] == "gmres"]
+    assert all(
+        event["gmres_residual_estimate_kind"]
+        == "left_preconditioned_norm_over_unpreconditioned_rhs_norm"
+        for event in estimates
+    )
+    true_events = [event for event in events if event["stage"] == "gmres_true_residual"]
+    assert [event["gmres_true_residual_status"] for event in true_events] == [
+        "current", "current"
+    ]
     assert events[-1]["cumulative_jvp_seconds"] >= 0
     assert events[-1]["cumulative_preconditioner_seconds"] > 0
+
+
+@pytest.mark.parametrize("fraction", [0.0, 0.35, 0.99951171875])
+def test_blended_frozen_jvp_matches_reference_action(fraction):
+    case, z, guide = state_and_guide(load=200.0, content=0.65)
+    model = LimitedLoadLinearization(
+        case, z, guide, preconditioner="local", transport_fraction=fraction
+    )
+    direction = np.random.default_rng(815).normal(size=model.size) * 1e-3
+    dh, dp, dt = model.probe.directions(z, direction)
+    pressure, theta, film = model.probe.fields(z)
+    dhg, dpg, dtg = model.probe.directions(z, guide)
+    limited = freeze_limited_flux_jvp(
+        model.problem.x_m,
+        model.problem.y_m,
+        film,
+        pressure,
+        theta,
+        dhg,
+        dpg,
+        dtg,
+        case.fluid(),
+        case.entrainment_m_s,
+    )(dh, dp, dt)
+    donor = donor_flux_direction(
+        model.problem.x_m,
+        model.problem.y_m,
+        film,
+        pressure,
+        theta,
+        dh,
+        dp,
+        dt,
+        case.fluid(),
+        case.entrainment_m_s,
+    )
+    expected_flux = (
+        donor[0] + fraction * (limited[0] - donor[0]),
+        donor[1],
+    )
+    expected_mass = model.probe.mass(expected_flux)
+    actual = model.jacobian_vector(z, direction)[: model.n]
+    np.testing.assert_array_equal(actual, expected_mass)
 
 
 def test_forced_full_bordered_recovery_retains_true_linear_checks():

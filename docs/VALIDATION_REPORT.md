@@ -6930,8 +6930,84 @@ finally:
 ```
 
 Verification: 96 focused tests passed, and the Windows-compatible suite
-passed 806 tests with 81 skipped. Unfiltered `pytest -q` cannot collect
+passed 810 tests with 81 skipped. Unfiltered `pytest -q` cannot collect
 `tests/test_joint_refinement.py` because Windows lacks the POSIX `resource`
 module. Scoped Ruff passes; repository-wide `ruff check .` reports the
 pre-existing E501 in the unrelated untracked `.kilo/` file. Pylance reports
 no syntax errors in the four changed Python implementation files.
+
+### Blended-JVP reuse and summary-plot update (2026-11-18)
+
+The blended matrix-free JVP now reuses the already computed donor-direction
+flux within one evaluation only when `0 < transport_fraction < 1`. There is
+no cross-direction cache; the `tau=0` path retains its prior evaluation
+sequence, and `tau=1` is unchanged. Tests compare optimized and reference
+actions exactly at `tau=0`, an intermediate fraction, and a near-one fraction.
+Saved continuation-state probes also had exact array parity at
+`tau=0.9990234375` and `tau=0.99951171875`.
+
+The same saved 513x513 rejected state (`attempt_009/state.npz`, SHA-256
+`66b09b181eabde9649fa34382ad4c4b9f198fd234d4ebc744926b41291b1ce51`) was
+profiled before and after the change. These are single-correction CPU probes,
+not full continuation stages: the source state's tau is `0.99951171875`, and
+the probe exhausted its one-correction budget without accepting a stage.
+
+| Timing category | Before (s) | After (s) |
+|---|---:|---:|
+| Residual assembly | 2.091 | 2.098 |
+| Coefficient assembly | not separately instrumented | 10.969 |
+| Active-set/recovery | 0.119 | 0.109 |
+| Matrix/preconditioner construction | 27.389 | 15.808 |
+| SuperLU factorization | 89.499 | 85.767 |
+| GMRES total (inclusive) | 264.635 | 224.049 |
+| JVP (within GMRES) | 173.856 | 133.528 |
+| Preconditioner applications (within GMRES) | 82.136 | 80.237 |
+| GMRES vector/orthogonalization/callback bucket | 17.565 | 17.094 |
+| True-residual recomputation | 4.923 | 4.275 |
+| Line search | 32.708 | 31.561 |
+| Audits | 0.349 | 0.363 |
+| Checkpoint/I/O | 0.000 | 0.000 |
+| Explicit `other` bucket | 0.492 | 0.444 |
+| Remaining unaccounted wall time | 8.922 | 6.810 |
+| **Complete correction wall time** | **431.126** | **382.252** |
+
+The total correction time improved by 48.874 s (11.3%); the measured JVP
+component improved by 40.328 s (23.2%). The after-profile accounts for 98.22%
+of correction wall time (97.93% before). GMRES is an inclusive interval:
+JVP, preconditioner, vector and true-residual counters are nested attribution
+and must not be summed again with GMRES. After the change, GMRES remains the
+largest interval; its JVP work is still the largest individual subcomponent,
+with preconditioner applications and SuperLU factorization also significant.
+The speedup is meaningful for this saved state, but says nothing about
+convergence or the exact-MC endpoint.
+
+The apparent GMRES residual jump was a combination of reporting context and
+residual scaling, not evidence of a Krylov failure. Callback values are the
+left-preconditioned residual estimate divided by the unpreconditioned norm of
+the current right-hand side; they are not the independently recomputed true
+residual and can be large when the scaling/preconditioned system differs
+strongly. In this profile an `offset_response` callback estimate reached
+236.2 while the heartbeat still marked the previous `field_residual` true
+residual as stale. When recomputed for the matching RHS, the true relative
+residual was below `1e-9`. Heartbeats now label each RHS/solve and mark true
+residual data `current`, `stale`, or `not_computed`; comparisons must use a
+current value for the same RHS. The completed solves' independent true
+residuals were small, so this run provides no indication of loss of
+orthogonality or a Krylov failure.
+
+The requested accepted 1025x1025 donor summary was regenerated from its saved
+field archive only; the EHL solver was not rerun and the numerical fields were
+not changed. Its figure now includes the case's Hamrock-Dowson central and
+minimum film estimates and a dry Hertz pressure reference on the pressure
+cross-section. The Hertz curve is an analytical dry-contact reference, not an
+EHL pressure solution. The refreshed image is
+`results/ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry3/ciulli_15n_donor_15N_1025x1025_donor-flux_ACCEPTED_summary.png`;
+the embedded case metadata was also updated with the analytic reference
+values.
+
+The last accepted 513x513 blended continuation source remains
+`results/ciulli_20261116_mc_513_tau_continuation_resume1/attempt_008/state.npz`
+at `tau=0.9990234375`. The profiled `attempt_009` state is rejected and was
+used only for bounded timing; it is not a restart or accepted solution. A
+blended continuation, exact-MC root, mesh convergence study, and physical
+validation against experiment remain outstanding.

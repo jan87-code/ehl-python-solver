@@ -67,21 +67,28 @@ change the endpoint audit and can reject a temporarily slow but viable stage.
 On 2026-11-17 a bounded 513x513 saved-correction JVP probe found identical JVP
 arrays at one and four BLAS threads, with median times 0.317 and 0.301 s over
 three samples. This is not a full-correction or end-to-end solver speedup.
-Do not change the default thread count based on this probe. A comparable
-complete correction and numerical parity test remains pending.
+Do not change the default thread count based on this probe. A separate
+blended-JVP work-reuse change passed saved-state parity and a same-state,
+one-correction timing comparison; its scope and limits are recorded below.
 
 A separate bounded 513x513 rejected-state correction profile accounted for
 99.89% of 431.126 s: GMRES occupied 264.635 s inclusive, with JVP the largest
 exclusive phase at 173.856 s. Eight recovery models caused repeated linear
 solves; the old per-model counters had obscured their accumulated cost. The
 GMRES estimate jump crossed different right-hand sides and was displayed with
-a stale true residual; it is not itself a Krylov failure. CPU heartbeats now
-identify the right-hand side and partition correction wall time. One short
-JVP profile confirmed that blended transport computes the same donor-direction
-flux twice. Next, if optimization is authorized, test reuse within each JVP
-with complete JVP/correction parity and bounded timing; do not cache across
-directions or assume this improves tau=1. See
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md) for measurements and limits.
+a stale true residual; it is not itself evidence of a Krylov failure. CPU
+heartbeats now identify each right-hand side and distinguish current, stale
+and not-yet-computed true residuals. The callback estimate is explicitly
+identified as a left-preconditioned norm divided by the unpreconditioned RHS
+norm. A bounded optimization reuses the already computed donor-direction
+flux only within blended JVP evaluations for `0 < tau < 1`; tau=0 retains its
+original path, tau=1 is unchanged, and no flux is cached across directions.
+JVP parity was exact on saved continuation states. On the same saved rejected
+state at tau `0.99951171875`, the one-correction profile fell from 431.126 s
+to 382.252 s (48.874 s, 11.3%); measured JVP time fell from 173.856 s to
+133.528 s (23.2%). This is a bounded performance result, not a converged
+continuation stage or an exact-MC result. See
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md) for the full breakdown and limits.
 
 The requested post-processing diagnosis is complete: transverse symmetry is
 preserved to roundoff, common-grid sampling can miss the narrow peak, but

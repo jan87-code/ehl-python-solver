@@ -786,6 +786,7 @@ def run(
                 backend=backend_label,
                 runtime_seconds=metadata.get("elapsed_seconds"),
                 field_archive_path=figure_state,
+                reference_case=case,
             )
         metadata["run_summary_figure"] = figure_path.name
         metadata["run_summary_profiles"] = profiles_path.name

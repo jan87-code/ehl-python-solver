@@ -851,6 +851,7 @@ def main(
     write()
     heartbeat = SolverHeartbeat(output / "heartbeat.jsonl", interval_seconds=progress_interval)
     active_progress = {}
+    last_gmres_true_residual = {"value": None, "rhs_kind": None}
     previous_sigterm = signal.signal(signal.SIGTERM, _termination_handler)
     result = None
     try:
@@ -918,6 +919,7 @@ def main(
             iteration = event.pop("iteration", None)
             emit = event.pop("emit", False)
             if stage_name == "correction_start":
+                last_gmres_true_residual.update(value=None, rhs_kind=None)
                 heartbeat.begin_correction(
                     iteration,
                     maximum_newton_iterations=event.pop("maximum_newton_iterations"),
@@ -932,12 +934,24 @@ def main(
                     gmres_restart_count=0,
                     gmres_stagnation_restarts=0,
                     gmres_residual_estimate=None,
-                    gmres_true_relative_residual=None,
+                    gmres_residual_estimate_kind=None,
+                    gmres_true_relative_residual=last_gmres_true_residual["value"],
+                    gmres_true_residual_rhs_kind=last_gmres_true_residual["rhs_kind"],
+                    gmres_true_residual_status=(
+                        "stale"
+                        if last_gmres_true_residual["value"] is not None
+                        else "not_computed"
+                    ),
                     linear_iterations=None,
                     linear_true_residual=None,
                     cumulative_jvp_seconds=0.0,
                     cumulative_preconditioner_seconds=0.0,
                     cumulative_superlu_seconds=0.0,
+                )
+            elif stage_name == "gmres_true_residual":
+                last_gmres_true_residual.update(
+                    value=event.get("gmres_true_relative_residual"),
+                    rhs_kind=event.get("gmres_true_residual_rhs_kind"),
                 )
             heartbeat.update(
                 stage=stage_name,

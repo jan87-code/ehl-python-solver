@@ -885,6 +885,7 @@ def _write_outlet_locus_outputs(run, output_directory, *, film_range_nm=(300.0, 
         runtime_seconds=run["summary"].get("elapsed_seconds"),
         film_display_range_nm=film_range_nm,
         field_archive_path=Path(run["directory"]) / "state.npz",
+        reference_case=case,
     )
 
     xx, yy = np.meshgrid(x * 1e3, y * 1e3)

@@ -6,6 +6,7 @@ import numpy as np
 
 matplotlib.use("Agg")
 
+from ehl_solver.prototype import PointContactCase
 from ehl_solver.visualization import plot_run_summary, write_run_summary
 
 
@@ -48,6 +49,50 @@ def test_run_summary_uses_full_range_and_interpolated_centerline():
         assert figure.axes[2].get_xlim() == (-1.0, 1.0)
         assert figure.axes[3].get_xlim() == (-1.0, 1.0)
         assert figure.axes[3].get_ylabel() == "Film thickness [nm]"
+    finally:
+        import matplotlib.pyplot as plt
+
+        plt.close(figure)
+
+
+def test_run_summary_includes_case_correlations_and_hertz_pressure():
+    x, y, pressure, film = _fields()
+    case = PointContactCase(
+        load_n=15.0,
+        radius_m=0.0051595,
+        contact_modulus_pa=58.044375e9,
+        viscosity_pa_s=0.497,
+        density_kg_m3=892.0,
+        entrainment_m_s=0.2,
+        alpha_per_pa=2.87e-8,
+    )
+    figure, _, metrics = plot_run_summary(
+        x,
+        y,
+        pressure,
+        film,
+        load_n=case.load_n,
+        formulation="donor-flux",
+        status="accepted_numerical_root",
+        reference_case=case,
+    )
+    try:
+        references = metrics["analytic_contact_references"]
+        assert references["hertz_radius_m"] == case.hertz.radius_m
+        assert references["hertz_peak_pressure_pa"] == case.hertz.peak_pressure_pa
+        assert references["hamrock_dowson_central_film_m"] == (
+            case.correlation().central_film_m
+        )
+        assert references["hamrock_dowson_minimum_film_m"] == (
+            case.correlation().minimum_film_m
+        )
+        pressure_lines = figure.axes[2].lines
+        hertz_line = next(line for line in pressure_lines if line.get_linestyle() == "--")
+        assert hertz_line.get_ydata()[1] == case.hertz.peak_pressure_pa * 1e-9
+        assert "Dry Hertz reference" in hertz_line.get_label()
+        assert "Hamrock-Dowson h_cen=" in " ".join(
+            text.get_text() for text in figure.texts
+        )
     finally:
         import matplotlib.pyplot as plt
 
@@ -215,6 +260,7 @@ def test_run_summary_writes_deterministic_png_and_raw_profile_csv(tmp_path):
     x, y, pressure, film = _fields()
     archive_path = tmp_path / "solution.npz"
     archive_path.touch()
+    case = PointContactCase(load_n=15.0)
     figure_path, profile_path = write_run_summary(
         x,
         y,
@@ -226,6 +272,7 @@ def test_run_summary_writes_deterministic_png_and_raw_profile_csv(tmp_path):
         formulation="donor-flux",
         status="rejected",
         field_archive_path=archive_path,
+        reference_case=case,
     )
     assert figure_path.name == "ciulli_15N_15N_3x3_donor-flux_FAILED_summary.png"
     assert figure_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
@@ -243,3 +290,8 @@ def test_run_summary_writes_deterministic_png_and_raw_profile_csv(tmp_path):
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["status_label"] == "FAILED / NOT AN ACCEPTED SOLUTION"
     assert Path(metadata["full_field_archive"]).name == archive_path.name
+    references = metadata["analytic_contact_references"]
+    assert references["hertz_peak_pressure_pa"] == case.hertz.peak_pressure_pa
+    assert references["hamrock_dowson_central_film_m"] == (
+        case.correlation().central_film_m
+    )

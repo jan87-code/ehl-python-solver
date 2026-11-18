@@ -121,6 +121,7 @@ def main(case_path, seed, output, maximum_iterations):
             newton_corrections=len(report.get("history", ())),
             backend="CPU (NumPy/SciPy)",
             field_archive_path=output / "solution.npz",
+            reference_case=case,
         )
     report["run_summary_figure"] = figure_path.name
     report["run_summary_profiles"] = profiles_path.name

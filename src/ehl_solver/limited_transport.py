@@ -141,16 +141,18 @@ def freeze_limited_flux_jvp(x, y, h, p, theta, dh, dp, dt, fluid, speed, *, stre
     ]
     widths = np.diff(x)
 
-    def action(dh, dp, dt):
+    def action(dh, dp, dt, *, donor_flux=None):
         direction = capacity_direction(dh, dp, dt)
         candidates = _slope_candidates(x, direction)
         west, interior = [_apply_branch(v, b) for v, b in zip(candidates, branches, strict=True)]
         correction = np.empty_like(direction[:, :-1])
         correction[:, 0] = 0.5 * widths[0] * west
         correction[:, 1:] = 0.5 * widths[1:] * interior
-        qx, qy = donor_flux_direction(
-            x, y, h, p, theta, dh, dp, dt, fluid, speed, strength=strength
-        )
+        if donor_flux is None:
+            donor_flux = donor_flux_direction(
+                x, y, h, p, theta, dh, dp, dt, fluid, speed, strength=strength
+            )
+        qx, qy = donor_flux[0].copy(), donor_flux[1]
         qx += speed * correction
         return qx, qy
 

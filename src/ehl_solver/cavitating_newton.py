@@ -292,9 +292,12 @@ def solve_cavitating_correction(
     true_residuals, counts, traces = [], [], []
     field_setup_failures = []
     field_factorization = getattr(system, "field_factorization", "full")
+    last_true_relative_residual = None
+    last_true_rhs_kind = None
 
     def linear_solve(op, rhs, lu, rhs_kind):
         nonlocal preconditioner_seconds, iterations
+        nonlocal last_true_relative_residual, last_true_rhs_kind
         count = []
         restart_residuals = []
 
@@ -326,10 +329,21 @@ def solve_cavitating_correction(
                     "gmres_restart" if len(count) % gmres_restart == 0 else "gmres",
                     gmres_iterations=iterations,
                     gmres_solve_iteration=len(count),
+                    gmres_rhs_kind=rhs_kind,
                     gmres_restart_count=restart_count,
                     gmres_stagnation_restarts=stagnant,
+                    gmres_residual_estimate_kind=(
+                        "left_preconditioned_norm_over_unpreconditioned_rhs_norm"
+                    ),
                     gmres_residual_estimate=(
                         float(value) if math.isfinite(value) else None
+                    ),
+                    gmres_true_relative_residual=last_true_relative_residual,
+                    gmres_true_residual_rhs_kind=last_true_rhs_kind,
+                    gmres_true_residual_status=(
+                        "stale"
+                        if last_true_relative_residual is not None
+                        else "not_computed"
                     ),
                 )
 
@@ -342,7 +356,14 @@ def solve_cavitating_correction(
             gmres_restart_count=0,
             gmres_stagnation_restarts=0,
             gmres_residual_estimate=None,
-            gmres_true_relative_residual=None,
+            gmres_residual_estimate_kind=(
+                "left_preconditioned_norm_over_unpreconditioned_rhs_norm"
+            ),
+            gmres_true_relative_residual=last_true_relative_residual,
+            gmres_true_residual_rhs_kind=last_true_rhs_kind,
+            gmres_true_residual_status=(
+                "stale" if last_true_relative_residual is not None else "not_computed"
+            ),
         )
         answer, info = gmres(
             op,
@@ -362,9 +383,14 @@ def solve_cavitating_correction(
         counts.append(len(count))
         traces.append(tuple(count))
         true_residuals.append(measured)
+        last_true_relative_residual = measured if math.isfinite(measured) else None
+        last_true_rhs_kind = rhs_kind
         report(
             "gmres_true_residual",
+            gmres_rhs_kind=rhs_kind,
             gmres_true_relative_residual=measured if math.isfinite(measured) else None,
+            gmres_true_residual_rhs_kind=rhs_kind,
+            gmres_true_residual_status="current",
             emit=True,
         )
         return answer, info == 0 and math.isfinite(measured) and measured <= 5 * krylov_rtol

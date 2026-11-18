@@ -142,7 +142,6 @@ class LimitedLoadProbe:
         def action(direction):
             dh, dp, dt = self.directions(state, direction)
             complement = np.where(pressure_row, direction[: self.n], direction[self.n : 2 * self.n])
-            flux = flux_action(dh, dp, dt)
             if self.transport_fraction < 1:
                 donor = donor_flux_direction(
                     problem.x_m,
@@ -156,7 +155,15 @@ class LimitedLoadProbe:
                     self.case.fluid(),
                     self.case.entrainment_m_s,
                 )
-                flux = (donor[0] + self.transport_fraction * (flux[0] - donor[0]), donor[1])
+                limited = flux_action(
+                    dh,
+                    dp,
+                    dt,
+                    donor_flux=donor if self.transport_fraction > 0 else None,
+                )
+                flux = (donor[0] + self.transport_fraction * (limited[0] - donor[0]), donor[1])
+            else:
+                flux = flux_action(dh, dp, dt)
             return np.r_[
                 self.mass(flux),
                 complement,

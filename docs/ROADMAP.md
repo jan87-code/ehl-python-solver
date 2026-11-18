@@ -19,60 +19,32 @@ accepted full step from Newton iteration 5; its initial audit met the original
 mass/force/feasibility gates and its final independent elasticity audit
 passed. This re-audit is not a new nonlinear solve.
 
-The bounded common-coordinate study finds 63.5% of the 513-to-1025 pressure
-difference energy inside a 7.9%-area corridor around the connected pressure
-and film-constriction loci. The film difference is not similarly localized:
-96.3% lies outside that corridor. `h_c` and `h_min` change by about 1%, but
-one grid pair cannot establish convergence. The outlet width is still below
-three cells at 1025, and bulk fields retain measurable differences; neither
-physical validation nor a mesh-convergence claim is justified. Do not start
-2049x2049 or another automatic uniform refinement.
+The accepted donor/JFO roots on 65x65 through 1025x1025 now provide a
+five-level fixed-domain sequence. The 513-to-1025 changes are `-0.971%` in
+`h_c`, `-0.799%` in `h_min`, `2.678%` relative L2 in main-contact pressure,
+and `0.883%` relative L2 in main-contact film. Midplane film RMS differences
+and a fixed physical outlet-corridor pressure integral also contract at the
+last refinement. Earlier scalar changes are not consistently monotone, so
+these are observed grid sensitivities, not Richardson/GCI estimates or
+formal continuum uncertainty. The local pressure maximum rises from
+`739.669 MPa` at 257x257 to `896.066 MPa` at 1025x1025, and the connected
+Petrusevich-type feature remains represented by fewer than three cells in
+parts of its tracked locus. Keep `p_max` and feature width as unresolved
+sharp-feature diagnostics; do not launch another automatic uniform mesh.
+The reproducible saved-field analysis and figures are documented at the end
+of [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 
-The exact MC-capacity (`transport_fraction=1`) 1025 endpoint is not yet
-evaluated: an independent exact-flux audit of the accepted donor seed fails
-the local mass gate (`1.682e-2` versus `1e-10`), so a nonlinear correction is
-necessary. The existing CPU limited solver's 1025 resource preflight cannot
-pass its 2 GiB ceiling even from the GMRES-basis lower bound at its configured
-restart 60. The limited-path runner now validates restart, process-memory and
-FFT-workspace settings and checks a dimension-based memory estimate before
-loading/interpolating a seed or constructing a probe/matrix. A 513x513
-development trial was then made from the accepted donor root at restart 20,
-with a 32 GiB configured process limit and 1 GiB workspace cap. Its adjusted
-peak estimate was 18.90 GB against a 24.08 GiB effective ceiling, so the
-static resource gate passed. However, both the exact-MC field and bordered
-SuperLU factors failed on the initial active set. A direct one-correction
-trial also failed before GMRES and spent more than 16 CPU minutes in the
-solver's structural active-set recovery; it was stopped with no accepted
-state. The restart-30 and restart-40 trials were not run because restart length
-cannot remedy a factorization failure that occurs before GMRES. No accepted
-513x513 Ciulli MC root exists, and the exact MC endpoint remains **untested,
-not disproven**. Do not run 1025x1025 MC or 2049x2049 yet, and do not infer
-that the higher-order flux improves convergence. See the latest trial record
-in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
-
-The 513x513 CPU continuation was interrupted on 2026-11-17 with its accepted
-blended stage at tau `0.9990234375`; a later attempt at `0.99951171875` was
-rejected. The heartbeat-enabled retry from that accepted state was interrupted
-during an unaccepted correction, preserving its heartbeat and summary. On
-2026-11-18 a fresh continuation resumed from the verified
-`attempt_008/state.npz` and accepted `tau=0.9991455078125` at
-`results/ciulli_20261118_mc_513_tau_continuation_jvp_reuse_resume/attempt_002/state.npz`.
-Both checkpoint hashes and independent audits are recorded in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md). At interruption, the next target
-`tau=0.999267578125` had entered `model_setup`, but no state or stage summary
-was written and the target was not accepted. The accepted states remain
-intermediate blended roots, not exact MC results. CPU continuation records
-detailed scalar heartbeats through linear solves and recovery. An optional
-intermediate-stagnation check can reject an above-gate
-stage with less than 10% local mass reduction over five corrections and retry
-from the last accepted state at half the tau step. This heuristic does not
-change the endpoint audit and can reject a temporarily slow but viable stage.
-On 2026-11-17 a bounded 513x513 saved-correction JVP probe found identical JVP
-arrays at one and four BLAS threads, with median times 0.317 and 0.301 s over
-three samples. This is not a full-correction or end-to-end solver speedup.
-Do not change the default thread count based on this probe. A separate
-blended-JVP work-reuse change passed saved-state parity and a same-state,
-one-correction timing comparison; its scope and limits are recorded below.
+MC continuation is stopped. The highest accepted blended diagnostic remains
+`tau=0.999359130859375`; the one authorized smaller target
+`tau=0.9994659423828125` was rejected by the existing stagnation gate. No
+further target was started. Use donor/JFO as the current production
+formulation; the accepted blended root is transport-discretization
+sensitivity evidence, not an exact MC result. Exact `tau=1` remains
+experimental and unresolved. Preserve the existing heartbeats, retries,
+equations, tolerances and acceptance gates; do not resume MC continuation
+without a separately approved numerical strategy. See
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md) for the accepted hash, failure
+diagnostics and same-grid transport comparison.
 
 A separate bounded 513x513 rejected-state correction profile accounted for
 99.89% of 431.126 s: GMRES occupied 264.635 s inclusive, with JVP the largest
@@ -155,11 +127,13 @@ Roelands are alternative models, and constant-density and pressure-dependent
 density are separate assumptions. The shared slope-conversion helper
 preserves the existing Roelands model; it does not change the EHL equations.
 A quantitative comparison against both digitized Figure 13 profiles has now
-been made using an accepted 129x129 donor-flux root. The current RMSE is
-40.8 nm longitudinally and 37.4 nm transversely, compared with digitization
-RMS estimates near 24-25 nm; this is a comparison, not a physical-validation
-pass. See the current reanalysis at the end of
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+been repeated using the accepted 1025x1025 donor-flux field. RMSE is
+35.47 nm longitudinally and 24.59 nm transversely, versus estimated
+digitization RMS of 24.20 and 24.69 nm. This improves the earlier 129x129
+comparison but is not a physical-validation pass; the paper did not apply
+pressure-dependent optical correction, and the constitutive laws remain
+model assumptions. See the final uncertainty assessment and reproducible
+comparison at the end of [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
 Cameron-Gohar (1966) dimensionless curves and Gohar (1971) fringe observations
 remain useful later trend checks without direct point datasets.
 
@@ -195,10 +169,11 @@ the case nor its correlation comparison is independent experimental validation.
 See sections 36-37 of [VALIDATION_REPORT.md](VALIDATION_REPORT.md) for
 reproducible inputs, audits, assumptions and unresolved limitations.
 
-Five accepted donor-flux roots now have archived full fields and independent
-equation audits: 33x33, 65x65 and 129x129 on the fixed +/-0.4 mm domain, plus
-65x65, 81x81 and 97x97 across the fixed-spacing +/-0.4 to +/-0.6 mm domain
-(the 65x65 root is shared). Reproduction and reanalysis are defined by
+Accepted donor-flux roots now have archived full fields and independent
+equation audits for the 65x65, 129x129, 257x257, 513x513 and 1025x1025
+fixed-domain mesh sequence, the 33x33 root, and the fixed-spacing
+65x65/81x81/97x97 domain sequence (65x65 is shared). Reproduction and
+reanalysis are defined by
 [`cases/ciulli_15n_donor.json`](../cases/ciulli_15n_donor.json),
 [`examples/run_ciulli_donor_grid.py`](../examples/run_ciulli_donor_grid.py)
 and
@@ -207,14 +182,17 @@ The local result archives are intentionally not committed; the runner stores
 complete physical fields, checksums, solver settings, inputs and runtime
 metadata.
 
-The fixed-domain changes from 65x65 to 129x129 are +0.88% in minimum film,
--1.42% in central film and -0.67% in maximum pressure. Common-coordinate
-two-dimensional contact-region changes are 5.71% relative L2 for pressure
-(31.6 MPa RMS) and 2.00% for film (9.6 nm RMS); mesh convergence is therefore
-not yet demonstrated. In contrast, fixed-spacing domain expansion changes
-the contact-region pressure relative L2 by 0.30% then 0.18%, and film by
-0.33% then 0.14%; the measured contact region is insensitive to the tested
-boundary movement at about 12.5 um spacing.
+On the five-level fixed-domain sequence, main-contact pressure relative-L2
+differences contract from 5.71% to 2.68%, and longitudinal/transverse film
+profile RMS differences contract to 4.38/3.67 nm on the final pair. The
+central-film sequence decreases from 492.246 to 461.126 nm, but adjacent
+changes do not contract monotonically throughout; `h_min` is also
+nonmonotone. The fixed outlet-corridor pressure integral changes by 1.52%
+from 513x513 to 1025x1025. These measurements do not establish an asymptotic
+mesh regime or a formal uncertainty estimate. Separately, fixed-spacing
+domain expansion still changes contact-region pressure relative L2 by 0.30%
+then 0.18%, and film by 0.33% then 0.14%; tested boundary movement was small
+at about 12.5 um spacing.
 
 At 129x129 a separate outlet local peak is identified at x=81.25 um and
 617.8 MPa. Its interpolated half-prominence width is about 3.59 um, only
@@ -3069,14 +3047,13 @@ convergence and experimental validation remain open.
 
 ## Hybrid CUDA blended limited-MC correction (2026-11-18)
 
-The accepted 513x513 intermediate stage `tau=0.9991455078125` is preserved
-with SHA-256
-`529d2b12594126b44a1e09d07c93476f18e8d76d1f2b017ac5a806f69cdb1f7d`.
-The previous accepted `tau=0.9990234375` checkpoint remains unchanged. The
-stop boundary was narrowly missed: the next target `tau=0.999267578125`
-entered `model_setup`, but no checkpoint or stage summary was written for it
-and it was not accepted. The preserved stages remain blended, not exact-MC
-roots.
+The final bounded continuation accepted `tau=0.999359130859375`, SHA-256
+`6c79f3921c3662478b823e07372d3da9d63784528c3d40d5b5b4b2bba67946f2`.
+The only subsequently authorized smaller target,
+`tau=0.9994659423828125`, was rejected by the unchanged five-correction
+stagnation gate; no retry or next target ran. MC continuation is stopped.
+The preserved accepted states are blended diagnostic roots, not exact-MC
+roots, and exact `tau=1` remains unresolved.
 
 The hybrid correction now evaluates blended MC residuals and analytic frozen
 JVPs on CUDA and retains the existing CPU local SuperLU/Schur preconditioner.
@@ -3097,28 +3074,15 @@ about 452 MiB. The CPU SuperLU/preconditioner remains the dominant measured
 cost at 16.8-19.1 s per correction; this hybrid result does not validate a
 GPU preconditioner, exact-MC endpoint, or physical EHL model.
 
-The reproducible measurements and limitations are in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md), with the script
-`examples/benchmark_limited_hybrid_correction.py`. The next bounded action is
-to resume from the accepted tau `0.9991455078125` checkpoint using the hybrid
-path, retaining the existing heartbeat, retry, stagnation and independent
-audit logic. This was started in
-`results/ciulli_20261118_mc_513_tau_hybrid_cuda_resume/`; the measured
-resource/sparse-factor preflight passed, and the hybrid CUDA/CPU-SuperLU
-backend initialized. The first `tau=0.99957275390625` attempt was rejected by
-the configured intermediate-stagnation gate. Its half-step retry accepted
-`tau=0.999359130859375` at `attempt_001/state.npz`; the next attempt toward
-`tau=0.99957275390625` was rejected. Exactly one smaller target,
-`tau=0.9994659423828125`, was then attempted from that accepted checkpoint and
-rejected by the unchanged five-correction stagnation gate. The last accepted
-fraction remains `0.999359130859375`; no retry or next target ran, and the
-rejected target is not a solution. A same-grid donor-versus-near-MC comparison
-shows differences comparable to current mesh-discretization evidence, so
-further brute-force MC continuation is not justified. Use donor as the current
-production formulation for the validated 513x513 Ciulli equation-closure
-case; prioritize numerical-uncertainty work and Ciulli Figure 13 physical
-validation. The localized core-ridge pressure field remains grid-sensitive
-and belongs in that uncertainty work; the current evidence does not attribute
-it to transport fraction alone. Exact `tau=1` remains unverified. Hashes,
-audit details, comparison definitions, measured differences and limitations
-are in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+The reproducible hybrid timing/parity evidence and its limits are in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md), with the saved-correction
+benchmark script `examples/benchmark_limited_hybrid_correction.py`. The
+same-grid donor/near-MC differences are transport-discretization sensitivity
+comparable to donor mesh changes, not an exact-MC comparison. Further
+brute-force continuation is not justified. The saved-field five-grid and
+Figure 13 post-processing is complete; the remaining phase work is to resolve
+constitutive/input uncertainty and obtain independent physical pressure or
+cavitation evidence, without tuning to the current profiles. Use donor/JFO as
+the current production formulation. Hashes, audit details, comparison
+definitions and the rejected target remain documented in
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md).

@@ -7113,7 +7113,7 @@ preconditioner, equation, tolerance, continuation rule, or acceptance gate
 was changed. The 513x513 exact-MC endpoint, physical validation, and mesh
 convergence remain open.
 
-### Final bounded hybrid target and donor/near-MC comparison (2026-11-18)
+### Final bounded hybrid target and transport-discretization sensitivity (2026-11-18)
 
 The hybrid run's first attempt at `tau=0.99957275390625` was rejected by the
 existing intermediate-stagnation gate. Its half-step retry formally accepted
@@ -7157,7 +7157,7 @@ checkpoint; its compressed-archive SHA-256 is
 `d717dd4640939fcaf147434d9a8a0c4e64da3abd0b22a3463a30514dcf3f0fa6`.
 The rejected target is diagnostic only, not a root.
 
-#### Same-grid donor versus highest accepted near-MC root
+#### Same-grid donor versus accepted near-MC diagnostic
 
 The comparison uses the checksum-verified 513x513 donor root
 `results/ciulli_20261111_donor_513_fixed/state.npz` (SHA-256
@@ -7222,8 +7222,8 @@ centerline. Across the 77 common transverse rows its location shift is
 `0.642 um` RMS and at most one cell (`1.5625 um`); the tracked minimum-film
 value differs by `6.50 nm` RMS and `7.16 nm` Linf.
 
-These formulation differences are comparable to the current discretization
-evidence, not a physical-accuracy bound. On the donor branch, 257-to-513
+These are donor-versus-near-MC transport-discretization differences, not an
+exact-MC comparison or a physical-accuracy bound. On the donor branch, 257-to-513
 refinement changes `h_c` by `1.69%`, `h_min` by `1.24%`, and the main
 pressure field by `3.451%` relative L2 (`19.075 MPa` RMS); the corresponding
 near-MC-versus-donor main-pressure difference is `2.848%` (`15.617 MPa`
@@ -7239,12 +7239,182 @@ its integral varies by a few percent depending on the fixed-window anchor.
 The mesh sequence is not asymptotic and does not provide a formal uncertainty
 estimate.
 
-**Decision:** further brute-force transport-fraction continuation is not
-justified by this comparison. Use the donor formulation as the current
-production formulation for the validated 513x513 Ciulli equation-closure
-case, and prioritize numerical-uncertainty work and the Ciulli Figure 13
-physical-validation comparison. Retain the accepted near-MC state as
-robustness evidence, not an exact-MC result. The exact `tau=1` endpoint,
-physical load/cavitation validation, and defensible mesh uncertainty remain
-unverified; none of these numerical-root comparisons constitutes a complete
-physical EHL validation.
+**Decision at that point:** further brute-force transport-fraction continuation
+was not justified. Use donor/JFO as the current production formulation and
+retain the accepted near-MC state as transport-discretization sensitivity
+evidence, not an exact-MC result. The numerical-uncertainty and Figure 13
+work proposed here is completed in the following closeout section. Exact
+`tau=1`, physical load/cavitation validation, and formal mesh uncertainty
+remain unverified; none of these numerical-root comparisons constitutes a
+complete physical EHL validation.
+
+## Ciulli Figure 13 and donor-grid uncertainty closeout (2026-11-18)
+
+This saved-field reassessment uses the accepted donor/JFO roots at
+65x65, 129x129, 257x257, 513x513 and 1025x1025 on the same square
+`+/-0.4 mm` domain. Every `state.npz` checksum matches its accepted summary,
+and each root passed its independent force, local/global mass,
+complementarity, film and elasticity audits. No EHL solve or solver-physics
+change was made for this closeout. The 1025 field is the previously accepted
+checkpoint re-audited by the retry-3 runner; it is not a new nonlinear solve.
+Its recorded backend is CUDA float64 JFO JVPs with CPU residual and
+SuperLU/Schur preconditioning. Backend metadata is absent for the 65 and 129
+summaries; the 257 and 513 summaries record CPU SciPy GMRES/SuperLU. The
+saved-field post-processing itself uses CPU interpolation and plotting.
+
+The reproducible analysis is
+[`examples/analyze_ciulli_validation_uncertainty.py`](../examples/analyze_ciulli_validation_uncertainty.py).
+It reuses the accepted-root checksum loader, compares the four adjacent pairs
+on common physical coordinates, samples longitudinal and transverse
+profiles at 401 coordinates over `[-100,100] um`, and evaluates a fixed
+outlet corridor at 0.25 um interpolation spacing. Its Figure 13 comparison
+uses the 21 digitized points in each direction from
+[`cases/ciulli_2008_figure13_s0_profiles.csv`](../cases/ciulli_2008_figure13_s0_profiles.csv).
+The command is:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m examples.analyze_ciulli_validation_uncertainty `
+  --mesh results\ciulli_20261111_donor_65_fixed `
+         results\ciulli_20261111_donor_129_fixed `
+         results\ciulli_20261111_donor_257_fixed `
+         results\ciulli_20261111_donor_513_fixed `
+         results\ciulli_20261112_hybrid_1025_r20_1536mib_heartbeat_retry3 `
+  --profiles cases\ciulli_2008_figure13_s0_profiles.csv `
+  --output-dir results\ciulli_20261118_donor_65_1025_uncertainty
+```
+
+The generated files are local under
+`results/ciulli_20261118_donor_65_1025_uncertainty/`: the complete
+`uncertainty_summary.json`, root and adjacent-difference CSV tables,
+sharp-feature diagnostics, a pointwise Figure 13 prediction CSV, the
+1025-profile metrics JSON, and two PNG figures. Result archives are not
+committed.
+
+### Direct numerical sensitivity, not formal continuum uncertainty
+
+| Grid | dx=dy [um] | `h_c` [nm] | `h_min` [nm] | `p_max` [MPa] (diagnostic) | Fixed-corridor pressure integral [N] |
+|---:|---:|---:|---:|---:|---:|
+| 65x65 | 12.500 | 492.246 | 282.747 | 746.301 | 0.393343 |
+| 129x129 | 6.250 | 485.267 | 285.231 | 741.270 | 0.441661 |
+| 257x257 | 3.125 | 473.629 | 281.997 | 739.669 | 0.480353 |
+| 513x513 | 1.5625 | 465.649 | 278.512 | 812.881 | 0.497460 |
+| 1025x1025 | 0.78125 | 461.126 | 276.288 | 896.066 | 0.505040 |
+
+All roots close the 15 N load to reported precision. Relative local balance
+ranges from `6.25e-15` to `6.26e-12`, and relative global balance ranges
+from `3.83e-17` to `9.40e-17`. These validate the discrete roots and do not
+estimate continuum error.
+
+| Adjacent grids | `delta h_c` [nm] | `delta h_min` [nm] | Longitudinal / transverse film-profile RMS [nm] | Main pressure relative L2 / RMS [MPa] | Full-contact pressure relative L2 / RMS [MPa] | Fixed-corridor integral change |
+|---|---:|---:|---:|---:|---:|---:|
+| 65 -> 129 | -6.979 | +2.484 | 10.842 / 8.243 | 5.711% / 31.712 | 7.434% / 38.525 | +12.284% |
+| 129 -> 257 | -11.638 | -3.234 | 11.285 / 9.202 | 4.481% / 24.825 | 6.185% / 32.227 | +8.761% |
+| 257 -> 513 | -7.981 | -3.485 | 7.703 / 6.415 | 3.451% / 19.075 | 4.870% / 25.433 | +3.561% |
+| 513 -> 1025 | -4.523 | -2.224 | 4.382 / 3.669 | 2.678% / 14.787 | 3.830% / 20.039 | +1.524% |
+
+The main/full pressure relative-L2 and RMS changes contract across these
+pairs, as do the final two longitudinal/transverse film-profile RMS
+differences. On the last pair, 2-D main-contact film relative L2/RMS is
+`0.883% / 4.045 nm`; full-contact film is `0.850% / 3.857 nm`. The
+central-film changes are not monotonically contracting (`-6.979`,
+`-11.638`, `-7.981`, `-4.523 nm`), and the minimum-film sequence is
+nonmonotone. The smooth-field norms therefore show improving adjacent-grid
+agreement, but the complete sequence does not support a stable observed
+order. These figures are direct discretization sensitivities, not a
+Richardson extrapolation, GCI, or formal uncertainty bound.
+
+The fixed corridor is `x=[75,100] um`, `|y|<=a_H`, with `a_H=100 um`.
+Its integral is the absolute pressure integral over a common physical
+rectangle, including background pressure; it is not total load or a
+baseline-subtracted spike contribution. Its adjacent relative changes
+decrease from `12.28%` to `1.52%`, which is useful numerical evidence but
+does not establish an asymptotic error estimate. Fixed-spacing domain
+expansion remains a separate study: at about 12.5 um spacing, pressure
+relative-L2 changes were `0.299%` and `0.177%`, and film changes `0.329%`
+and `0.143%` for 65->81->97. Do not combine domain and mesh differences.
+
+### Sharp features remain unresolved
+
+The global `p_max` sequence is `746.301`, `741.270`, `739.669`, `812.881`
+and `896.066 MPa`. Its location moves from `(0,0) um` on 65/129 to the
+off-axis core ridge on 257/513/1025; at 1025 the symmetric maxima are at
+`(53.125,+/-59.375) um`. The late rise is a sharp-feature diagnostic, not a
+bulk-pressure uncertainty measure or a validation pass/fail criterion.
+
+The connected sampled Petrusevich-type pressure-maximum locus and the
+downstream film constriction are tracked separately. Under the established
+fixed-band half-prominence definition, the centerline width changes from
+`2.094 um (1.34 cells)` at 513 to `1.366 um (1.75 cells)` at 1025; at
+`y=+/-59.375 um`, off-axis width changes from `3.225 um (2.06 cells)` to
+`2.278 um (2.92 cells)`. The feature remains under-resolved even at 1025;
+neither continuum width nor peak amplitude is established. This fixed-band
+locus width is distinct from the separate centerline 75-to-175 um
+shoulder-window diagnostic exported by the new analysis script.
+
+The tracked downstream film-constriction minimum moves from `x=93.750` to
+`94.531 um` at `y=0`, with film changing from `398.828` to `396.551 nm`.
+At `y=+/-59.375 um`, it moves from `65.625` to `66.406 um` and from
+`335.945` to `334.671 nm`. These local constrictions are not the global
+`h_min` values and remain tied to an under-resolved pressure structure.
+
+### Figure 13 comparison on the accepted 1025x1025 root
+
+The interpolated 1025 profiles give:
+
+| Figure 13 profile | RMSE [nm] | Signed bias (computed - measured) [nm] | Digitization RMS estimate [nm] | Points within pointwise digitization estimate |
+|---|---:|---:|---:|---:|
+| Longitudinal, `y=0` | 35.47 | -2.48 | 24.20 | 18 / 21 |
+| Transverse, `x=0` | 24.59 | +15.11 | 24.69 | 14 / 21 |
+
+Relative to the earlier 129x129 comparison (`40.8 nm` longitudinal and
+`37.4 nm` transverse), both RMS values improve. The longitudinal discrepancy
+remains larger than its digitization RMS estimate; the transverse RMSE is
+about the digitization RMS estimate. The per-point read-off values are
+uncertainty estimates, not statistical confidence limits, and the coverage
+counts do not by themselves establish agreement. The generated
+[`figure13_donor_profile_comparison.png`](../results/ciulli_20261118_donor_65_1025_uncertainty/figure13_donor_profile_comparison.png)
+overlays the digitized profiles and all five accepted donor grids on the
+measured coordinate interval; the companion grid-sensitivity plot and CSV
+tables are in the same local result directory.
+
+### Keep the uncertainty sources separate
+
+| Source | Current evidence | Interpretation / open limit |
+|---|---|---|
+| Numerical discretization | Five-level fixed-domain sequence; common-coordinate bulk and profile differences; fixed-window pressure integral | Adjacent differences contract in several bulk metrics, but film scalars are not consistently asymptotic and outlet features remain unresolved. No formal Richardson/GCI bound. |
+| Experimental/digitization | Published Figure 13 `S=0` longitudinal/transverse profiles digitized with per-point read-off estimates | The paper did not apply pressure-dependent refractive-index correction. Original interferograms, calibration and optical-property data can improve the reference but are not prerequisites for this initial comparison. Figure 13 provides film thickness, not pressure validation. |
+| Constitutive/input model | The case uses Roelands viscosity matched to the reported ambient slope and assumed Dowson-Higginson pressure-density coefficients; controlled 65/129 alternatives materially change `h_c` and profile errors (see the input-sensitivity tables above). | Full-pressure SN500 laws and uncertainty ranges are not established. Do not tune inputs to fit Figure 13; model-form sensitivity is not a probability interval. |
+| Transport discretization | Same-grid donor versus accepted `tau=0.999359130859375` root on 513x513 | Reported differences are transport-discretization sensitivity, not an exact-MC comparison. Exact `tau=1` remains experimental and unresolved; it is not substituted for the donor production result. |
+
+### Validation decision and blockers
+
+The numerical evidence now supports accepted discrete donor/JFO equation
+closure across five fixed-domain meshes, small tested fixed-spacing domain
+sensitivity, and a quantitative first Figure 13 film comparison. Use donor/JFO
+as the current production formulation. It does **not** establish a complete
+physical EHL validation or a formal mesh-uncertainty bound. Before closing
+the circular point-contact validation phase, the remaining blockers are:
+
+1. Establish a defensible numerical uncertainty for `h_c`, `h_min`, measured
+   film profiles and bulk pressure without extrapolating non-asymptotic
+   sequences. Treat the local `p_max` and Petrusevich-type width separately;
+   they are still under-resolved.
+2. Establish the high-pressure viscosity and density laws for the reported
+   lubricant and quantify input uncertainty independently of the Figure 13
+   fit. The reported ambient viscosity, density, pressure-viscosity
+   coefficient, temperature, load and geometry suffice for the initial
+   isothermal pure-rolling run under the stated models.
+3. Keep the Figure 13 digitization and missing pressure-dependent optical
+   correction in the experimental-reference uncertainty. Original
+   interferograms, calibration files and pressure-dependent refractive-index
+   data are optional accuracy improvements, not initial-run prerequisites.
+4. Acquire independent pressure/cavitation evidence or a matched published
+   benchmark if pressure-field physical accuracy is to be claimed; the
+   digitized film profiles alone cannot validate pressure or the outlet ridge.
+5. Test agreement against independent measurement uncertainty and boundary,
+   constitutive and numerical sensitivities without parameter tuning.
+
+The exact MC endpoint is a separate unresolved transport research question,
+not a blocker to the donor-specific numerical comparison. Do not resume
+continuation or launch another uniform EHL solve as part of this closeout.

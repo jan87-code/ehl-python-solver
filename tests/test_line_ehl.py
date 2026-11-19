@@ -148,9 +148,26 @@ def test_rejected_load_bracket_preserves_converged_h0_trials():
             (2.0e-6, 3.0e-6),
             coupling_options=_coupling_options(),
         )
-
     assert len(error.value.trials) == 3
     assert error.value.last_solution is not None
+
+
+def test_line_features_tolerate_only_roundoff_scale_signed_pressure():
+    case = _case(9)
+    pressure = np.zeros(case.x_m.size)
+    pressure[case.x_m.size // 2] = 1.0e8
+    pressure[0] = -1.0e-12
+    film = np.full(case.x_m.size, 0.5e-6)
+
+    analyze_line_ehl_features(
+        case.x_m, pressure, film, HERTZ.half_width_m
+    )
+
+    pressure[0] = -1.0e-3
+    with pytest.raises(ValueError, match="invalid line EHL feature fields"):
+        analyze_line_ehl_features(
+            case.x_m, pressure, film, HERTZ.half_width_m
+        )
 
 
 def test_symmetric_pressure_has_symmetric_plane_strain_deformation():

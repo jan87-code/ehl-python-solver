@@ -292,6 +292,26 @@ def test_line_mass_flux_components_reconstruct_uniform_fully_flooded_flow():
     )
 
 
+def test_line_mass_flux_diagnostics_allow_only_pressure_roundoff():
+    x = np.linspace(-1e-4, 1e-4, 17)
+    film = np.full_like(x, 2e-6)
+    pressure = np.zeros_like(x)
+    pressure[8] = -1e-19
+    theta = np.ones_like(x)
+    fluid = IsothermalFluid(viscosity_pa_s=0.04, density_kg_m3=850.0)
+
+    flux = compute_line_mass_flux_components(
+        x, film, pressure, theta, fluid, 0.1
+    )
+    assert np.all(np.isfinite(flux.total_kg_m_s))
+
+    pressure[8] = -1e-10
+    with pytest.raises(ValueError, match="finite admissible SI fields"):
+        compute_line_mass_flux_components(
+            x, film, pressure, theta, fluid, 0.1
+        )
+
+
 def test_uniform_line_film_has_zero_pressure_and_constant_fully_flooded_flux():
     x_m = np.linspace(-1e-4, 1e-4, 41)
     film_m = np.full_like(x_m, 2e-6)

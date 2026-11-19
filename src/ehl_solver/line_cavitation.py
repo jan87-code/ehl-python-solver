@@ -275,6 +275,14 @@ def compute_line_mass_flux_components(
     h = np.asarray(film_m, dtype=np.float64)
     pressure = np.asarray(pressure_pa, dtype=np.float64)
     theta = np.asarray(fractional_film_content, dtype=np.float64)
+    pressure_scale = (
+        max(float(np.max(np.abs(pressure))), 1.0)
+        if pressure.size and np.all(np.isfinite(pressure))
+        else 1.0
+    )
+    pressure_roundoff_tolerance = (
+        64.0 * np.finfo(np.float64).eps * pressure_scale
+    )
     if (
         x.ndim != 1
         or x.size < 3
@@ -282,7 +290,7 @@ def compute_line_mass_flux_components(
         or any(field.shape != x.shape for field in (h, pressure, theta))
         or np.any(np.diff(x) <= 0.0)
         or np.any(h <= 0.0)
-        or np.any(pressure < 0.0)
+        or np.any(pressure < -pressure_roundoff_tolerance)
         or np.any((theta < 0.0) | (theta > 1.0))
     ):
         raise ValueError("line mass-flux diagnostics require finite admissible SI fields")

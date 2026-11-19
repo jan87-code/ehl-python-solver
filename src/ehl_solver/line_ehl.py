@@ -653,6 +653,14 @@ def analyze_line_ehl_features(
     x = np.asarray(x_m, dtype=np.float64)
     pressure = np.asarray(pressure_pa, dtype=np.float64)
     film = np.asarray(film_m, dtype=np.float64)
+    pressure_scale = (
+        max(float(np.max(np.abs(pressure))), 1.0)
+        if pressure.size and np.all(np.isfinite(pressure))
+        else 1.0
+    )
+    pressure_roundoff_tolerance = (
+        64.0 * np.finfo(np.float64).eps * pressure_scale
+    )
     if (
         x.ndim != 1
         or x.size < 5
@@ -660,7 +668,7 @@ def analyze_line_ehl_features(
         or film.shape != x.shape
         or not all(np.all(np.isfinite(field)) for field in (x, pressure, film))
         or np.any(np.diff(x) <= 0.0)
-        or np.any(pressure < 0.0)
+        or np.any(pressure < -pressure_roundoff_tolerance)
         or np.any(film <= 0.0)
         or not x[0] < 0.0 < x[-1]
         or not math.isfinite(hertz_half_width_m)

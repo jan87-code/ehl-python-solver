@@ -133,31 +133,37 @@ integrated load. Its `h_c=182.604 nm` and `h_min=182.469 nm` differ by
 This physical interpretation remains a hypothesis until supported by a
 matched pressure/film benchmark.
 
-The mapped Venner and ten Napel (1990) `M=20,L=10` case is now available in
-`examples/run_line_ehl_physical_diagnostics.py`. Its SI-to-dimensionless
-mapping and Roelands/Dowson-Higginson laws match the published inputs; the
-runner uses an equivalent `L_ref=0.1b` datum solely to keep the additive
-`h0` positive, with reconstructed film invariant. The 1025-node CUDA attempt
-failed during the `gamma=0.25` coupled stage at the lower `h0` trial. A
-257-node solve with 0.1 compliance increments failed at `gamma=0.3`.
-Independent fixed-film pressure continuation also stalls below the target
-load (`18.13 kN/m` at `h0/(b^2/R)=0.093` versus `302.64 kN/m`), with the
-next smaller step exhausting the Roelands pressure-property iteration.
-The digitized Figure 5 pressure integrates to `307.9 kN/m` and implies an
-approximate `h0=2.296 um` with the `0.1b` datum after direct elastic
-reconstruction. At that offset the zero-pressure-start 257-node CUDA solve
-converged instead to `913 N/m`, `p_max=3.10 MPa`, and `h_min=2.287 um`;
-seeding the digitized high-pressure field overflowed the Roelands exponential
-on the first coupled iteration. The published field is therefore not
-reproduced. The best-supported diagnosis is that the current compliance
-continuation selects a low-load branch and cannot reach the high-pressure
-state, a strong-coupling/pressure-property robustness limitation. No input
-scaling error has been identified, and a distinct accepted high-pressure
-branch remains unverified. The low-`M` current root is not physically
-corroborated. Resolve this continuation limitation and reproduce the matched
-benchmark, including its non-JFO cavitation-model limitation, before
-classifying line contact as physically validated or advancing to crowned
-roller EHL.
+The fixed-input Venner and ten Napel (1990) `M=20,L=10` benchmark is now
+reached by `examples/run_line_ehl_m20_newton_continuation.py`. The
+257-node CUDA/CPU-SuperLU load continuation initially stalled at `77.96%`
+when a tightened GMRES retry was rejected despite an independently measured
+true residual. A bounded inexact-Newton forcing threshold and restart-120
+GMRES resolved that Krylov gate without changing the endpoint equations or
+physical inputs. Accepted 257-, 513- and 1025-node roots close
+`302642.095760196 N/m`; the 1025-node relative local/global mass defects are
+`2.33e-11 / 7.27e-15`, complementarity is `4.65e-28`, and direct-elasticity
+relative discrepancy is `6.76e-16`. The 513- and 1025-node refinements use
+interpolated accepted coarser-grid states and restart-240 GMRES.
+
+The measured `h_c` sequence is `283.268, 285.147, 285.508 nm`; `h_min` is
+`247.225, 249.698, 250.444 nm`. Bulk pressure/film profiles contract to
+`0.00516% / 0.127%` relative L2 change from 513 to 1025 nodes, while
+outlet pressure changes by `4.06%`. The detected sharp spike remains
+unresolved: its 513-to-1025 location moves from `x/b=0.88770` to `0.89844`,
+normalized amplitude from `0.72188` to `0.87839`, and width from `3.128` to
+`0.977 um`.
+
+At 1025 nodes, Figure 5 bulk-film RMSE/bias/max are `9.28/-9.01/13.02 nm`;
+the central film is `285.51 nm`, `9.80 nm` below digitized `295.31 nm`.
+Bulk-pressure RMSE/bias/max are `10.51/-4.97/20.88 MPa`. The outlet-film
+RMSE is `42.53 nm`, and computed `h_min=250.44 nm` is `26.11 nm` below the
+digitized `276.56 nm`. Thus central/bulk film has reasonable support within
+estimated digitization uncertainty, but outlet constriction and minimum film
+do not. The pressure spike is near the Figure 6 location/amplitude on the
+1025 grid but is too grid-sensitive to claim validation. The paper's
+`P>=0` cavitation treatment also differs from the solver's JFO
+fractional-content closure. See `docs/PHYSICS.md` for the grid and regional
+comparison tables and complete audit values.
 
 At 513 nodes, an independent NumPy-vs-CUDA prescribed-offset correction
 differs by `2.72e-14` relative in pressure, `1.74e-16` in film, and
@@ -165,16 +171,20 @@ differs by `2.72e-14` relative in pressure, `1.74e-16` in film, and
 NumPy (`1.09x` speedup) in this run. The sparse JFO system remains CPU-based,
 so no material GPU speedup is assumed beyond this measured case.
 
-This new formulation is numerical line-EHL/JFO evidence, not design-grade
-physical validation. A matched independent pressure/film benchmark,
-corroboration of the no-spike result, and CPU/CUDA parity beyond the tested
-513-node state are still needed before using the mode as a general numerical
-test bed. Do not infer
-finite crowned-roller, profiled-roller, tilt, transient or thermal behavior
-from this mode.
+The matched benchmark is now physically compared but is not design-grade
+validation. Bulk-film screening is promising; pressure agreement is
+reasonable but not entirely within digitization error, while outlet/minimum
+film and sharp spike metrics remain unresolved. Do not infer finite
+crowned-roller, profiled-roller, tilt, transient or thermal behavior from
+this mode. Further local-resolution work should be undertaken only if the
+spike width/amplitude is required; do not start a 2049-node uniform solve
+automatically.
 
-Verification after this implementation: complete CPU/CUDA-conditional test
-suite `975 passed, 1 skipped`; `ruff check src tests examples` passes.
+Verification for this milestone: on Windows, `pytest -q` completed with
+`989 passed, 1 skipped` in 389.35 s. `ruff check . --exclude .kilo` passed.
+Unfiltered `ruff check .` reports one pre-existing E501 in the unrelated,
+untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; that local
+tooling file is not part of this milestone.
 
 The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
 the retry-3 state byte-for-byte, and the retry-3 runner independently

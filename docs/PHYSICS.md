@@ -271,10 +271,88 @@ integration are covered by `tests/test_line_cavitation.py`. At inlet content
 `3.34919e-4` to `2.89327e-4`; this verifies the simplified prescribed inlet
 condition, not a feed-groove or experimental starvation model.
 
-This is a numerical prescribed-film flow prototype, not a validated physical
-line-contact EHL solver. Coupling to the plane-strain line elasticity,
-minimum-film feasibility, dimensional load closure, matched experimental or
-published EHL comparison, and broader grid/domain studies remain future work.
+This is the prescribed-film line-flow reference. The coupled
+stationary line-contact mode is described next; the prescribed-film solver
+remains an independent regression and CPU reference.
+
+## Stationary load-controlled line-contact EHL/JFO
+
+`LineContactEHLCase` in `src/ehl_solver/line_ehl.py` requires a
+`LineContactGeometry`, dimensional line load `line_load_n_m` [N/m], `E*`
+[Pa], an `IsothermalFluid`, positive entrainment speed `Ue` [m/s], and
+explicit `L`, `h_ref`, `p_ref`, and `L_ref` [m, m, Pa, m] scales/datum.
+The config type is `classical_line_ehl`; finite-contact `load_n` and
+`force_n` fields are rejected. The separate N/m API prevents a finite
+two-dimensional total force [N] from being treated as an infinite-line load.
+
+The coupled film convention is exactly
+
+```text
+h(x) = h0 + h_geom(x) + w(x)
+h_geom(x) = x**2/(2 Rx)
+w(x) = 2/(pi E*) integral(p(s)*log(L_ref/abs(x-s)) ds)
+```
+
+`h0` [m] is the rigid film-offset unknown. `w` is positive and gap-opening;
+the elastic kernel is the verified, cell-integrated, zero-padded 1-D
+plane-strain line operator. `L_ref` sets its additive displacement datum.
+Pressure vanishes at both x boundaries. On the uniform node grid,
+`w_line = integral(p dx)` [N/m] is discretely `sum(p_i)*dx`; it is not
+`integral(p dx dy)` [N].
+
+The 1-D mass-conserving JFO flow reuses `IsothermalFluid` (Roelands viscosity
+and Dowson-Higginson density), with no separate line rheology law. For
+`X=x/L`, `H=h/h_ref`, `P=p/p_ref`, `R=rho/rho0`, `V=eta/eta0`,
+`Lambda=12*eta0*Ue*L/(h_ref**2*p_ref)`, the dimensionless mass flux is
+
+```text
+q_hat = -avg(R*H**3/V)*dP/dX + Lambda*avg(R*H)*theta_west
+d(q_hat)/dX = 0
+```
+
+The unscaled SI face flux is mass per unit axial width
+`q_x=-avg(rho*h**3/(12*eta))*dp/dx + Ue*avg(rho*h)*theta_west`
+[kg/(m s)]. It is not volume flux. `P>=0`, `0<=theta<=1`, and
+`P*(1-theta)=0`; pressure/content are solved by a sparse active set with
+bounded property Picard updates. The elastic coupling uses a compliance
+continuation and relaxed film fixed point. Each film iterate is solved with
+the full fluid law after the first property continuation; acceptance checks
+the original unrelaxed SI flux on the reconstructed final film.
+
+`solve_line_ehl_at_load` brackets a monotone decreasing load response in
+`h0`; every root evaluation must first converge in pressure/content and film.
+The returned root must meet the relative N/m load gate, strict positive-film
+feasibility, local/global mass balance, JFO complementarity and zero edge
+pressure. Failed nonlinear/property/root steps retain diagnostics and are
+not accepted as solutions. Independent final audits recompute the SI face
+flux, line-load integral, film reconstruction and elasticity using direct
+convolution rather than the FFT.
+
+The default `numpy` backend is the independent CPU reference. A Torch CUDA
+backend applies the existing GPU-capable plane-strain FFT operator; the
+1-D sparse active-set Reynolds solve stays on CPU, and pressure/deformation
+vectors cross the device boundary during coupling. Thus CUDA parity is
+required, but GPU speedup is not assumed for this one-dimensional workload.
+
+The minimum-film scale is compared with the approximate fully flooded,
+isothermal line-contact proximity equation
+`H_min=1.6*G**0.6*U**0.7*W**(-0.13)` summarized in Marian et al. (2020),
+[DOI 10.3390/lubricants8100095](https://doi.org/10.3390/lubricants8100095).
+Here `E'=2 E*`, `U=eta0*Ue/(E'*Rx)`, `G=alpha*E'`, and
+`W=w_line/(E'*Rx)`. This is a correlation comparison, not a matched solution,
+acceptance gate, or error bound: the correlation is not identical to the
+solver's Roelands/Dowson-Higginson fluid law. No independent published line
+pressure/film profile benchmark has yet been reproduced.
+
+The 2026-11-19 reference calculation on `+/-20b`, refined from 257 through
+4097 nodes, closes 1000 N/m and contracts central/minimum film and pressure
+and film profiles. Its finest `h_min=182.47 nm` differs materially from the
+`105.40 nm` proximity-correlation estimate; without a matched benchmark this
+is unresolved model/reference sensitivity, not a parameter-tuning target.
+The outlet-spike diagnostic found no qualifying local maximum on these grids,
+so absence of a detected spike is not evidence that pressure-spike behavior
+is validated. Per-grid values and independent audit residuals are recorded in
+the [line-contact section of the roadmap](ROADMAP.md#shared-contact-geometry-and-dry-contact-foundation-2026-11-19).
 
 ## Prescribed-offset Reynolds-elasticity coupling
 `solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples

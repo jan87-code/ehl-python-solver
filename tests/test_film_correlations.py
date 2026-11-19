@@ -1,6 +1,9 @@
 import pytest
 
-from ehl_solver.film_correlations import hamrock_dowson_point_contact
+from ehl_solver.film_correlations import (
+    dowson_higginson_line_minimum_film,
+    hamrock_dowson_point_contact,
+)
 
 BASE = dict(
     load_n=50.0,
@@ -22,6 +25,48 @@ def test_si_film_reference_uses_hd_prime_modulus():
     old_convention = hamrock_dowson_point_contact(**{**BASE, "contact_modulus_pa": 56.5e9})
     assert result.minimum_film_m / old_convention.minimum_film_m == pytest.approx(2 ** (-0.117))
     assert result.central_film_m / old_convention.central_film_m == pytest.approx(2 ** (-0.073))
+
+
+def test_line_minimum_film_correlation_uses_n_per_m_and_hertz_modulus():
+    result = dowson_higginson_line_minimum_film(
+        line_load_n_m=1000.0,
+        radius_x_m=0.01,
+        contact_modulus_pa=113e9,
+        viscosity_pa_s=0.04,
+        entrainment_m_s=0.1,
+        alpha_per_pa=2.21e-8,
+    )
+
+    assert result.elastic_modulus_prime_pa == 226e9
+    assert result.speed_parameter == pytest.approx(1.7699115044247789e-12)
+    assert result.material_parameter == pytest.approx(4994.6)
+    assert result.line_load_parameter == pytest.approx(4.424778761061947e-7)
+    assert result.minimum_film_m == pytest.approx(1.0539514215972793e-7)
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("line_load_n_m", 0.0),
+        ("radius_x_m", -1.0),
+        ("contact_modulus_pa", float("nan")),
+        ("viscosity_pa_s", float("inf")),
+        ("entrainment_m_s", 0.0),
+        ("alpha_per_pa", -1.0),
+    ],
+)
+def test_line_minimum_film_correlation_rejects_invalid_inputs(key, value):
+    values = {
+        "line_load_n_m": 1000.0,
+        "radius_x_m": 0.01,
+        "contact_modulus_pa": 113e9,
+        "viscosity_pa_s": 0.04,
+        "entrainment_m_s": 0.1,
+        "alpha_per_pa": 2.21e-8,
+    }
+    values[key] = value
+    with pytest.raises(ValueError):
+        dowson_higginson_line_minimum_film(**values)
 
 
 @pytest.mark.parametrize(

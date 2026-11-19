@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 from scipy.integrate import trapezoid
 
-from ehl_solver.line_cavitation import solve_cavitating_line_reynolds
+from ehl_solver.constitutive import IsothermalFluid
+from ehl_solver.line_cavitation import (
+    audit_variable_property_line_flux,
+    solve_cavitating_line_reynolds,
+    solve_variable_property_line_reynolds,
+)
 from ehl_solver.line_contact import integrate_line_pressure
 
 
@@ -129,6 +134,102 @@ def test_line_jfo_inlet_starvation_reduces_pressure_and_conserves_flux():
     assert starved.pressure.max() < flooded.pressure.max()
     assert starved.maximum_mass_balance_residual < 1e-10
     assert abs(starved.net_boundary_flux) < 1e-10
+
+
+def test_variable_property_line_jfo_recovers_constant_property_solution():
+    x_hat, film_hat = _converging_diverging_film(41)
+    length_scale_m = 0.01
+    film_scale_m = 1e-4
+    speed_m_s = 0.1
+    viscosity_pa_s = 0.04
+    reynolds_parameter = 2.0
+    pressure_scale_pa = (
+        12
+        * viscosity_pa_s
+        * speed_m_s
+        * length_scale_m
+        / (film_scale_m**2 * reynolds_parameter)
+    )
+    x_m = length_scale_m * x_hat
+    film_m = film_scale_m * film_hat
+    fluid = IsothermalFluid(viscosity_pa_s, 850.0)
+    constant = solve_cavitating_line_reynolds(
+        film_hat,
+        x_hat[1] - x_hat[0],
+        reynolds_parameter,
+    )
+
+    variable = solve_variable_property_line_reynolds(
+        x_m,
+        film_m,
+        fluid,
+        speed_m_s,
+        length_scale_m=length_scale_m,
+        film_scale_m=film_scale_m,
+        pressure_scale_pa=pressure_scale_pa,
+        strengths=(0.0,),
+    )
+
+    np.testing.assert_allclose(
+        variable.pressure_pa / pressure_scale_pa,
+        constant.pressure,
+        rtol=2e-12,
+        atol=2e-14,
+    )
+    np.testing.assert_allclose(
+        variable.fractional_film_content,
+        constant.fractional_film_content,
+        rtol=0.0,
+        atol=2e-12,
+    )
+    assert variable.audit["mass_maximum"] < 1e-10
+    assert variable.audit["maximum_complementarity"] < 1e-12
+
+
+def test_pressure_dependent_line_jfo_passes_independent_si_flux_audit():
+    x_hat, film_hat = _converging_diverging_film(81)
+    length_scale_m = 0.01
+    film_scale_m = 1e-4
+    pressure_scale_pa = 1e6
+    speed_m_s = 0.1
+    fluid = IsothermalFluid(
+        viscosity_pa_s=0.04,
+        density_kg_m3=850.0,
+        viscosity_index=0.68,
+    )
+    x_m = length_scale_m * x_hat
+    film_m = film_scale_m * film_hat
+    result = solve_variable_property_line_reynolds(
+        x_m,
+        film_m,
+        fluid,
+        speed_m_s,
+        length_scale_m=length_scale_m,
+        film_scale_m=film_scale_m,
+        pressure_scale_pa=pressure_scale_pa,
+    )
+    independent = audit_variable_property_line_flux(
+        x_m,
+        film_m,
+        result.pressure_pa,
+        result.fractional_film_content,
+        fluid,
+        speed_m_s,
+        length_scale_m=length_scale_m,
+        film_scale_m=film_scale_m,
+        pressure_scale_pa=pressure_scale_pa,
+    )
+
+    assert np.all(result.pressure_pa >= 0.0)
+    assert np.all((0.0 <= result.fractional_film_content) & (
+        result.fractional_film_content <= 1.0
+    ))
+    np.testing.assert_array_equal(result.pressure_pa[[0, -1]], 0.0)
+    assert independent["mass_maximum"] < 1e-8
+    assert independent["relative_local_balance"] < 1e-10
+    assert independent["relative_global_balance"] < 1e-10
+    assert independent["maximum_complementarity"] < 1e-10
+    assert result.history[-1]["strength"] == 1.0
 
 
 @pytest.mark.parametrize(

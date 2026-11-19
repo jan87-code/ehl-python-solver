@@ -61,11 +61,78 @@ On the converging-diverging wedge, its 21/41/81-node pressure integrals are
 `3.23123e-4`, `3.34919e-4` and `3.35950e-4`; the independent 41-node
 full-film matrix comparison passes, as do recomputed local mass and boundary
 flux audits and a dimensional N/m pressure-integral audit. This remains a
-prescribed-film flow prototype, not coupled line EHL. The next bounded step
-is to couple the line elasticity and film equations with strict feasibility
-and dimensional load closure, then verify against a matched line-contact
-benchmark. Do not infer that line-contact EHL, crowned rollers, tilt,
-transient EHL or thermal EHL are validated or implemented.
+prescribed-film flow reference and remains independently tested.
+
+The bounded stationary isothermal line-contact EHL/JFO path is now
+implemented in `src/ehl_solver/line_ehl.py`. It couples that conservative
+1-D JFO flow to the verified plane-strain logarithmic FFT operator using
+`h=h0+h_geom+w`, pressure-dependent properties from the existing
+`IsothermalFluid`, compliance continuation, and a bracketed target
+`line_load_n_m` [N/m] root. Its configuration rejects point-contact total
+loads [N]. The pressure/content active set and final original-SI flux audit
+remain CPU references; the available CUDA path accelerates the 1-D elasticity
+FFT and has an independent NumPy/direct-convolution audit.
+
+The reproducible fixed-domain refinement runner is
+`examples/run_line_ehl_refinement.py`; it defaults to the verified CUDA
+elasticity path and prints per-grid load, mass, film, pressure, constriction,
+spike, correlation and direct-elasticity diagnostics. The accepted
+2026-11-19 sequence used `W_line=1000 N/m`, `Rx=10 mm`, `E*=113 GPa`,
+`eta0=0.04 Pa s`, `rho0=850 kg/m^3`, `alpha=2.21e-8 Pa^-1`, `Ue=0.1 m/s`,
+and the existing Roelands/Dowson-Higginson laws on a fixed `+/-20b` domain.
+Analytical Hertz references are `b=10.61490 um`, `p0=59.97418 MPa`;
+the domain is `+/-212.298 um`. Each listed solve used the CUDA elasticity
+backend and retained CPU SI-mass-flux and direct-elasticity audits.
+
+| Nodes | h_c (nm) | h_min (nm) | p_max (MPa, x um) | Outlet constriction (nm, x um) | Spike location/width/integral | Relative load error |
+|---:|---:|---:|---:|---:|---|---:|
+| 257 | 182.5130 | 182.3777 | 12.25543, -26.5372 | 183.6194, 6.6343 | not detected | 1.02e-8 |
+| 513 | 182.5804 | 182.4452 | 12.25343, -27.3665 | 183.3072, 5.8050 | not detected | 9.92e-9 |
+| 1025 | 182.5973 | 182.4621 | 12.25421, -26.9519 | 183.1603, 5.3904 | not detected | 1.76e-8 |
+| 2049 | 182.6029 | 182.4676 | 12.25398, -26.9519 | 183.1659, 5.3904 | not detected | 1.10e-8 |
+| 4097 | 182.6039 | 182.4687 | 12.25395, -26.9519 | 183.1669, 5.3904 | not detected | 1.10e-8 |
+
+Over the full sequence, `h_c` and `h_min` change by about `0.091 nm`
+(`0.050%`); the final 2049-to-4097 change is `0.00106 nm` (`0.00058%`).
+The finest-grid `h_min` is at `x=1.6586 um`. Interpolated pairwise relative
+L2 changes over `|x|<=5b` contract for pressure/film as follows:
+257-to-513 `1.80e-4 / 2.89e-4`, 513-to-1025 `4.51e-5 / 7.25e-5`,
+1025-to-2049 `2.19e-5 / 2.38e-5`, and 2049-to-4097
+`2.83e-6 / 4.55e-6`. These are measured grid sensitivities, not
+Richardson/GCI error estimates. `p_max` varies by less than `0.017%` across
+the sequence, but its non-monotone behavior is not used as a validation
+surrogate. The outlet-constriction location stabilizes at about `5.390 um`
+from 1025 nodes, while its coarser value shifts by about `1.24 um`.
+
+No outlet local maximum beyond `x=b` met the diagnostic's 0.1%-of-global-peak
+prominence threshold on any grid. Consequently Petrusevich location, width,
+and integrated pressure are unresolved, not converged-to-zero. The
+minimum-film proximity correlation gives `105.40 nm`, versus the computed
+`182.47 nm`; this is only a scale comparison because its fluid law and
+assumptions are not a matched independent benchmark. The solve closes load
+to at most `1.76e-8` relative error; maximum normalized mass residual is
+`3.46e-11`, local/global flux-balance errors are below `1e-10`, complementarity
+is zero, and direct-vs-FFT displacement discrepancies are below `7.3e-16`
+relative. Per-grid CUDA solve times ranged from 54 to 430 seconds, with
+189-199 accepted coupling iterations. These results verify the coupled
+numerical equations and audits for this case, not its physical accuracy.
+
+At 513 nodes, an independent NumPy-vs-CUDA prescribed-offset correction
+differs by `2.72e-14` relative in pressure, `1.74e-16` in film, and
+`1.33e-15` in calculated line load. CUDA took `9.84 s` versus `10.69 s` for
+NumPy (`1.09x` speedup) in this run. The sparse JFO system remains CPU-based,
+so no material GPU speedup is assumed beyond this measured case.
+
+This new formulation is numerical line-EHL/JFO evidence, not design-grade
+physical validation. A matched independent pressure/film benchmark,
+corroboration of the no-spike result, and CPU/CUDA parity beyond the tested
+513-node state are still needed before using the mode as a general numerical
+test bed. Do not infer
+finite crowned-roller, profiled-roller, tilt, transient or thermal behavior
+from this mode.
+
+Verification after this implementation: complete CPU/CUDA-conditional test
+suite `975 passed, 1 skipped`; `ruff check src tests examples` passes.
 
 The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
 the retry-3 state byte-for-byte, and the retry-3 runner independently

@@ -150,17 +150,84 @@ NumPy implementation remains the independent reference, and all operators
 retain float64. The grid trend verifies this particular dry Hertz case; it is
 not a general error bound or proof for coupled lubrication.
 
-## Limits and next step
+## Stationary isothermal line-contact EHL/JFO
 
-The point-contact EHL and 2-D dry solvers remain finite-domain models using
-their respective 3-D half-space formulations. The new dry line mode verifies
-plane-strain elastic Hertz contact. The separate
-`solve_cavitating_line_reynolds` prototype solves stationary 1-D JFO flow for
-a prescribed film; it has explicit per-width flow scaling and reports local
-mass and boundary-flux diagnostics, but does not couple to line elasticity or
-close a target load. The two verified components are not yet a line-contact
-EHL solver. Before claiming one, couple the deformation and film equations,
-verify dimensional N/m load closure and minimum-film feasibility, and compare
-against a matched line-contact reference. Only after those pass should the
-axial-profile interface be exercised as finite crowned-roller contact. Tilt,
-transient EHL and thermal EHL remain unimplemented.
+`LineContactEHLCase` and `solve_line_ehl_at_load` implement a distinct
+stationary, infinitely long line-contact formulation. The public load field
+is `line_load_n_m` [N/m]; the `classical_line_ehl` config factory rejects
+finite-contact `load_n` and `force_n` fields and requires
+`LineContactGeometry`. It is not routed through the point-contact total-force
+API. The dimensional gap is
+
+```text
+h(x) = h0 + h_geom(x) + w(x)
+h_geom(x) = x**2/(2 Rx)
+w(x) = 2/(pi E*) integral(p(s)*log(L_ref/abs(x-s)) ds)
+```
+
+`h0` [m] is the rigid film offset solved by a bracketed scalar root. Positive
+pressure produces positive, gap-opening deformation. The target constraint is
+`integral(p dx) = line_load_n_m` [N/m], evaluated on the zero-pressure-edge
+uniform grid as `sum(p_i)*dx`. The positive logarithmic displacement datum
+`L_ref` remains an explicit input; report it with every `h0` result.
+
+The line JFO flow reuses `IsothermalFluid` and its pressure-dependent
+Roelands viscosity and Dowson-Higginson density. With
+`X=x/L`, `H=h/h_ref`, `P=p/p_ref`, `R=rho/rho0`, `V=eta/eta0`, its mass
+flux is
+
+```text
+q_hat = -avg(R H**3/V)*dP/dX + Lambda*avg(R H)*theta_west
+Lambda = 12*eta0*Ue*L/(h_ref**2*p_ref)
+```
+
+This is mass flux per unit axial width; the dimensional SI face flux is
+`-avg(rho*h**3/(12 eta))*dp/dx + Ue*avg(rho*h)*theta` [kg/(m s)].
+Pressure/content are solved by a sparse 1-D active set with bounded
+pressure-property Picard updates. The elastic coupling uses compliance
+continuation and relaxed film fixed-point iterations, followed by a monotone,
+bracketed `h0` load root. Failed property, coupling, or load-root iterations
+retain diagnostics and are not returned as accepted roots. There is no
+pressure clipping, film clamping, or change of the constitutive law.
+
+The CPU sparse pressure/content solve remains the reference path. Selecting a
+Torch CUDA backend accelerates the plane-strain zero-padded FFT elasticity
+operator; the 1-D pressure and film fields cross the device boundary for that
+operator, while the independent CPU path and direct-convolution final audit
+remain available. This is not GPU acceleration of the sparse active-set
+solver.
+
+The final root gates include the N/m load residual, strict positive film,
+zero pressure at both x boundaries, pressure/content admissibility,
+complementarity, unrelaxed SI mass-flux residual, local/global flux balance,
+film reconstruction and a direct (non-FFT) elasticity sum. A symmetric
+pressure input must produce symmetric elastic deformation; the rolling EHL
+pressure itself is not expected to be symmetric.
+
+The minimum-film comparison uses the approximate fully flooded, isothermal
+line-contact proximity correlation
+`H_min=1.6*G**0.6*U**0.7*W**(-0.13)` summarized by Marian et al. (2020),
+[DOI 10.3390/lubricants8100095](https://doi.org/10.3390/lubricants8100095).
+Here `E'=2 E*`, `U=eta0*Ue/(E'*Rx)`, `G=alpha*E'`, and
+`W=line_load_n_m/(E'*Rx)`. The correlation is a scale comparison, not an
+acceptance gate or an exact matched reference for the solver's Roelands and
+Dowson-Higginson property laws. No central-film line correlation or matched
+published field benchmark is currently implemented in the repository.
+
+### Limits
+
+This is a numerical stationary line-EHL/JFO mode, not design-grade physical
+validation. Its uniform inlet supply, zero pressure at both x ends, isothermal
+Roelands/Dowson-Higginson fluid, plane-strain elastic datum and fully
+developed infinite line assumptions limit physical claims. The benchmark
+uses an analytical film correlation for minimum-film scale only; it is not an
+independent pressure/film-field benchmark. Pressure-spike width and other
+sharp local features remain unresolved despite bulk load closure; the
+257-to-4097 study detects no qualifying outlet spike. Do not infer correct
+spike physics from its absence. The outlet-spike diagnostic selects the most
+prominent local maximum at `x>b` with prominence at least 0.1% of the global
+pressure maximum; width is measured at half prominence and the reported
+pressure integral is over that interpolated interval. This grid-based
+detector is not a physical acceptance gate. Finite crowned rollers, tabulated
+measured profiles, tilt-coupled EHL, transient EHL and thermal behavior
+remain out of scope.

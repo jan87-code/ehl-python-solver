@@ -21,6 +21,76 @@ class FilmCorrelation:
     ellipticity: float
 
 
+@dataclass(frozen=True)
+class LineContactFilmCorrelation:
+    minimum_film_m: float
+    elastic_modulus_prime_pa: float
+    speed_parameter: float
+    material_parameter: float
+    line_load_parameter: float
+
+
+def dowson_higginson_line_minimum_film(
+    *,
+    line_load_n_m,
+    radius_x_m,
+    contact_modulus_pa,
+    viscosity_pa_s,
+    entrainment_m_s,
+    alpha_per_pa,
+):
+    """Return the classical fully flooded isothermal line-contact h_min estimate.
+
+    The approximate proximity equation is ``H_min=1.6*G**0.6*U**0.7*W**-0.13``,
+    with ``U=eta0*u/(E_prime*R)``, ``G=alpha*E_prime``,
+    ``W=w_line/(E_prime*R)`` and ``h_min=R*H_min``. It is an independent
+    correlation, not an acceptance threshold or an exact solution of the
+    Roelands/Dowson-Higginson fluid law used by the solver. The SI contact
+    modulus follows the package Hertz convention and ``E_prime=2*E_star``.
+    """
+    values = (
+        line_load_n_m,
+        radius_x_m,
+        contact_modulus_pa,
+        viscosity_pa_s,
+        entrainment_m_s,
+        alpha_per_pa,
+    )
+    if not all(isfinite(value) and value > 0.0 for value in values):
+        raise ValueError("line-correlation SI parameters must be positive finite")
+    e_prime_pa = 2.0 * contact_modulus_pa
+    speed_parameter = viscosity_pa_s * entrainment_m_s / (
+        e_prime_pa * radius_x_m
+    )
+    material_parameter = alpha_per_pa * e_prime_pa
+    line_load_parameter = line_load_n_m / (e_prime_pa * radius_x_m)
+    minimum = (
+        radius_x_m
+        * 1.6
+        * material_parameter**0.6
+        * speed_parameter**0.7
+        * line_load_parameter**-0.13
+    )
+    if not all(
+        isfinite(value) and value > 0.0
+        for value in (
+            e_prime_pa,
+            speed_parameter,
+            material_parameter,
+            line_load_parameter,
+            minimum,
+        )
+    ):
+        raise ValueError("line-correlation parameters overflowed or underflowed")
+    return LineContactFilmCorrelation(
+        minimum,
+        e_prime_pa,
+        speed_parameter,
+        material_parameter,
+        line_load_parameter,
+    )
+
+
 def hamrock_dowson_point_contact(
     *,
     load_n,

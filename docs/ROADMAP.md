@@ -10,7 +10,16 @@ line contact, transient isothermal behavior, steady TEHL and combined transient
 TEHL through separately benchmarked feature branches. The order of those
 extensions is proposed; no such model is marked implemented by this plan.
 
-The broad project priority remains **benchmark-led physical validation**.
+The circular point-contact validation phase is **frozen at a
+preliminary-evidence level** as of 2026-11-19. This closes the bounded
+donor/JFO numerical and Ciulli Figure 13 assessment, not design-grade physical
+validation. Use this evidence as a regression baseline while moving forward
+with the shared contact/geometry framework, line-contact verification mode,
+crowned/profiled roller geometry and tilt. Reopen circular physical
+validation only against the evidence gates at the end of
+[VALIDATION_REPORT.md](VALIDATION_REPORT.md), not through automatic uniform
+refinement or physical-parameter tuning.
+
 The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
 the retry-3 state byte-for-byte, and the retry-3 runner independently
 re-audited it before returning `accepted_numerical_root`. Zero additional
@@ -50,6 +59,18 @@ inputs; do not claim design-grade physical validation. Do not start a
 uniform 2049x2049 solve. If sharp-feature outputs are required, define a
 separate targeted-resolution study. The final regional figures and tables are
 listed in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+
+Final classification: equation closure and saved-root audits are verified;
+`h_c` and longitudinal bulk film are strongly supported by Ciulli Figure 13
+within the available read-off estimate; transverse bulk film is reasonable in
+aggregate but positively biased; the longitudinal outlet is not validated;
+transverse side constrictions are only partially supported; global `h_min`,
+pressure peaks, Petrusevich width and local outlet pressure remain unresolved.
+The approximately 10 nm uncorrected optical effect can alter the
+transverse-bulk bias and marginal side-point coverage, but not the strong
+longitudinal-bulk/central agreement or the large outlet discrepancy. Keep
+grid, digitization/optical, constitutive-input and donor-versus-near-MC
+sensitivities separate; no combined uncertainty is claimed.
 
 MC continuation is stopped. The highest accepted blended diagnostic remains
 `tau=0.999359130859375`; the one authorized smaller target
@@ -3097,9 +3118,12 @@ benchmark script `examples/benchmark_limited_hybrid_correction.py`. The
 same-grid donor/near-MC differences are transport-discretization sensitivity
 comparable to donor mesh changes, not an exact-MC comparison. Further
 brute-force continuation is not justified. The saved-field five-grid and
-Figure 13 post-processing is complete; the remaining phase work is to resolve
-constitutive/input uncertainty and obtain independent physical pressure or
-cavitation evidence, without tuning to the current profiles. Use donor/JFO as
-the current production formulation. Hashes, audit details, comparison
-definitions and the rejected target remain documented in
-[VALIDATION_REPORT.md](VALIDATION_REPORT.md).
+Figure 13 post-processing is complete, and donor/JFO remains the current
+production formulation. Exact MC remains experimental/unresolved. The
+current validation phase is frozen; future design-grade evidence needs
+independent high-pressure lubricant properties, a matched EHL benchmark,
+pressure/cavitation and minimum-film/constriction validation, and local
+resolution work only if sharp outputs are required. Proceed with the next
+geometry and contact capabilities while preserving the validated circular
+case and its limitations. Hashes, audit details, comparison definitions and
+the rejected target remain documented in [VALIDATION_REPORT.md](VALIDATION_REPORT.md).

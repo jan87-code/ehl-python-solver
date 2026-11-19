@@ -7387,14 +7387,16 @@ tables are in the same local result directory.
 | Constitutive/input model | The case uses Roelands viscosity matched to the reported ambient slope and assumed Dowson-Higginson pressure-density coefficients; controlled 65/129 alternatives materially change `h_c` and profile errors (see the input-sensitivity tables above). | Full-pressure SN500 laws and uncertainty ranges are not established. Do not tune inputs to fit Figure 13; model-form sensitivity is not a probability interval. |
 | Transport discretization | Same-grid donor versus accepted `tau=0.999359130859375` root on 513x513 | Reported differences are transport-discretization sensitivity, not an exact-MC comparison. Exact `tau=1` remains experimental and unresolved; it is not substituted for the donor production result. |
 
-### Validation decision and blockers
+### Interim validation decision and physical-evidence gaps (2026-11-18)
 
-The numerical evidence now supports accepted discrete donor/JFO equation
-closure across five fixed-domain meshes, small tested fixed-spacing domain
-sensitivity, and a quantitative first Figure 13 film comparison. Use donor/JFO
-as the current production formulation. It does **not** establish a complete
-physical EHL validation or a formal mesh-uncertainty bound. Before closing
-the circular point-contact validation phase, the remaining blockers are:
+The numerical evidence supports accepted discrete donor/JFO equation closure
+across five fixed-domain meshes, tested fixed-spacing domain sensitivity, and
+a quantitative Figure 13 film comparison. Use donor/JFO as the current
+production formulation. It does **not** establish design-grade physical EHL
+validation or a formal mesh-uncertainty bound. The evidence gaps below remain
+requirements for any later upgrade to those stronger claims; the final
+2026-11-19 disposition at the end of this report freezes the current
+preliminary-validation milestone without claiming those gaps are closed.
 
 1. Establish a defensible numerical uncertainty for `h_c`, `h_min`, measured
    film profiles and bulk pressure without extrapolating non-asymptotic
@@ -7567,11 +7569,162 @@ accepted discrete roots, verified equation closure, and physical agreement
 with Ciulli's longitudinal bulk film and central film thickness within the
 available plot-read-off estimates. Agreement is incomplete in the transverse
 bulk and absent at the longitudinal outlet constriction; the transverse side
-constrictions are only partially within those estimates. The circular
-point-contact physical-validation phase cannot yet be closed. Remaining
-blockers are a defensible high-pressure lubricant property law and its
-uncertainty, resolution/verification of sharp outlet and global-minimum
-features if those outputs are required, and independent pressure/cavitation
-or matched numerical-benchmark evidence. Original interferograms and
-pressure-dependent optical properties remain optional improvements to the
-experimental reference, not prerequisites for the initial comparison.
+constrictions are only partially within those estimates. The final phase
+disposition below freezes the present preliminary-validation scope, while
+retaining the stronger physical-evidence gaps for any design-grade upgrade.
+Original interferograms and pressure-dependent optical properties remain
+optional improvements to this initial comparison, not prerequisites for it.
+
+## Circular point-contact validation phase disposition (2026-11-19)
+
+This is the final disposition of the current validation phase. It uses only
+the accepted saved donor/JFO grid sequence, the accepted near-MC diagnostic,
+the existing regional Figure 13 post-processing, and the controlled
+constitutive-input sensitivity runs. No new EHL calculation, uniform
+refinement, MC continuation, or parameter tuning was performed. The accepted
+production formulation remains donor/JFO. The accepted
+`tau=0.999359130859375` state remains transport-discretization sensitivity
+evidence; exact MC (`tau=1`) remains experimental and unresolved.
+
+### 1. VERIFIED
+
+The five donor/JFO roots at 65², 129², 257², 513² and 1025² close the
+discrete force, Reynolds/JFO mass, complementarity, film reconstruction and
+elasticity audits on the fixed `+/-0.4 mm` domain. Across the saved audit
+records, relative force error is at most `2.22e-16`, dimensionless maximum
+mass residual at most `1.51e-11`, relative local balance at most
+`6.26e-12`, relative global balance at most `9.40e-17`, complementarity at
+most `1.18e-25`, and film-reconstruction error at most `5.38e-20 m`.
+The 1025² accepted endpoint was independently re-audited with CPU
+`scipy.signal.fftconvolve` elasticity reconstruction. This establishes
+accepted discrete roots and implementation-level equation closure, not
+physical accuracy or infinite-domain validity.
+
+The 513²-to-1025² comparison is the finest-grid observed sensitivity:
+
+| Quantity | 513² -> 1025² sensitivity | Interpretation |
+|---|---:|---|
+| `h_c` | `-4.523 nm` (`-0.971%`) | Small last-pair change; the full sequence is not monotone/asymptotic |
+| Global `h_min` | `-2.224 nm` (`-0.799%`) | Small last-pair change; the full sequence is nonmonotone and the minimum is off the measured cuts |
+| Main-contact film field | `0.883%` relative L2; `4.045 nm` RMS | Good last-pair numerical agreement for the sampled smooth field |
+| Longitudinal / transverse midplane profiles | `4.382 / 3.669 nm` RMS | Observed adjacent-grid differences, not error bounds |
+| Main-contact pressure | `2.678%` relative L2; `14.787 MPa` RMS | Contracting bulk-field difference; no experimental pressure comparison |
+| Fixed outlet-corridor absolute-pressure integral | `+1.524%` | Fixed physical window `x=[75,100] um`, `|y|<=100 um`; includes background pressure |
+| Moving half-prominence-width pressure integral | `-41.75%` | Peak-following window changes with grid; sharp-feature diagnostic, not a convergence norm |
+| `p_max` | `812.881 -> 896.066 MPa` (`+10.23%`) | Increases as the narrow off-axis ridge is sampled more finely; unresolved |
+
+Across all five grids, several bulk pressure/profile norms contract, but
+`h_c` changes do not contract monotonically and `h_min` is nonmonotone. No
+formal Richardson extrapolation, GCI, or combined numerical uncertainty is
+claimed. The 1025² connected sampled pressure-maximum locus has half-prominence
+widths of only `1.75` cells at the centerline and `2.92` cells off axis.
+Neither peak amplitude/location nor Petrusevich-type width is resolved.
+
+The same-grid donor-versus-near-MC comparison is kept separate from grid
+sensitivity: at 513² the accepted near-MC state differs from donor by
+`-10.219 nm` in `h_c`, `-5.133 nm` in `h_min`, `0.0700%` relative L2 for
+film, and `2.848%` relative L2 (`15.617 MPa` RMS) in main-contact pressure.
+Midplane film RMS differences are `8.482 nm` longitudinally and `7.897 nm`
+transversely. Outlet-locus positions differ by about one cell, and windowed
+integrals depend on window placement. These are transport-discretization
+sensitivities; they neither establish exact MC nor a physical-error bound.
+
+### 2. PHYSICALLY SUPPORTED / PRELIMINARILY VALIDATED
+
+The current Ciulli Figure 13 comparison is a film-thickness comparison only;
+the paper supplies no pressure field for validation. Region masks and metrics
+are based on the digitized `S=0` centerline profiles:
+
+| Quantity / region | Numerical sensitivity | Experimental comparison | Validation status | Remaining limitation |
+|---|---|---|---|---|
+| Discrete force/mass/JFO/film/elasticity closure | Five accepted grids; max relative force error `2.22e-16`, mass residual `1.51e-11`, local/global balance `6.26e-12`/`9.40e-17` | Not an experimental observable | Numerically verified for these discrete roots | Does not establish continuum accuracy, physical constitutive validity or domain independence |
+| `h_c` | `-4.523 nm` (`-0.971%`) on 513²->1025² | `461.13 nm` vs `460 +/- 20 nm`; bias `+1.13 nm` | Strongly supported; suitable for preliminary screening under the declared model | High-pressure viscosity/density laws remain assumed |
+| Longitudinal bulk film (`y=0`, `-70<=x<=70 um`) | Region-point 513²->1025² RMS `4.54 nm` | RMSE `4.05 nm`, bias `+0.23 nm`, max `7.50 nm`; `15/15` within read-off estimates (RMS `20 nm`) | Strong agreement; best-supported profile output | Coordinate read-off uncertainty (`+/-2 um`) not propagated |
+| Transverse bulk film (`x=0`, `|y|<=60 um`) | Region-point RMS `4.19 nm` | RMSE `13.70 nm`, positive bias `+11.24 nm`, max `22.30 nm`; `9/13` within estimates (RMS `20 nm`) | Reasonable aggregate agreement, but only partial pointwise support | Bias is comparable to the optical-reference effect; see sensitivity below |
+| Longitudinal outlet/constriction (`y=0`, `80<=x<=100 um`) | Region-point RMS `2.80 nm` | RMSE `92.45 nm`, bias `-7.95 nm`, max `138.10 nm`; `0/3` within estimates (RMS `33.67 nm`) | Not validated | Large local shape/value discrepancy; constriction position also differs |
+| Transverse side constrictions (`x=0`, `70<=|y|<=100 um`) | Region-point RMS `2.57 nm` | RMSE `35.81 nm`, bias `+21.40 nm`, max `61.42 nm`; `5/8` within estimates (RMS `30.82 nm`) | Partially supported, not validated as a constriction prediction | Local values and minima remain discrepant and optically sensitive |
+| Longitudinal profile minimum (`y=0`) | Cut minimum `396.55 nm` at `x=94.53 um` | Digitized minimum `360 +/- 30 nm` at `x=90 um`; minimum-value difference `+36.55 nm`, position offset `4.53 um` | Not validated as a minimum prediction | At the measured x=90 um, model is `412.37 nm` (`+52.37 nm`) |
+| Transverse profile minima (`x=0`) | Cut minima `296.76 nm` at `|y|=85.94 um` | Digitized minima `250 +/- 30 nm` at `|y|=80 um`; difference `+46.76 nm`, position offset `5.94 um` | Not validated as a minimum prediction | At the measured `|y|=80 um`, model is `311.42 nm` (`+61.42 nm`) |
+| Global `h_min` | `276.288 nm`; changes `-2.224 nm` on the last grid pair | Not directly observed by Figure 13: global minimum is at `(x,y)=(25.000,-82.031) um`, off both midplane cuts | Unresolved physically | Do not compare it as a scalar with the transverse `x=0` minimum |
+| Bulk/main-contact pressure | `2.678%` relative L2; `14.787 MPa` RMS on last pair | No Figure 13 pressure data | Numerically characterized only; not physically validated | No independent matched pressure measurement |
+| Outlet pressure integral / ridge | Fixed corridor `+1.524%`; moving-width integral `-41.75%` on last pair | No pressure reference | Unresolved sharp-feature behavior | Moving integration window and ridge width are grid-sensitive |
+| `p_max`, peak location, Petrusevich width | `p_max` rises `10.23%` from 513² to 1025²; widths remain below 3 cells | No Figure 13 pressure reference | Unresolved / not validated | Pointwise peak and exact locus are under-resolved |
+| Donor vs accepted near-MC | `h_c -10.219 nm`, `h_min -5.133 nm`, main pressure `2.848%` relative L2 on 513² | Not an experimental comparison | Transport-discretization sensitivity only | Near-MC is not exact MC; `tau=1` remains unresolved |
+
+The Figure 13 summaries and raw tables are the final visual evidence set:
+
+- [Region-masked Figure 13 film comparison](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/figure13_donor_profile_regions.png)
+- [Figure 13 residuals with digitization bars](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/figure13_profile_residuals.png)
+- [Five-grid numerical sensitivity figure](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/donor_grid_sensitivity.png)
+- [Regional agreement table](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/profile_region_agreement_1025.csv)
+- [Regional grid-sensitivity table](../results/ciulli_20261118_donor_65_1025_regional_validation_v2/profile_region_grid_sensitivity.csv)
+- [Five-grid scalar and audit summary](../results/ciulli_20261118_donor_65_1025_uncertainty/grid_roots.csv)
+
+### Keep uncertainty and sensitivity sources separate
+
+| Source | Evidence | Classification |
+|---|---|---|
+| Grid/discretization | Five-level fixed-domain sequence and separate fixed-spacing domain checks; last-pair sensitivities above | Observed sensitivity only; no asymptotic uncertainty or Richardson/GCI |
+| Digitization | Figure 13 point-read-off estimates, approximately `+/-20 nm` smooth and `+/-30-40 nm` near steep features; coordinate estimate about `+/-2 um` | Experimental-reference estimate, not confidence interval; coordinate component unpropagated |
+| Optical reference | Paper reports an uncorrected pressure-dependent refractive-index effect of about `10 nm` | Separate systematic/reference sensitivity; sign and spatial distribution are not known here and no correction is applied |
+| Lubricant/input model | Roelands law matched to ambient slope; assumed Dowson-Higginson density law. At 129², controlled alternatives changed `h_c` from baseline `485.27 nm` to `500.36 nm` (Barus + Dowson-Higginson), `567.39 nm` (Roelands + constant density), and `586.95 nm` (Barus + constant density) | Material model sensitivity, not a probability range; no tuning |
+| Transport discretization | Donor vs accepted `tau=0.999359130859375` same-grid comparison | Separate transport sensitivity, not an exact-MC result |
+
+**Could the optical effect change the profile conclusions?** An illustrative
+uniform `+/-10 nm` shift of the digitized reference is not an optical
+correction, but it tests the scale of the reported effect without changing
+the solver. Under that shift, longitudinal bulk remains `15/15` within the
+existing `+/-20 nm` point-read-off estimates and `h_c` remains within its
+`+/-20 nm` estimate. The transverse-bulk bias changes from `+11.24 nm` to
+about `+1.24` or `+21.24 nm`, and pointwise coverage ranges from `5/13` to
+`13/13`; therefore the size/sign of its positive bias is not robust to this
+reference effect. Side-constriction coverage remains partial (`3/8` to
+`5/8`), and the longitudinal outlet remains `0/3` within the read-off
+estimates with RMSE about `92-94 nm`. Thus an approximately 10 nm optical
+effect could alter the transverse-bulk and marginal side-point interpretation,
+but does not change the strong longitudinal-bulk/central agreement or rescue
+the longitudinal outlet result. The actual correction may be pressure- and
+position-dependent; these shifts are not combined with digitization bars or
+treated as statistical uncertainty.
+
+### 3. UNRESOLVED / NEXT VALIDATION WORK
+
+The defensible use envelope is **preliminary bulk-film screening** for the
+declared steady, isothermal, fully flooded circular point-contact model and
+its stated properties/domain. Within that envelope, use `h_c` and
+longitudinal bulk film for trend comparisons, and transverse bulk film only
+with its positive-bias and optical-reference caveats. The accepted discrete
+roots support force/mass/cavitation-equation closure and numerical comparison;
+they do not support design allowables, minimum-separation guarantees, peak
+stress/pressure limits, validated outlet pressure, thermal/sliding friction,
+transient behavior, starvation, or arbitrary lubricant/load extrapolation.
+This is not design-grade prediction.
+
+To upgrade the evidence when those claims are needed:
+
+1. Obtain or validate high-pressure viscosity and density laws for the actual
+   lubricant at the test temperature, with uncertainties independent of
+   fitting the present film profiles.
+2. Reproduce an independent matched EHL numerical benchmark with aligned
+   geometry, modulus convention, fluid laws, boundaries, load and output
+   definitions.
+3. Compare pressure and cavitation boundaries against independent pressure,
+   fringe, or cavitation evidence if available.
+4. Obtain independent minimum-film and outlet/side-constriction measurements;
+   clarify the off-midplane global-minimum location and the experimental
+   optical correction.
+5. If sharp pressure peaks, ridge widths or exact local minima are required,
+   perform a separately scoped local-resolution/discretization study with
+   acceptance metrics. Do not start 2049² uniform refinement by default.
+6. Keep exact MC as a separate research question; do not restart continuation
+   or use the near-MC state as a physical or exact-MC reference.
+
+**Phase decision:** freeze the current circular point-contact validation
+phase at this explicit preliminary-evidence level. This closes the bounded
+donor/JFO benchmark and its present numerical/experimental assessment; it
+does not certify full physical accuracy. Further work to meet design-grade
+evidence should be reopened only against the requirements above, not by
+continuing uniform refinement or tuning inputs. Development can now proceed
+to the shared contact/geometry framework, line-contact verification mode,
+crowned/profiled roller geometry and tilt, while preserving these circular
+case results as regression and verification evidence.

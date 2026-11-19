@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
-from typing import Callable, Protocol
+from math import isfinite, tan
+from typing import Callable, Mapping, Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 
 class ContactGeometry(Protocol):
-    """Geometry interface; ``h_geom`` returns an ``(ny, nx)`` field in metres."""
+    """Additive gap component; ``h_geom`` returns ``(ny,nx)`` metres."""
 
-    def h_geom(self, x_m: ArrayLike, y_m: ArrayLike) -> NDArray[np.float64]:
-        """Evaluate undeformed separation on ascending 1-D coordinate axes."""
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        """Evaluate a geometry/gap component on ascending SI coordinate axes."""
+
+
+class AxialProfile(Protocol):
+    """Callable axial profile ``g(y)`` returning heights in metres."""
+
+    def __call__(self, y_m: NDArray[np.float64]) -> ArrayLike:
+        """Evaluate profile heights for axial coordinates in metres."""
 
 
 def _coordinates(x_m: ArrayLike, y_m: ArrayLike):
@@ -37,6 +46,13 @@ def _positive_finite(value: float, name: str) -> float:
     return float(value)
 
 
+def _validate_time(time_s: float | None) -> None:
+    if time_s is not None and (
+        isinstance(time_s, bool) or not isfinite(time_s) or time_s < 0.0
+    ):
+        raise ValueError("time_s must be finite and nonnegative")
+
+
 @dataclass(frozen=True)
 class CircularPointContactGeometry:
     """Parabolic circular point-contact geometry."""
@@ -46,7 +62,10 @@ class CircularPointContactGeometry:
     def __post_init__(self):
         object.__setattr__(self, "radius_m", _positive_finite(self.radius_m, "radius_m"))
 
-    def h_geom(self, x_m: ArrayLike, y_m: ArrayLike) -> NDArray[np.float64]:
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        _validate_time(time_s)
         xx, yy = _coordinates(x_m, y_m)
         return xx**2 / (2.0 * self.radius_m) + yy**2 / (2.0 * self.radius_m)
 
@@ -62,7 +81,10 @@ class EllipticalPointContactGeometry:
         object.__setattr__(self, "radius_x_m", _positive_finite(self.radius_x_m, "radius_x_m"))
         object.__setattr__(self, "radius_y_m", _positive_finite(self.radius_y_m, "radius_y_m"))
 
-    def h_geom(self, x_m: ArrayLike, y_m: ArrayLike) -> NDArray[np.float64]:
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        _validate_time(time_s)
         xx, yy = _coordinates(x_m, y_m)
         return xx**2 / (2.0 * self.radius_x_m) + yy**2 / (2.0 * self.radius_y_m)
 
@@ -88,30 +110,84 @@ class LineContactGeometry:
             raise ValueError("x_m must be a finite ascending 1-D SI coordinate axis")
         return x**2 / (2.0 * self.radius_x_m)
 
-    def h_geom(self, x_m: ArrayLike, y_m: ArrayLike) -> NDArray[np.float64]:
-        xx, yy = _coordinates(x_m, y_m)
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        _validate_time(time_s)
+        _, yy = _coordinates(x_m, y_m)
         return np.broadcast_to(self.h_geom_x(x_m)[None, :], yy.shape).copy()
+
+
+@dataclass(frozen=True)
+class ZeroAxialProfile:
+    """Cylindrical/no-crown axial profile ``g(y)=0``."""
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        return np.zeros_like(y)
+
+
+@dataclass(frozen=True)
+class TabulatedAxialProfile:
+    """Linearly interpolate measured or user-supplied ``(y,g(y))`` data.
+
+    Evaluation outside the tabulated axial range is rejected; no implicit
+    extrapolation or edge clamping is applied.
+    """
+
+    y_m: tuple[float, ...]
+    height_m: tuple[float, ...]
+
+    def __post_init__(self):
+        y = np.asarray(self.y_m, dtype=np.float64)
+        height = np.asarray(self.height_m, dtype=np.float64)
+        if (
+            y.ndim != 1
+            or height.shape != y.shape
+            or y.size < 2
+            or not np.all(np.isfinite(y))
+            or not np.all(np.isfinite(height))
+            or np.any(np.diff(y) <= 0.0)
+        ):
+            raise ValueError(
+                "tabulated y_m and height_m must be matching finite ascending "
+                "1-D arrays with at least two points"
+            )
+        object.__setattr__(self, "y_m", tuple(float(value) for value in y))
+        object.__setattr__(self, "height_m", tuple(float(value) for value in height))
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        if np.any(y < self.y_m[0]) or np.any(y > self.y_m[-1]):
+            raise ValueError("requested axial coordinates lie outside the tabulated profile")
+        return np.interp(y, self.y_m, self.height_m)
 
 
 @dataclass(frozen=True)
 class ProfiledRollerGeometry:
     """Parabolic rolling-direction geometry plus an arbitrary axial profile ``g(y)``.
 
-    The profile callable receives the transverse coordinate vector in metres and
-    must return finite height values in metres, either scalar, shape ``(ny,)``,
-    or an ``(ny, nx)`` field. Crown and tilt models are intentionally not
-    supplied by this interface.
+    The profile receives axial coordinates in metres and must return finite
+    heights in metres, either scalar, shape ``(ny,)``, or an ``(ny,nx)`` field.
+    Crown shape and axial tilt remain separate components.
     """
 
     radius_x_m: float
-    axial_profile_m: Callable[[NDArray[np.float64]], ArrayLike]
+    axial_profile_m: AxialProfile | Callable[[NDArray[np.float64]], ArrayLike]
 
     def __post_init__(self):
         object.__setattr__(self, "radius_x_m", _positive_finite(self.radius_x_m, "radius_x_m"))
         if not callable(self.axial_profile_m):
             raise ValueError("axial_profile_m must be callable")
 
-    def h_geom(self, x_m: ArrayLike, y_m: ArrayLike) -> NDArray[np.float64]:
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        _validate_time(time_s)
         xx, yy = _coordinates(x_m, y_m)
         profile_values = self.axial_profile_m(np.asarray(y_m, dtype=np.float64))
         profile = np.asarray(profile_values, dtype=np.float64)
@@ -126,3 +202,152 @@ class ProfiledRollerGeometry:
         if not np.all(np.isfinite(axial)):
             raise ValueError("axial_profile_m must return finite SI heights")
         return xx**2 / (2.0 * self.radius_x_m) + axial
+
+
+@dataclass(frozen=True)
+class AxialTiltGeometry:
+    """Additive axial tilt ``h_tilt(y)=y*tan(angle_rad)`` in metres."""
+
+    angle_rad: float
+
+    def __post_init__(self):
+        if isinstance(self.angle_rad, bool) or not isfinite(self.angle_rad):
+            raise ValueError("angle_rad must be finite radians")
+        object.__setattr__(self, "angle_rad", float(self.angle_rad))
+
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        _validate_time(time_s)
+        _, yy = _coordinates(x_m, y_m)
+        return yy * tan(self.angle_rad)
+
+
+@dataclass(frozen=True)
+class CompositeContactGeometry:
+    """Additive geometry/surface components evaluated at one optional time."""
+
+    components: tuple[ContactGeometry, ...]
+
+    def __post_init__(self):
+        components = tuple(self.components)
+        if not components or any(
+            not callable(getattr(item, "h_geom", None)) for item in components
+        ):
+            raise ValueError("components must contain ContactGeometry instances")
+        object.__setattr__(self, "components", components)
+
+    def h_geom(
+        self, x_m: ArrayLike, y_m: ArrayLike, *, time_s: float | None = None
+    ) -> NDArray[np.float64]:
+        _validate_time(time_s)
+        x, y = np.asarray(x_m, dtype=np.float64), np.asarray(y_m, dtype=np.float64)
+        shape = _coordinates(x, y)[0].shape
+        total = np.zeros(shape, dtype=np.float64)
+        for component in self.components:
+            height = np.asarray(component.h_geom(x, y, time_s=time_s), dtype=np.float64)
+            if height.shape != shape or not np.all(np.isfinite(height)):
+                raise ValueError(
+                    f"{type(component).__name__}.h_geom must return a finite field "
+                    f"with shape {shape}"
+                )
+            total += height
+        return total
+
+
+def contact_geometry_from_config(config: Mapping[str, object]) -> ContactGeometry:
+    """Build shared contact geometry from a case-input mapping.
+
+    Supported ``type`` values are ``circular_point``, ``elliptical_point``,
+    ``classical_line`` and ``profiled_roller``. A profile mapping can select
+    ``cylindrical`` or ``tabulated``; Python callers may also provide a
+    callable ``AxialProfile`` object.
+    ``axial_tilt_rad`` is an independent additive component, never part of
+    ``g(y)``.
+    """
+    if not isinstance(config, Mapping):
+        raise ValueError("contact geometry configuration must be a mapping")
+    values = dict(config)
+    geometry_type = values.pop("type", None)
+    tilt = values.pop("axial_tilt_rad", 0.0)
+    if isinstance(tilt, bool) or not isinstance(tilt, (int, float)) or not isfinite(tilt):
+        raise ValueError("axial_tilt_rad must be finite radians")
+
+    if geometry_type == "circular_point":
+        _reject_unknown_fields(values, {"radius_m"})
+        geometry: ContactGeometry = CircularPointContactGeometry(
+            _positive_config_value(values, "radius_m")
+        )
+    elif geometry_type == "elliptical_point":
+        _reject_unknown_fields(values, {"radius_x_m", "radius_y_m"})
+        geometry = EllipticalPointContactGeometry(
+            _positive_config_value(values, "radius_x_m"),
+            _positive_config_value(values, "radius_y_m"),
+        )
+    elif geometry_type == "classical_line":
+        _reject_unknown_fields(values, {"radius_x_m"})
+        geometry = LineContactGeometry(_positive_config_value(values, "radius_x_m"))
+    elif geometry_type == "profiled_roller":
+        _reject_unknown_fields(values, {"radius_x_m", "axial_profile"})
+        profile_config = values.pop("axial_profile", None)
+        geometry = ProfiledRollerGeometry(
+            _positive_config_value(values, "radius_x_m"),
+            _axial_profile_from_config(profile_config),
+        )
+    else:
+        raise ValueError(f"unsupported contact geometry type: {geometry_type!r}")
+
+    if tilt != 0.0:
+        if geometry_type != "profiled_roller":
+            raise ValueError("axial_tilt_rad is currently defined for profiled_roller geometry")
+        return CompositeContactGeometry((geometry, AxialTiltGeometry(float(tilt))))
+    return geometry
+
+
+def _required_config_value(config: dict[str, object], name: str):
+    try:
+        return config.pop(name)
+    except KeyError as error:
+        raise ValueError(f"contact geometry requires {name}") from error
+
+
+def _positive_config_value(config: dict[str, object], name: str) -> float:
+    value = _required_config_value(config, name)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+        raise ValueError(f"{name} must be a positive finite length in metres")
+    if value <= 0.0:
+        raise ValueError(f"{name} must be a positive finite length in metres")
+    return float(value)
+
+
+def _reject_unknown_fields(config: dict[str, object], allowed: set[str]) -> None:
+    if any(not isinstance(key, str) for key in config):
+        raise ValueError("contact geometry configuration keys must be strings")
+    unknown = config.keys() - allowed
+    if unknown:
+        raise ValueError(f"unsupported contact geometry fields: {sorted(unknown)}")
+
+
+def _axial_profile_from_config(config: object) -> AxialProfile | Callable:
+    if config is None:
+        return ZeroAxialProfile()
+    if callable(config):
+        return config
+    if not isinstance(config, Mapping):
+        raise ValueError("axial_profile must be a profile mapping or callable")
+    values = dict(config)
+    profile_type = values.pop("type", None)
+    if profile_type == "cylindrical":
+        _reject_unknown_fields(values, set())
+        return ZeroAxialProfile()
+    if profile_type == "tabulated":
+        _reject_unknown_fields(values, {"y_m", "height_m"})
+        y_m = _required_config_value(values, "y_m")
+        height_m = _required_config_value(values, "height_m")
+        try:
+            return TabulatedAxialProfile(tuple(y_m), tuple(height_m))
+        except TypeError as error:
+            raise ValueError(
+                "tabulated profile coordinates and heights must be sequences"
+            ) from error
+    raise ValueError(f"unsupported axial profile type: {profile_type!r}")

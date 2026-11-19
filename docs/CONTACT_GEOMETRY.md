@@ -19,11 +19,38 @@ and output. The currently available implementations are:
 - `ProfiledRollerGeometry`: `x**2/(2Rx) + g(y)` for a caller-supplied axial
   profile function.
 
+`contact_geometry_from_config` is the shared case-input factory for
+`circular_point`, `elliptical_point`, `classical_line`, and `profiled_roller`
+geometry types. It builds geometry objects; it does not dispatch a solver or
+turn the finite 2-D point-contact elasticity into an infinite-line model.
+Contact formulations select their mathematically appropriate solver after
+the geometry is built.
+
+The profiled-roller `g(y)` contract is the `AxialProfile` callable protocol.
+No profile or a `cylindrical` profile means `g(y)=0`; `TabulatedAxialProfile`
+linearly interpolates user-supplied or measured `(y_m, g_m)` values and rejects
+queries outside their tabulated range. Arbitrary callable profiles can also
+be supplied. Built-in circular/parabolic crown and logarithmic profile laws
+are intentionally not added yet; they can implement the same protocol without
+changing `ProfiledRollerGeometry`.
+
+`AxialTiltGeometry` is a distinct additive component, `h_tilt(y)=y*tan(alpha)`,
+and is never folded into `g(y)`. The case-input factory currently permits
+this tilt with profiled-roller geometry, not with the infinite-line selector.
+`CompositeContactGeometry` sums base,
+profile, tilt and other compatible height components. Its optional `time_s`
+evaluation argument allows later time-dependent surface-defect or roughness
+components to participate in the same sum; no transient surface model or
+time-stepping behavior is implemented here. The geometry sum excludes the
+central film offset `h0` and elastic deformation, which remain separate solver
+terms.
+
 `CavitatingElasticityProblem` accepts this geometry interface and retains its
 legacy radii inputs for compatibility. `LineContactGeometry` is used by the
 separate dry plane-strain line-contact mode below. `ProfiledRollerGeometry`
-remains a geometry interface only; crowned-roller contact and tilt are not
-implemented.
+remains a geometry interface only; no finite crowned-roller EHL solver is
+implemented. Tilt is available as geometry composition but has not been
+independently validated in a coupled solver.
 
 `integrate_contact_pressure` provides the shared force and contact-moment
 hooks for cell-centered pressure fields. For positive compressive pressure
@@ -127,10 +154,13 @@ not a general error bound or proof for coupled lubrication.
 
 The point-contact EHL and 2-D dry solvers remain finite-domain models using
 their respective 3-D half-space formulations. The new dry line mode verifies
-only plane-strain elastic Hertz contact; it does not yet include line-contact
-Reynolds/JFO equations or coupled load closure. Before using it for steady
-line-contact EHL/JFO, add and verify the corresponding 1-D/2-D flow
-normalization, cavitation/mass conservation, boundary conditions and
-independent load audits. Only after those pass should the axial-profile
-interface be exercised as finite crowned-roller contact. Tilt, transient EHL
-and thermal EHL remain unimplemented.
+plane-strain elastic Hertz contact. The separate
+`solve_cavitating_line_reynolds` prototype solves stationary 1-D JFO flow for
+a prescribed film; it has explicit per-width flow scaling and reports local
+mass and boundary-flux diagnostics, but does not couple to line elasticity or
+close a target load. The two verified components are not yet a line-contact
+EHL solver. Before claiming one, couple the deformation and film equations,
+verify dimensional N/m load closure and minimum-film feasibility, and compare
+against a matched line-contact reference. Only after those pass should the
+axial-profile interface be exercised as finite crowned-roller contact. Tilt,
+transient EHL and thermal EHL remain unimplemented.

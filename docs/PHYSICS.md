@@ -14,8 +14,18 @@ with a caller-supplied axial profile `g(y)`. `CavitatingElasticityProblem`
 accepts the geometry interface; its default circular expression is bitwise
 regression-tested against the frozen point-contact baseline. The profile and
 profiled-roller models remain geometry inputs only; a distinct dry
-plane-strain line-contact verification mode is documented below. No
-crowned-roller or tilt implementation is implied.
+plane-strain line-contact verification mode is documented below. No finite
+crowned-roller EHL or tilted-contact validation is implied.
+
+The shared `contact_geometry_from_config` factory accepts circular point,
+elliptical point, classical infinite-line, and profiled-roller geometry
+selections. Profiled rollers use an axial `g(y)` callable, with a bounded
+tabulated-data adapter; axial tilt is a separate additive `y*tan(alpha)`
+component. Additive components accept an optional time coordinate so future
+surface/roughness terms can share the same composition without being mixed
+into the axial profile. This is geometry/configuration infrastructure only;
+solver dispatch, transient surface models, and finite crowned-roller EHL are
+not implied.
 
 The separate dry-contact mode solves `p>=0`, fixed normal load, and
 `gap=h_geom+w(p)-approach>=0` with `p*gap=0`, using the existing
@@ -75,11 +85,10 @@ relative maximum displacement error. Torch CPU and available CUDA operators
 agree with NumPy to `3.39e-16` and `2.82e-16`, respectively, relative to peak
 displacement.
 
-This is dry elastic contact only. It does not add line-contact Reynolds/JFO
-flow, lubricant coupling, finite axial ends, crowned rollers, tilt, transient
-or thermal behavior. A future line-contact EHL mode must independently define
-its Reynolds normalization, mass-conserving cavitation and load/force
-conventions and verify them before claiming an EHL solution.
+This is dry elastic contact only. It does not couple deformation to line
+Reynolds/JFO flow, finite axial ends, crowned rollers, tilt, transient or
+thermal behavior. A separate prescribed-film line-JFO flow prototype is
+described below; it does not add dry-contact elasticity or load closure.
 
 ## Film thickness
 The prescribed-offset model uses
@@ -210,6 +219,62 @@ set to negative saturation and is rejected explicitly; saturation is not
 clipped to make that case appear successful. General reformation-front
 continuity, feed geometry, transient starvation, experimental comparison,
 elastic coupling and load control remain unvalidated.
+
+## Prescribed-film one-dimensional line-contact JFO prototype
+
+`solve_cavitating_line_reynolds` in `src/ehl_solver/line_cavitation.py`
+implements the stationary, infinitely long line-contact reduction on uniform
+dimensionless `X=x/L` nodes. Its input `H=h/h_ref` is a strictly positive
+one-dimensional prescribed film; returned `P=p/p_ref` and fractional content
+`theta` have shape `(nx,)`. There is no transverse flow or finite axial end.
+The dimensional volume flux per unit axial width is
+
+```text
+q_x = -h**3/(12 eta0) * dp/dx + Ue*h*theta       [m**2/s]
+```
+
+with `Ue=(u1+u2)/2` in the positive-x direction. Scale this flux by
+`h_ref**3*p_ref/(12*eta0*L)` to obtain
+
+```text
+q_hat = -H**3*dP/dX + Lambda*H*theta
+d(q_hat)/dX = 0
+Lambda = 12*eta0*Ue*L/(h_ref**2*p_ref)
+```
+
+The discrete diffusive face coefficient is the arithmetic mean of neighboring
+`H**3`; the advective face film is the arithmetic mean of `H`, with
+first-order upwind `theta`. The boundary pressure is zero at both x ends, the
+west boundary has prescribed uniform inlet content in `[0,1]`, and the east
+is an outflow. The active-set solve enforces `P>=0`, `0<=theta<=1`, and
+`P*(1-theta)=0`; invalid states and active-set failures are errors, never
+repaired by clipping. The returned local mass residual and outward west/east
+fluxes are recomputed from the original face fluxes.
+
+Line load remains a separate dimensional pressure integral:
+`W_line = integral(p dx) = p_ref*L*integral(P dX)` in N/m. The prescribed-film
+flow solver has no target line load, elasticity, film coupling, or load
+closure. `integrate_line_pressure` audits the dimensional integral from
+`p_pa` and `x_m`; it does not turn a Reynolds solution into a load-controlled
+EHL solution.
+
+For the nondimensional converging-diverging film
+`H=1.4-0.4X+0.8X**2`, `Lambda=2`, and fully supplied inlet, the trapezoidal
+pressure integrals on 21, 41 and 81 nodes are `3.23123e-4`, `3.34919e-4`
+and `3.35950e-4`; successive changes contract from `1.17958e-5` to
+`1.03108e-6`. Maximum local mass residuals are at most `7.11e-14` and net
+outward boundary flux is below `4.0e-15`. A separate linear converging wedge
+matches an independently assembled dense full-film tridiagonal system on 41
+nodes. Independently recomputed face fluxes and dimensional line-load
+integration are covered by `tests/test_line_cavitation.py`. At inlet content
+`0.99` on the same 41-node case, the pressure integral falls from
+`3.34919e-4` to `2.89327e-4`; this verifies the simplified prescribed inlet
+condition, not a feed-groove or experimental starvation model.
+
+This is a numerical prescribed-film flow prototype, not a validated physical
+line-contact EHL solver. Coupling to the plane-strain line elasticity,
+minimum-film feasibility, dimensional load closure, matched experimental or
+published EHL comparison, and broader grid/domain studies remain future work.
 
 ## Prescribed-offset Reynolds-elasticity coupling
 `solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples

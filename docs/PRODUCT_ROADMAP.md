@@ -208,13 +208,16 @@ released steady point-contact cases as regression references throughout.
 Line contact is proposed first to establish an additional steady reference
 before adding time and thermal coupling.
 
-The shared geometry interface, a distinct dry plane-strain elastic operator,
-explicit N/m line-load integration and Hertz line-contact dry benchmark are
-implemented. Their verified scope and evidence are in
-[`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md). The remaining F1 work is a
-stationary isothermal line-contact EHL/JFO formulation with independently
-verified Reynolds/load normalization, mass-conserving cavitation, boundary
-conditions and load audits, followed by a GUI/CLI point/line selector.
+The shared geometry interface, distinct dry plane-strain elastic operator,
+explicit N/m line-load integration, Hertz dry benchmark and a prescribed-film
+1-D line-contact JFO flow prototype are implemented. Their verified scope and
+evidence are in [`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md) and
+[`PHYSICS.md`](PHYSICS.md). Remaining F1 work is elastic film coupling,
+strict minimum-film feasibility, dimensional line-load closure and a matched
+line-contact EHL reference. Contact geometry selection and additive profile/
+tilt configuration are centralized; the remaining GUI/CLI work should consume
+that common configuration rather than duplicate shape selection in solver
+scripts.
 Line load remains force per length, N/m, whereas point-contact load is total
 force, N. If the interface accepts total force for a line model, require an
 explicit modeled width and record the conversion assumptions. Never

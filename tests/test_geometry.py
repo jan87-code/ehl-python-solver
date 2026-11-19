@@ -6,10 +6,14 @@ import pytest
 from ehl_solver.backend import make_backend
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.geometry import (
+    AxialTiltGeometry,
     CircularPointContactGeometry,
+    CompositeContactGeometry,
     EllipticalPointContactGeometry,
     LineContactGeometry,
     ProfiledRollerGeometry,
+    TabulatedAxialProfile,
+    contact_geometry_from_config,
 )
 from ehl_solver.prototype import PointContactCase
 
@@ -84,3 +88,118 @@ def test_profiled_roller_rejects_bad_profile_output():
     geometry = ProfiledRollerGeometry(0.01, lambda _axial: np.array([1.0, 2.0]))
     with pytest.raises(ValueError, match='axial_profile_m must return'):
         geometry.h_geom(np.linspace(-1, 1, 3), np.linspace(-1, 1, 3))
+
+
+def test_geometry_config_selects_all_shared_contact_geometries():
+    cases = (
+        (
+            {'type': 'circular_point', 'radius_m': 0.01},
+            CircularPointContactGeometry,
+        ),
+        (
+            {'type': 'elliptical_point', 'radius_x_m': 0.01, 'radius_y_m': 0.04},
+            EllipticalPointContactGeometry,
+        ),
+        ({'type': 'classical_line', 'radius_x_m': 0.01}, LineContactGeometry),
+        (
+            {'type': 'profiled_roller', 'radius_x_m': 0.01},
+            ProfiledRollerGeometry,
+        ),
+    )
+
+    for config, expected_type in cases:
+        assert isinstance(contact_geometry_from_config(config), expected_type)
+
+    x = np.array([-2e-6, 0.0, 2e-6])
+    y = np.array([-3e-6, 0.0, 3e-6])
+    no_crown = contact_geometry_from_config(
+        {'type': 'profiled_roller', 'radius_x_m': 0.01}
+    )
+    expected = np.broadcast_to(x[None, :] ** 2 / 0.02, (y.size, x.size))
+    np.testing.assert_array_equal(no_crown.h_geom(x, y), expected)
+
+
+def test_tabulated_axial_profile_is_bounded_and_interpolated():
+    profile = TabulatedAxialProfile(
+        y_m=(-2e-3, 0.0, 2e-3),
+        height_m=(0.0, 1e-6, 0.0),
+    )
+    np.testing.assert_allclose(
+        profile(np.array([-1e-3, 0.0, 1e-3])),
+        np.array([0.5e-6, 1e-6, 0.5e-6]),
+    )
+    with pytest.raises(ValueError, match='outside the tabulated profile'):
+        profile(np.array([-2.1e-3]))
+
+    geometry = contact_geometry_from_config(
+        {
+            'type': 'profiled_roller',
+            'radius_x_m': 0.01,
+            'axial_profile': {
+                'type': 'tabulated',
+                'y_m': [-2e-3, 0.0, 2e-3],
+                'height_m': [0.0, 1e-6, 0.0],
+            },
+        }
+    )
+    x = np.array([-1e-6, 0.0, 1e-6])
+    y = np.array([-1e-3, 0.0, 1e-3])
+    expected = x[None, :] ** 2 / 0.02 + np.array([0.5e-6, 1e-6, 0.5e-6])[:, None]
+    np.testing.assert_allclose(geometry.h_geom(x, y), expected)
+
+
+def test_tilt_is_an_independent_additive_component_of_axial_profile():
+    x = np.array([-1e-6, 0.0, 1e-6])
+    y = np.array([-2e-3, 0.0, 2e-3])
+    profile = ProfiledRollerGeometry(
+        0.01, lambda axial: 0.5e-6 * (axial / 2e-3) ** 2
+    )
+    angle = 0.01
+    composite = CompositeContactGeometry((profile, AxialTiltGeometry(angle)))
+    xx, yy = np.meshgrid(x, y, indexing='xy')
+
+    expected = (
+        xx**2 / 0.02
+        + 0.5e-6 * (yy / 2e-3) ** 2
+        + yy * np.tan(angle)
+    )
+    np.testing.assert_allclose(composite.h_geom(x, y), expected)
+
+    configured = contact_geometry_from_config(
+        {
+            'type': 'profiled_roller',
+            'radius_x_m': 0.01,
+            'axial_profile': {'type': 'cylindrical'},
+            'axial_tilt_rad': angle,
+        }
+    )
+    np.testing.assert_allclose(
+        configured.h_geom(x, y),
+        xx**2 / 0.02 + yy * np.tan(angle),
+    )
+    with pytest.raises(ValueError, match='currently defined for profiled_roller'):
+        contact_geometry_from_config(
+            {
+                'type': 'classical_line',
+                'radius_x_m': 0.01,
+                'axial_tilt_rad': angle,
+            }
+        )
+
+
+def test_composite_geometry_accepts_separate_time_dependent_components():
+    class TimeDependentHeight:
+        def h_geom(self, x_m, y_m, *, time_s=None):
+            if time_s is None:
+                raise ValueError('time_s is required for this test component')
+            return np.full((len(y_m), len(x_m)), time_s * 1e-7)
+
+    x = np.array([-1e-6, 0.0, 1e-6])
+    y = np.array([-2e-3, 0.0, 2e-3])
+    base = LineContactGeometry(0.01)
+    dynamic = CompositeContactGeometry((base, TimeDependentHeight()))
+
+    at_zero = dynamic.h_geom(x, y, time_s=0.0)
+    later = dynamic.h_geom(x, y, time_s=2.0)
+    np.testing.assert_array_equal(at_zero, base.h_geom(x, y))
+    np.testing.assert_allclose(later - at_zero, 2e-7)

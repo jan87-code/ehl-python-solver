@@ -31,6 +31,15 @@ classical line-contact curvature, and caller-supplied axial profile `g(y)`;
 only circular point-contact geometry is part of the frozen EHL reference
 case.
 
+Geometry selection is centralized in a configuration factory for circular
+point, elliptical point, classical infinite-line and finite profiled-roller
+geometries. The roller uses a common axial `g(y)` protocol, including
+cylindrical/no-crown and tabulated profiles; arbitrary callable profile laws
+can add parabolic or logarithmic crowns later. Axial tilt is a separate
+additive `y*tan(alpha)` component, and the sum can accept future time-varying
+surface or roughness components. This does not implement a GUI/CLI solver
+dispatcher or transient/crowned-roller EHL.
+
 A separate dry elastic-contact foundation uses the verified zero-padded FFT
 half-space operator and matches circular and elliptical Hertz references at
 the recorded test resolutions. It remains a finite 2-D point-contact solver.
@@ -38,17 +47,25 @@ The portable test suite now collects without the POSIX `resource` module;
 peak-RSS telemetry remains available through `getrusage` where supported and
 is `null` where it is not.
 
-The distinct dry classical line-contact mode is now implemented and verified:
-it uses a 1-D cell-integrated logarithmic plane-strain operator, explicit
-N/m line-load conventions, and Hertz pressure/width/approach references. The
-33x33, 65x65 and 129x129 study contracts pressure-profile, sampled
-half-width, peak-pressure and approach errors; direct influence quadrature and
-NumPy/Torch CPU/CUDA parity pass. This remains dry contact only. The next
-bounded step is to define and independently verify the stationary
-line-contact Reynolds/JFO formulation, including per-width flow/load
-normalization, cavitation/mass conservation, boundary conditions and
-independent load audits. Do not infer that line-contact EHL/JFO, crowned
-rollers, tilt, transient EHL or thermal EHL are implemented.
+The distinct dry classical line-contact mode is implemented and verified: it
+uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m
+line-load conventions, and Hertz pressure/width/approach references. The
+33x33, 65x65 and 129x129 study contracts pressure-profile, sampled half-width,
+peak-pressure and approach errors; direct influence quadrature and
+NumPy/Torch CPU/CUDA parity pass.
+
+A separate prescribed-film 1-D line-contact JFO prototype now uses
+per-unit-width Reynolds flux, zero pressure at both x boundaries, prescribed
+west inlet content, east outflow and a sparse pressure/content active set.
+On the converging-diverging wedge, its 21/41/81-node pressure integrals are
+`3.23123e-4`, `3.34919e-4` and `3.35950e-4`; the independent 41-node
+full-film matrix comparison passes, as do recomputed local mass and boundary
+flux audits and a dimensional N/m pressure-integral audit. This remains a
+prescribed-film flow prototype, not coupled line EHL. The next bounded step
+is to couple the line elasticity and film equations with strict feasibility
+and dimensional load closure, then verify against a matched line-contact
+benchmark. Do not infer that line-contact EHL, crowned rollers, tilt,
+transient EHL or thermal EHL are validated or implemented.
 
 The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
 the retry-3 state byte-for-byte, and the retry-3 runner independently

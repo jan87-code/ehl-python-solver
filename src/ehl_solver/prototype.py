@@ -20,6 +20,7 @@ from ehl_solver.constitutive import IsothermalFluid, roelands_index_from_ambient
 from ehl_solver.donor_load import DonorLoadSystem, donor_mass_audit
 from ehl_solver.elasticity import cell_integrated_kernel
 from ehl_solver.film_correlations import hamrock_dowson_point_contact
+from ehl_solver.geometry import CircularPointContactGeometry
 from ehl_solver.hertz import circular_point_contact
 from ehl_solver.property_load_newton import PropertyLoadSystem, verify_seed
 from ehl_solver.property_reynolds import admissible, mass_audit
@@ -130,6 +131,7 @@ class PointContactCase:
             h,
             p,
             parameter,
+            geometry=CircularPointContactGeometry(self.radius_m),
         )
 
     def system(self, *, workspace_limit_bytes=2**30):

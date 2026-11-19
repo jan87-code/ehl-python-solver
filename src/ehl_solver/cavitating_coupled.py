@@ -13,6 +13,7 @@ from ehl_solver.backend import make_backend
 from ehl_solver.cavitation import solve_cavitating_reynolds
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.elasticity import cell_integrated_kernel
+from ehl_solver.geometry import ContactGeometry, EllipticalPointContactGeometry
 
 
 def _uniform_axis(values, name):
@@ -57,10 +58,12 @@ class CavitatingMetrics:
 
 @dataclass
 class CavitatingElasticityProblem:
-    """Isoviscous/incompressible point geometry, units SI, array order (ny,nx).
+    """Isoviscous/incompressible contact geometry, SI, array order (ny,nx).
 
     X=x/L, H=h/h_ref, P=p/p_ref and Lambda=12*eta*Ue*L/(h_ref**2*p_ref).
     x follows positive entrainment. Modulus uses the Hertz E* convention.
+    The undeformed gap is supplied by ``geometry.h_geom(x_m, y_m)``; absent
+    geometry, the legacy principal-radius paraboloid is used.
     Uniform west saturation and zero gauge pressure on all edges are fixed.
     This model has no load controller or pressure-dependent rheology.
     """
@@ -77,6 +80,7 @@ class CavitatingElasticityProblem:
     reynolds_parameter: float
     inlet_fractional_film_content: float = 1.0
     film_floor_m: float = 1e-12
+    geometry: ContactGeometry | None = None
     dx_m: float = field(init=False)
     dy_m: float = field(init=False)
     rigid_geometry_m: NDArray[np.float64] = field(init=False, repr=False)
@@ -102,8 +106,15 @@ class CavitatingElasticityProblem:
             0 <= self.inlet_fractional_film_content <= 1
         ):
             raise ValueError("inlet_fractional_film_content must lie in [0,1]")
-        xx, yy = np.meshgrid(self.x_m, self.y_m, indexing="xy")
-        self.rigid_geometry_m = xx**2 / (2 * self.radius_x_m) + yy**2 / (2 * self.radius_y_m)
+        if self.geometry is None:
+            self.geometry = EllipticalPointContactGeometry(self.radius_x_m, self.radius_y_m)
+        geometry_function = getattr(self.geometry, "h_geom", None)
+        if not callable(geometry_function):
+            raise ValueError("geometry must provide h_geom(x_m, y_m)")
+        rigid_geometry = np.asarray(geometry_function(self.x_m, self.y_m), dtype=np.float64)
+        if rigid_geometry.shape != self.shape or not np.all(np.isfinite(rigid_geometry)):
+            raise ValueError(f"geometry.h_geom must return a finite field with shape {self.shape}")
+        self.rigid_geometry_m = rigid_geometry
         self.elastic_kernel = cell_integrated_kernel(
             self.shape, self.dx_m, self.dy_m, self.e_star_pa, make_backend("numpy")
         )

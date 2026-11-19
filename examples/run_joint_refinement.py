@@ -6,8 +6,8 @@ The default cap stays 20k; larger experiments require --maximum-physical-nodes
 
 import argparse
 import json
-import resource
 import shutil
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +23,11 @@ from ehl_solver.property_load_newton import PropertyLoadNewtonError, _solve_prop
 from ehl_solver.property_reynolds import admissible
 from ehl_solver.prototype import PointContactCase, audit_history
 from ehl_solver.prototype_cli import clean_json, digest, load_run, save_state
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 
 def joint_shape(ny, maximum_physical_nodes=20000):
@@ -77,6 +82,14 @@ def sampled_minimum(x_m, y_m, film_m):
                   fit_rms_m=float(np.linalg.norm(design@coefficients -
                       (h[iy-1:iy+2, ix-1:ix+2]-h[iy, ix]).ravel())/3))
     return result
+
+
+def peak_rss_kib():
+    """Return the process high-water RSS in KiB where ``resource`` is available."""
+    if resource is None:
+        return None
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return int(rss / 1024) if sys.platform == 'darwin' else int(rss)
 
 
 def independent_audit(system, root):
@@ -215,7 +228,10 @@ def run(seed, output, ny, maximum_physical_nodes=20000):
             report['status'] == 'accepted_numerical_root'
         ):
             raise RuntimeError('Independent final acceptance differs from nonlinear solver')
-    report['peak_rss_kib'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    report['peak_rss_kib'] = peak_rss_kib()
+    report['peak_rss_method'] = (
+        'resource.getrusage' if resource is not None else 'unavailable on this platform'
+    )
     write()
     return report
 

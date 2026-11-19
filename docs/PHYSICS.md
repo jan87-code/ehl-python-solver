@@ -6,9 +6,29 @@ Steady, isothermal 2D point-contact EHL, extended stage-wise to pressure-depende
 ## Coordinates
 Array shape `(ny, nx)`. `x` follows lubricant entrainment; `y` is transverse. Use SI units at interfaces and explicit grid spacing `dx`, `dy`. Center odd-sized grids about x=y=0 for analytical comparisons.
 
+## Shared contact geometry and dry-contact mode
+`ContactGeometry.h_geom(x_m, y_m)` supplies undeformed separation in metres on
+an `(ny,nx)` grid. Current models include circular and elliptical parabolic
+point contacts, an axially invariant line-contact parabola, and a parabola
+with a caller-supplied axial profile `g(y)`. `CavitatingElasticityProblem`
+accepts the geometry interface; its default circular expression is bitwise
+regression-tested against the frozen point-contact baseline. The profile and
+line models define geometry only and do not imply a line-contact solver,
+crowned roller or tilt implementation.
+
+The separate dry-contact mode solves `p>=0`, fixed normal load, and
+`gap=h_geom+w(p)-approach>=0` with `p*gap=0`, using the existing
+cell-integrated zero-padded FFT elasticity operator. This sign convention
+treats positive elastic displacement as gap-opening and positive approach as
+gap-closing. Dry contact is not coupled to Reynolds/JFO. Cell-centered
+pressure uses `sum(p)*dx*dy` force quadrature. See
+[`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md) for formulas, force/moment sign
+conventions, Hertz circular/elliptical evidence and current limitations.
+
 ## Film thickness
 The prescribed-offset model uses
-`h(x,y) = h0 + x²/(2 Rx) + y²/(2 Ry) + w(x,y)`. Here `h0` is the
+`h(x,y) = h0 + h_geom(x,y) + w(x,y)`, with default
+`h_geom=x²/(2 Rx)+y²/(2 Ry)`. Here `h0` is the
 dimensional central rigid-gap offset [m], not a prescribed load or an unknown
 solved by force balance. `w` is the positive gap-increasing displacement [m]
 from the existing cell-integrated half-space kernel. Thus positive pressure

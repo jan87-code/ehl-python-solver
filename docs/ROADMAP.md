@@ -20,6 +20,31 @@ validation only against the evidence gates at the end of
 [VALIDATION_REPORT.md](VALIDATION_REPORT.md), not through automatic uniform
 refinement or physical-parameter tuning.
 
+## Shared contact geometry and dry-contact foundation (2026-11-19)
+
+The frozen circular EHL baseline is tagged
+`circular-point-contact-frozen-2026-11-19` at commit
+`c8b1577320c5473b61e4d1b500dcb1c0c959e2b2`. The circular geometry now enters
+through the shared `h_geom(x,y)` interface, with bitwise geometry/film
+regression tests. Geometry models also describe elliptical point contact,
+classical line-contact curvature, and caller-supplied axial profile `g(y)`;
+only circular point-contact geometry is part of the frozen EHL reference
+case.
+
+A separate dry elastic-contact foundation uses the verified zero-padded FFT
+half-space operator and matches circular and elliptical Hertz references at
+the recorded test resolutions. It remains a finite 2-D point-contact solver.
+The portable test suite now collects without the POSIX `resource` module;
+peak-RSS telemetry remains available through `getrusage` where supported and
+is `null` where it is not.
+
+Next, develop a distinct classical line-contact verification mode with an
+appropriate plane-strain elastic operator, load-per-unit-length units and
+Hertz line-pressure/width/approach tests. Only after that verification should
+the axial-profile interface be exercised as a finite crowned-roller contact.
+Tilt, crowned-roller implementations, transient EHL and thermal EHL remain
+out of scope for this foundation.
+
 The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
 the retry-3 state byte-for-byte, and the retry-3 runner independently
 re-audited it before returning `accepted_numerical_root`. Zero additional

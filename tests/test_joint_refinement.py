@@ -8,6 +8,7 @@ from ehl_solver.donor_load import DonorLoadSystem
 from ehl_solver.property_load_newton import PropertyLoadNewtonError
 from ehl_solver.prototype import PointContactCase
 from ehl_solver.prototype_cli import load_run, run_case
+from examples import run_joint_refinement
 from examples.run_joint_refinement import independent_audit, joint_shape, run, sampled_minimum
 
 
@@ -69,6 +70,12 @@ def test_real_joint_driver_reaudits_root_and_preserves_existing_outputs(
     assert not report['physical_validation_complete']
     assert report['maximum_corrections'] == 30
     assert report['initialization']['accepted'] is False
+    if run_joint_refinement.resource is None:
+        assert report['peak_rss_kib'] is None
+        assert report['peak_rss_method'] == 'unavailable on this platform'
+    else:
+        assert report['peak_rss_kib'] > 0
+        assert report['peak_rss_method'] == 'resource.getrusage'
     assert (out/'run_joint_refinement.py').is_file()
     before = (out/'solution.npz').read_bytes()
     with pytest.raises(FileExistsError):
@@ -94,6 +101,11 @@ def test_real_joint_driver_reaudits_root_and_preserves_existing_outputs(
     assert rejected['diagnostics']['linear_true_residual'] == 0.1
     assert rejected['history'] == [{'models': [], 'merit': 1.0}]
     assert (failed/'solution.npz').is_file()
+
+
+def test_peak_rss_is_optional_when_resource_module_is_unavailable(monkeypatch):
+    monkeypatch.setattr(run_joint_refinement, 'resource', None)
+    assert run_joint_refinement.peak_rss_kib() is None
 
 
 def test_independent_joint_audit_detects_force_and_elastic_inconsistency(seed):

@@ -104,6 +104,38 @@ def test_plane_strain_fft_operator_matches_direct_influence_quadrature():
     )
 
 
+def test_plane_strain_reference_length_changes_only_constant_displacement_datum():
+    x_m = np.linspace(-DOMAIN_HALF_WIDTH_M, DOMAIN_HALF_WIDTH_M, 65)
+    dx_m = x_m[1] - x_m[0]
+    pressure_pa = np.exp(-((x_m / REFERENCE_HALF_WIDTH_M) ** 2))
+    pressure_pa *= LINE_LOAD_N_M / (np.sum(pressure_pa) * dx_m)
+    first_reference_m = DOMAIN_HALF_WIDTH_M
+    second_reference_m = 2.0 * DOMAIN_HALF_WIDTH_M
+    first_displacement_m = PlaneStrainLineElasticityOperator(
+        x_m,
+        E_STAR_PA,
+        first_reference_m,
+    )(pressure_pa)
+    second_displacement_m = PlaneStrainLineElasticityOperator(
+        x_m,
+        E_STAR_PA,
+        second_reference_m,
+    )(pressure_pa)
+    expected_constant_shift_m = (
+        2.0
+        * LINE_LOAD_N_M
+        / (math.pi * E_STAR_PA)
+        * math.log(second_reference_m / first_reference_m)
+    )
+
+    np.testing.assert_allclose(
+        second_displacement_m - first_displacement_m,
+        expected_constant_shift_m,
+        rtol=2e-12,
+        atol=1e-22,
+    )
+
+
 def test_line_pressure_integration_reports_force_per_length_and_moment():
     x_m = np.arange(-2.0, 3.0)
     loads = integrate_line_pressure(np.array([1.0, 2.0, 3.0, 4.0, 5.0]), x_m)

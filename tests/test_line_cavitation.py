@@ -5,6 +5,7 @@ from scipy.integrate import trapezoid
 from ehl_solver.constitutive import IsothermalFluid
 from ehl_solver.line_cavitation import (
     audit_variable_property_line_flux,
+    compute_line_mass_flux_components,
     solve_cavitating_line_reynolds,
     solve_variable_property_line_reynolds,
 )
@@ -230,6 +231,120 @@ def test_pressure_dependent_line_jfo_passes_independent_si_flux_audit():
     assert independent["relative_global_balance"] < 1e-10
     assert independent["maximum_complementarity"] < 1e-10
     assert result.history[-1]["strength"] == 1.0
+
+
+def test_line_mass_flux_components_reconstruct_uniform_fully_flooded_flow():
+    x = np.linspace(-1e-4, 1e-4, 17)
+    film = np.full_like(x, 2e-6)
+    pressure = np.zeros_like(x)
+    theta = np.ones_like(x)
+    fluid = IsothermalFluid(viscosity_pa_s=0.04, density_kg_m3=850.0)
+    entrainment_speed_m_s = 0.1
+
+    flux = compute_line_mass_flux_components(
+        x,
+        film,
+        pressure,
+        theta,
+        fluid,
+        entrainment_speed_m_s,
+    )
+    expected_flux = (
+        fluid.density_kg_m3 * film[0] * entrainment_speed_m_s
+    )
+
+    np.testing.assert_array_equal(flux.pressure_driven_kg_m_s, 0.0)
+    np.testing.assert_allclose(flux.entrainment_kg_m_s, expected_flux)
+    np.testing.assert_allclose(flux.total_kg_m_s, expected_flux)
+    np.testing.assert_allclose(flux.face_x_m, 0.5 * (x[:-1] + x[1:]))
+    np.testing.assert_allclose(flux.density_kg_m3, fluid.density_kg_m3)
+    np.testing.assert_allclose(flux.viscosity_pa_s, fluid.viscosity_pa_s)
+
+    inlet_starved_theta = np.ones_like(x)
+    inlet_starved_theta[0] = 0.5
+    starved_flux = compute_line_mass_flux_components(
+        x,
+        film,
+        pressure,
+        inlet_starved_theta,
+        fluid,
+        entrainment_speed_m_s,
+    )
+    assert starved_flux.entrainment_kg_m_s[0] == pytest.approx(
+        0.5 * expected_flux
+    )
+    assert starved_flux.entrainment_kg_m_s[1] == pytest.approx(expected_flux)
+
+    increasing_pressure = np.linspace(0.0, 1e6, x.size)
+    pressure_gradient_flux = compute_line_mass_flux_components(
+        x,
+        film,
+        increasing_pressure,
+        theta,
+        fluid,
+        entrainment_speed_m_s,
+    )
+    assert np.all(pressure_gradient_flux.pressure_driven_kg_m_s < 0.0)
+    np.testing.assert_allclose(
+        pressure_gradient_flux.total_kg_m_s,
+        pressure_gradient_flux.pressure_driven_kg_m_s
+        + pressure_gradient_flux.entrainment_kg_m_s,
+    )
+
+
+def test_uniform_line_film_has_zero_pressure_and_constant_fully_flooded_flux():
+    x_m = np.linspace(-1e-4, 1e-4, 41)
+    film_m = np.full_like(x_m, 2e-6)
+    fluid = IsothermalFluid(viscosity_pa_s=0.04, density_kg_m3=850.0)
+
+    solution = solve_variable_property_line_reynolds(
+        x_m,
+        film_m,
+        fluid,
+        0.1,
+        length_scale_m=1e-4,
+        film_scale_m=2e-6,
+        pressure_scale_pa=1e6,
+    )
+
+    np.testing.assert_array_equal(solution.pressure_pa, 0.0)
+    np.testing.assert_array_equal(solution.fractional_film_content, 1.0)
+    assert solution.audit["relative_local_balance"] == 0.0
+    assert solution.audit["relative_global_balance"] == 0.0
+
+
+def test_variable_property_line_solution_is_invariant_to_pressure_reference_scale():
+    x_hat, film_hat = _converging_diverging_film(41)
+    length_scale_m = 0.01
+    film_scale_m = 1e-4
+    x_m = length_scale_m * x_hat
+    film_m = film_scale_m * film_hat
+    fluid = IsothermalFluid(viscosity_pa_s=0.04, density_kg_m3=850.0)
+    solutions = [
+        solve_variable_property_line_reynolds(
+            x_m,
+            film_m,
+            fluid,
+            0.1,
+            length_scale_m=length_scale_m,
+            film_scale_m=film_scale_m,
+            pressure_scale_pa=pressure_scale_pa,
+        )
+        for pressure_scale_pa in (1e6, 5e6)
+    ]
+
+    np.testing.assert_allclose(
+        solutions[0].pressure_pa,
+        solutions[1].pressure_pa,
+        rtol=2e-7,
+        atol=1e-5,
+    )
+    np.testing.assert_allclose(
+        solutions[0].fractional_film_content,
+        solutions[1].fractional_film_content,
+        rtol=0.0,
+        atol=2e-8,
+    )
 
 
 @pytest.mark.parametrize(

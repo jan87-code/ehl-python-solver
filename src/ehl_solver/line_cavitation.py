@@ -245,6 +245,70 @@ class VariablePropertyLineReynoldsSolution:
     history: tuple[dict[str, float], ...]
 
 
+@dataclass(frozen=True)
+class LineMassFluxComponents:
+    """Dimensional mass-flux components on line-contact faces."""
+
+    face_x_m: NDArray[np.float64]
+    density_kg_m3: NDArray[np.float64]
+    viscosity_pa_s: NDArray[np.float64]
+    pressure_driven_kg_m_s: NDArray[np.float64]
+    entrainment_kg_m_s: NDArray[np.float64]
+    total_kg_m_s: NDArray[np.float64]
+
+
+def compute_line_mass_flux_components(
+    x_m: ArrayLike,
+    film_m: ArrayLike,
+    pressure_pa: ArrayLike,
+    fractional_film_content: ArrayLike,
+    fluid: IsothermalFluid,
+    entrainment_speed_m_s: float,
+) -> LineMassFluxComponents:
+    """Decompose the original SI JFO mass flux for line-contact diagnostics.
+
+    The face fluxes are per unit axial width [kg/(m s)]. The pressure-driven
+    component uses the same face mobility as the independent SI audit; the
+    entrainment component uses the upwind ``theta_west`` content.
+    """
+    x = np.asarray(x_m, dtype=np.float64)
+    h = np.asarray(film_m, dtype=np.float64)
+    pressure = np.asarray(pressure_pa, dtype=np.float64)
+    theta = np.asarray(fractional_film_content, dtype=np.float64)
+    if (
+        x.ndim != 1
+        or x.size < 3
+        or not all(np.all(np.isfinite(field)) for field in (x, h, pressure, theta))
+        or any(field.shape != x.shape for field in (h, pressure, theta))
+        or np.any(np.diff(x) <= 0.0)
+        or np.any(h <= 0.0)
+        or np.any(pressure < 0.0)
+        or np.any((theta < 0.0) | (theta > 1.0))
+    ):
+        raise ValueError("line mass-flux diagnostics require finite admissible SI fields")
+    if (
+        not math.isfinite(entrainment_speed_m_s)
+        or entrainment_speed_m_s <= 0.0
+    ):
+        raise ValueError("entrainment_speed_m_s must be positive finite")
+
+    density, viscosity, _, _ = fluid.properties(pressure)
+    mobility = density * h**3 / (12.0 * viscosity)
+    capacity = density * h
+    face_mobility = 0.5 * (mobility[:-1] + mobility[1:])
+    face_capacity = 0.5 * (capacity[:-1] + capacity[1:])
+    pressure_driven = -face_mobility * np.diff(pressure) / np.diff(x)
+    entrainment = entrainment_speed_m_s * face_capacity * theta[:-1]
+    return LineMassFluxComponents(
+        0.5 * (x[:-1] + x[1:]),
+        density,
+        viscosity,
+        pressure_driven,
+        entrainment,
+        pressure_driven + entrainment,
+    )
+
+
 class VariablePropertyLineReynoldsError(RuntimeError):
     """Retain the latest fixed-film variable-property iterate on failure."""
 

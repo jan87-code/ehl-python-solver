@@ -211,23 +211,34 @@ line-contact proximity correlation
 Here `E'=2 E*`, `U=eta0*Ue/(E'*Rx)`, `G=alpha*E'`, and
 `W=line_load_n_m/(E'*Rx)`. The correlation is a scale comparison, not an
 acceptance gate or an exact matched reference for the solver's Roelands and
-Dowson-Higginson property laws. No central-film line correlation or matched
-published field benchmark is currently implemented in the repository.
+Dowson-Higginson property laws. A dimensionless M=20, L=10 published case is
+configured in `examples/run_line_ehl_physical_diagnostics.py`, but the
+coupled solver has not yet reproduced it.
 
 ### Limits
 
 This is a numerical stationary line-EHL/JFO mode, not design-grade physical
 validation. Its uniform inlet supply, zero pressure at both x ends, isothermal
 Roelands/Dowson-Higginson fluid, plane-strain elastic datum and fully
-developed infinite line assumptions limit physical claims. The benchmark
-uses an analytical film correlation for minimum-film scale only; it is not an
-independent pressure/film-field benchmark. Pressure-spike width and other
-sharp local features remain unresolved despite bulk load closure; the
-257-to-4097 study detects no qualifying outlet spike. Do not infer correct
-spike physics from its absence. The outlet-spike diagnostic selects the most
-prominent local maximum at `x>b` with prominence at least 0.1% of the global
-pressure maximum; width is measured at half prominence and the reported
-pressure integral is over that interpolated interval. This grid-based
-detector is not a physical acceptance gate. Finite crowned rollers, tabulated
-measured profiles, tilt-coupled EHL, transient EHL and thermal behavior
-remain out of scope.
+developed infinite line assumptions limit physical claims. The encoded
+Venner-ten Napel case has matching SI, dimensionless groups and constitutive
+laws, but the pressure-property continuation fails before a coupled root is
+obtained; it is therefore not yet an independent pressure/film-field
+validation. See `PHYSICS.md` and `ROADMAP.md` for the failed runs and
+diagnostics. Pressure-spike width and other
+sharp local features remain unresolved despite bulk load closure. The former
+outlet-spike detector searched only at `x>b`; this excluded the published
+Venner-ten Napel spike near `x/b=0.9035`. The corrected diagnostic searches
+for the most prominent local maximum at `x>=0.5b` with prominence at least
+0.1% of the global pressure maximum. Width is measured at half prominence and
+the pressure integral is over that interpolated interval. It is a grid
+diagnostic, not a physical acceptance gate. The accepted 4097-node field was
+re-analyzed with the corrected search and still has no qualifying outlet
+maximum; prior coarser-grid “not detected” records used the incomplete search
+region and must not be interpreted as evidence of spike convergence.
+
+The reported `outlet_constriction_film_m` is the minimum film value over
+`x>=0.5b`, not a local-minimum detector. It can therefore exceed the global
+minimum when the film is increasing throughout that outlet window. Finite
+crowned rollers, tabulated measured profiles, tilt-coupled EHL, transient
+EHL and thermal behavior remain out of scope.

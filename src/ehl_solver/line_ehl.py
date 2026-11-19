@@ -643,11 +643,12 @@ def analyze_line_ehl_features(
 ) -> LineEHLFeatures:
     """Report bulk, outlet-constriction and resolved outlet-spike quantities.
 
-    The reported spike is the most prominent local maximum at ``x>b`` whose
-    prominence is at least 0.1% of the global pressure maximum. Its width is
-    the half-prominence width; its pressure integral uses the interpolated
-    half-prominence interval. This is a grid diagnostic, not a feature
-    acceptance criterion.
+    The reported spike is the most prominent local maximum in the outlet
+    region ``x>=0.5*b`` whose prominence is at least 0.1% of the global
+    pressure maximum. The lower bound includes published spikes near
+    ``x/b=0.9``. Width is the half-prominence width; pressure integral uses
+    the interpolated half-prominence interval. This is a grid diagnostic,
+    not a feature acceptance criterion.
     """
     x = np.asarray(x_m, dtype=np.float64)
     pressure = np.asarray(pressure_pa, dtype=np.float64)
@@ -678,7 +679,9 @@ def analyze_line_ehl_features(
         prominence=max(float(np.max(pressure)) * 1e-3, np.finfo(np.float64).tiny),
     )
     prominence_by_peak = dict(zip(peaks, properties["prominences"], strict=True))
-    candidates = [index for index in peaks if x[index] > hertz_half_width_m]
+    candidates = [
+        index for index in peaks if x[index] >= 0.5 * hertz_half_width_m
+    ]
     spike_location = spike_width = spike_integral = None
     if candidates:
         spike = max(

@@ -86,11 +86,11 @@ backend and retained CPU SI-mass-flux and direct-elasticity audits.
 
 | Nodes | h_c (nm) | h_min (nm) | p_max (MPa, x um) | Outlet constriction (nm, x um) | Spike location/width/integral | Relative load error |
 |---:|---:|---:|---:|---:|---|---:|
-| 257 | 182.5130 | 182.3777 | 12.25543, -26.5372 | 183.6194, 6.6343 | not detected | 1.02e-8 |
-| 513 | 182.5804 | 182.4452 | 12.25343, -27.3665 | 183.3072, 5.8050 | not detected | 9.92e-9 |
-| 1025 | 182.5973 | 182.4621 | 12.25421, -26.9519 | 183.1603, 5.3904 | not detected | 1.76e-8 |
-| 2049 | 182.6029 | 182.4676 | 12.25398, -26.9519 | 183.1659, 5.3904 | not detected | 1.10e-8 |
-| 4097 | 182.6039 | 182.4687 | 12.25395, -26.9519 | 183.1669, 5.3904 | not detected | 1.10e-8 |
+| 257 | 182.5130 | 182.3777 | 12.25543, -26.5372 | 183.6194, 6.6343 | legacy search only | 1.02e-8 |
+| 513 | 182.5804 | 182.4452 | 12.25343, -27.3665 | 183.3072, 5.8050 | legacy search only | 9.92e-9 |
+| 1025 | 182.5973 | 182.4621 | 12.25421, -26.9519 | 183.1603, 5.3904 | legacy search only | 1.76e-8 |
+| 2049 | 182.6029 | 182.4676 | 12.25398, -26.9519 | 183.1659, 5.3904 | legacy search only | 1.10e-8 |
+| 4097 | 182.6039 | 182.4687 | 12.25395, -26.9519 | 183.1669, 5.3904 | none at corrected search | 1.10e-8 |
 
 Over the full sequence, `h_c` and `h_min` change by about `0.091 nm`
 (`0.050%`); the final 2049-to-4097 change is `0.00106 nm` (`0.00058%`).
@@ -104,9 +104,14 @@ the sequence, but its non-monotone behavior is not used as a validation
 surrogate. The outlet-constriction location stabilizes at about `5.390 um`
 from 1025 nodes, while its coarser value shifts by about `1.24 um`.
 
-No outlet local maximum beyond `x=b` met the diagnostic's 0.1%-of-global-peak
-prominence threshold on any grid. Consequently Petrusevich location, width,
-and integrated pressure are unresolved, not converged-to-zero. The
+The original spike detector searched only at `x>b`, so the 257–2049 entries
+above are legacy results and cannot support an absence or convergence claim.
+The detector now searches at `x>=0.5b`, including the published
+`x/b≈0.9035` location. Reanalysis of the accepted 4097-node field still found
+no local maximum meeting the 0.1%-of-global-peak prominence threshold.
+Petrusevich location, width, and integrated pressure remain unresolved, not
+converged-to-zero; the coarser fields have not yet been reanalyzed with the
+corrected search. The
 minimum-film proximity correlation gives `105.40 nm`, versus the computed
 `182.47 nm`; this is only a scale comparison because its fluid law and
 assumptions are not a matched independent benchmark. The solve closes load
@@ -116,6 +121,43 @@ is zero, and direct-vs-FFT displacement discrepancies are below `7.3e-16`
 relative. Per-grid CUDA solve times ranged from 54 to 430 seconds, with
 189-199 accepted coupling iterations. These results verify the coupled
 numerical equations and audits for this case, not its physical accuracy.
+
+The accepted 4097-node root has `M=0.23518` and `L=6.85088`, versus the
+independent Venner and ten Napel (1990) reference case at `M=20,L=10`.
+Accordingly, its `p_max=12.254 MPa` (`0.2043 p_H`) and upstream location
+`x/b=-2.539` do not by themselves indicate a scaling error: a lower-M case
+can have a broader, lower pressure distribution while closing the same
+integrated load. Its `h_c=182.604 nm` and `h_min=182.469 nm` differ by
+`0.135 nm` (`0.074%`); the outlet-window minimum is `183.167 nm` at
+`x/b=0.5078` and is a regional minimum, not a local constriction detector.
+This physical interpretation remains a hypothesis until supported by a
+matched pressure/film benchmark.
+
+The mapped Venner and ten Napel (1990) `M=20,L=10` case is now available in
+`examples/run_line_ehl_physical_diagnostics.py`. Its SI-to-dimensionless
+mapping and Roelands/Dowson-Higginson laws match the published inputs; the
+runner uses an equivalent `L_ref=0.1b` datum solely to keep the additive
+`h0` positive, with reconstructed film invariant. The 1025-node CUDA attempt
+failed during the `gamma=0.25` coupled stage at the lower `h0` trial. A
+257-node solve with 0.1 compliance increments failed at `gamma=0.3`.
+Independent fixed-film pressure continuation also stalls below the target
+load (`18.13 kN/m` at `h0/(b^2/R)=0.093` versus `302.64 kN/m`), with the
+next smaller step exhausting the Roelands pressure-property iteration.
+The digitized Figure 5 pressure integrates to `307.9 kN/m` and implies an
+approximate `h0=2.296 um` with the `0.1b` datum after direct elastic
+reconstruction. At that offset the zero-pressure-start 257-node CUDA solve
+converged instead to `913 N/m`, `p_max=3.10 MPa`, and `h_min=2.287 um`;
+seeding the digitized high-pressure field overflowed the Roelands exponential
+on the first coupled iteration. The published field is therefore not
+reproduced. The best-supported diagnosis is that the current compliance
+continuation selects a low-load branch and cannot reach the high-pressure
+state, a strong-coupling/pressure-property robustness limitation. No input
+scaling error has been identified, and a distinct accepted high-pressure
+branch remains unverified. The low-`M` current root is not physically
+corroborated. Resolve this continuation limitation and reproduce the matched
+benchmark, including its non-JFO cavitation-model limitation, before
+classifying line contact as physically validated or advancing to crowned
+roller EHL.
 
 At 513 nodes, an independent NumPy-vs-CUDA prescribed-offset correction
 differs by `2.72e-14` relative in pressure, `1.74e-16` in film, and

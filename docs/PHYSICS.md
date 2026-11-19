@@ -341,18 +341,109 @@ isothermal line-contact proximity equation
 Here `E'=2 E*`, `U=eta0*Ue/(E'*Rx)`, `G=alpha*E'`, and
 `W=w_line/(E'*Rx)`. This is a correlation comparison, not a matched solution,
 acceptance gate, or error bound: the correlation is not identical to the
-solver's Roelands/Dowson-Higginson fluid law. No independent published line
-pressure/film profile benchmark has yet been reproduced.
+solver's Roelands/Dowson-Higginson fluid law.
 
-The 2026-11-19 reference calculation on `+/-20b`, refined from 257 through
-4097 nodes, closes 1000 N/m and contracts central/minimum film and pressure
-and film profiles. Its finest `h_min=182.47 nm` differs materially from the
-`105.40 nm` proximity-correlation estimate; without a matched benchmark this
-is unresolved model/reference sensitivity, not a parameter-tuning target.
-The outlet-spike diagnostic found no qualifying local maximum on these grids,
-so absence of a detected spike is not evidence that pressure-spike behavior
-is validated. Per-grid values and independent audit residuals are recorded in
-the [line-contact section of the roadmap](ROADMAP.md#shared-contact-geometry-and-dry-contact-foundation-2026-11-19).
+The 2026-11-19 accepted 4097-node result was independently rerun on the
+verified CUDA elasticity backend. It closes `999.999989 N/m` against the
+`1000 N/m` target (`1.10e-8` relative error), with maximum normalized mass
+residual `3.45e-11`, local/global flux-balance errors below `1e-10`, zero JFO
+complementarity violation, and direct-CPU versus FFT displacement error
+`7.26e-16`. The CPU audit also reconstructed the film to `4.24e-22 m`.
+
+Its `h_c=182.604 nm` and global `h_min=182.469 nm` differ by only `0.135 nm`
+(`0.074%`); the global minimum is at `x/b=0.15625`. The prior outlet metric is
+the minimum over `x>=0.5b`, not a local-constriction detector: its
+`183.167 nm` value at `x/b=0.5078` can exceed the global minimum without
+contradiction. The pressure maximum is `12.254 MPa` at `x/b=-2.539`,
+`0.2043` times the dry Hertz pressure. This does not violate load closure:
+the normalized pressure integral is `pi/2`, so this peak corresponds to an
+equivalent rectangular support width of `7.69b`; EHL pressure can be spread
+over a much wider region than dry Hertz pressure. The computed `h_min` remains
+`1.73` times the approximate `105.40 nm` film correlation, which is not an
+exact matched solution and remains an unresolved model/reference discrepancy.
+
+The case has `M=0.23518` and `L=6.85088` under
+`M=W/sqrt(2U)` and `L=G*(2U)**0.25`. The pressure maximum several Hertz
+half-widths upstream, nearly flat central film, and absence of an outlet
+local maximum are plausible at this low load parameter, but are not
+independently validated by the correlation. No alternative accepted branch
+has been demonstrated or is required by these diagnostics.
+
+The old outlet-spike detector searched only at `x>b`, which excluded the
+published Venner-ten Napel spike at approximately `x/b=0.9035`. It now
+searches for local maxima over `x>=0.5b`, with the existing 0.1%-of-global-
+peak prominence threshold. Reanalysis of the accepted 4097-node field still
+finds no qualifying outlet maximum. The earlier coarser-grid “not detected”
+records used the too-restrictive search region and do not establish spike
+convergence. The implementation and updated audit are recorded in the
+[line-contact section of the roadmap](ROADMAP.md#shared-contact-geometry-and-dry-contact-foundation-2026-11-19).
+
+## Published high-M line-contact benchmark attempt
+
+The diagnostic runner encodes the Venner and ten Napel (1990) case from
+Figures 5–6 and Table 1 ([DOI 10.1002/ls.3010020404](https://doi.org/10.1002/ls.3010020404)).
+Captions and Table 1 give `M=20,L=10`; the paper's prose also says `M=30`,
+so the reproducible mapping follows the plotted captions/table. Inputs are
+`R=10 mm`, `E'=226 GPa` (`E*=113 GPa`), `alpha=1.71e-8 Pa^-1`,
+Roelands `p_ref=198 MPa`, `z=0.68`, `eta_ref=exp(-9.67) Pa s`,
+`eta0=9.17858e-3 Pa s`, `rho0=850 kg/m^3`, `w=302642.10 N/m`, and
+`Ue=5.51931 m/s`. The Hertz scales are `b=184.663 um`,
+`p_H=1.04335 GPa`, and `b^2/R=3.41005 um`; the computational domain is
+`[-4b,1.5b]`. The implementation's Roelands viscosity and
+Dowson-Higginson density laws reproduce the published expressions to
+floating-point precision. The paper's elastic datum `L_ref=b` is equivalent
+to the runner's `0.1b`: the change shifts the additive `h0` datum but leaves
+the reconstructed physical film unchanged. No physical input was tuned.
+
+Linear interpolation of the digitized Figure 5 pressure profile across the
+benchmark domain integrates to `307.9 kN/m`, about `1.7%` above the specified
+load because the curve is digitized and truncated/extrapolated at the domain
+ends. Applying the direct plane-strain operator to that digitized pressure
+and setting the center film to `0.0866 b^2/R=295.31 nm` estimates
+`h0=2.296 um` for `L_ref=0.1b` (`-1.698 um` for `L_ref=b`). This is only an
+initialization estimate from uncertain published curves, not a computed root.
+At this estimated offset, a 257-node zero-pressure-start CUDA solve converged
+to a low-pressure state (`913 N/m`, `p_max=3.10 MPa`,
+`h_min=2.287 um`), not the target benchmark. Using the digitized high-pressure
+profile itself as an initial pressure seed overflowed the Roelands exponential
+on the first coupled iteration. Thus the current compliance continuation
+selects a low-load state at the profile-derived offset and cannot yet reach
+the published high-pressure state.
+
+The 1025-node CUDA coupled solve did not produce an accepted root. At the
+first trial (`h0=0.1 b^2/R=341.0 nm`), the rigid-compliance stage converged,
+but the `gamma=0.25` coupled stage exhausted the 100-iteration
+pressure-property budget; its last coupling history had a `4.37e-2` relative
+global flux-balance defect. A 257-node attempt using `0.1` compliance
+increments reached `gamma=0.2` but failed at `gamma=0.3` with a
+`7.79e-2` global balance defect before the property iteration exhausted.
+These are failed nonlinear iterates, not accepted pressure or film results.
+
+Additional inexpensive fixed-film continuation diagnostics indicate that
+the high-M case is outside the present solver's robust pressure range:
+at `h0/(b^2/R)=0.1`, the 257-node rigid-film Reynolds solution had
+`p_max=146.8 MPa` and load `12.50 kN/m`, far below the `302.64 kN/m` target.
+Seeding each step from the previous pressure while lowering this offset in
+`0.001` increments reached `h0/(b^2/R)=0.093`, load `18.13 kN/m`; the next
+step to `0.092` exhausted the pressure-property iteration. Several
+unseeded smaller-offset trials overflowed the Roelands exponential during
+iteration. No clipping or changed constitutive law was applied. Since no
+coupled benchmark root was obtained, no pressure/film error metrics against
+Figures 5–6 are reported.
+
+This failure does not identify a dimensional or nondimensional scaling
+error: the SI case maps to the stated `M,L`, the rheology matches the source,
+and independent checks found the line-flow sign, load-per-length convention,
+plane-strain reference datum, and pressure/film scales internally consistent.
+Nor does it establish that another accepted solution branch exists. The
+current low-`M` case's broad, low pressure distribution and upstream maximum
+remain mathematically consistent with its own inputs, but are not yet
+physically corroborated. The high-`M` failure exposes a strong-coupling/
+pressure-property continuation robustness limitation that must be resolved
+before the line solver can be called a physically validated benchmark.
+Venner and ten Napel use `P>=0` without the solver's JFO fractional-film
+content closure, so a future profile comparison must also state this
+cavitation-model difference.
 
 ## Prescribed-offset Reynolds-elasticity coupling
 `solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples

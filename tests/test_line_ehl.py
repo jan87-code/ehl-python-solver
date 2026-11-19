@@ -183,6 +183,20 @@ def test_line_ehl_features_report_bulk_and_optional_outlet_spike():
     assert features.petrusevich_spike_integrated_pressure_pa_m is not None
 
 
+def test_line_ehl_spike_detector_includes_published_x_over_b_below_one():
+    x = np.linspace(-2.0, 1.5, 351)
+    pressure = np.exp(-(x / 0.55) ** 2) + 0.4 * np.exp(
+        -((x - 0.9) / 0.04) ** 2
+    )
+    film = np.ones_like(x)
+
+    features = analyze_line_ehl_features(x, pressure, film, 1.0)
+
+    assert features.petrusevich_spike_location_m == pytest.approx(0.9)
+    assert features.petrusevich_spike_width_m is not None
+    assert features.petrusevich_spike_integrated_pressure_pa_m is not None
+
+
 def test_cuda_line_ehl_matches_numpy_when_available():
     torch = pytest.importorskip("torch")
     if not torch.cuda.is_available():

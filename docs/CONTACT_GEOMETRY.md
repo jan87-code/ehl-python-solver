@@ -212,20 +212,25 @@ Here `E'=2 E*`, `U=eta0*Ue/(E'*Rx)`, `G=alpha*E'`, and
 `W=line_load_n_m/(E'*Rx)`. The correlation is a scale comparison, not an
 acceptance gate or an exact matched reference for the solver's Roelands and
 Dowson-Higginson property laws. A dimensionless M=20, L=10 published case is
-configured in `examples/run_line_ehl_physical_diagnostics.py`, but the
-coupled solver has not yet reproduced it.
+configured in `examples/run_line_ehl_physical_diagnostics.py` and has now
+been reached with the fixed-input, CUDA/CPU-SuperLU Newton continuation in
+`examples/run_line_ehl_m20_newton_continuation.py`. Accepted 257-, 513- and
+1025-node roots, CPU audits and digitized Figure 5/6 comparisons are recorded
+in `PHYSICS.md`. This closes the earlier high-pressure continuation blocker,
+not the physical-validation phase: the outlet-film discrepancy and sharp
+spike resolution remain open, and the publication's cavitation treatment is
+not the solver's JFO closure.
 
 ### Limits
 
 This is a numerical stationary line-EHL/JFO mode, not design-grade physical
 validation. Its uniform inlet supply, zero pressure at both x ends, isothermal
 Roelands/Dowson-Higginson fluid, plane-strain elastic datum and fully
-developed infinite line assumptions limit physical claims. The encoded
-Venner-ten Napel case has matching SI, dimensionless groups and constitutive
-laws, but the pressure-property continuation fails before a coupled root is
-obtained; it is therefore not yet an independent pressure/film-field
-validation. See `PHYSICS.md` and `ROADMAP.md` for the failed runs and
-diagnostics. Pressure-spike width and other
+developed infinite line assumptions limit physical claims. The fixed-input
+Venner-ten Napel `M=20,L=10` case is now accepted and compared with the
+digitized pressure/film profiles; see `PHYSICS.md` and `ROADMAP.md` for the
+continuation evidence, regional comparison and remaining limitations.
+Pressure-spike width and other
 sharp local features remain unresolved despite bulk load closure. The former
 outlet-spike detector searched only at `x>b`; this excluded the published
 Venner-ten Napel spike near `x/b=0.9035`. The corrected diagnostic searches

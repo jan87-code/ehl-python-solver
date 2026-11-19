@@ -425,6 +425,10 @@ def _solution_record(solution, case):
             np.max(viscosity)
         ),
         "maximum_density_kg_m3": float(np.max(density)),
+        "operator_backend": solution.backend,
+        "preconditioner": (
+            "CPUBlockSchurPreconditioner (SciPy SuperLU; frozen Reynolds matrix)"
+        ),
         "audit": solution.audit,
         "newton_iterations": len(solution.history),
     }
@@ -598,6 +602,13 @@ def main(argv=None):
         "solver_control_signature": control_signature,
         "preflight": preflight,
         "backend": f"{backend.platform}/{backend.device}",
+        "linear_operator_backend": (
+            "Torch float64 pressure/content residual, analytic JVP and "
+            "zero-padded plane-strain elasticity"
+        ),
+        "linear_preconditioner": (
+            "CPUBlockSchurPreconditioner (SciPy SuperLU; frozen Reynolds matrix)"
+        ),
         "continuation_variable": "target line load [N/m]",
         "endpoint_load_n_m": case.line_load_n_m,
         "endpoint_rheology_and_compliance": "unchanged published M=20, L=10",
@@ -755,8 +766,6 @@ def main(argv=None):
                 stage = event.pop("stage")
                 iteration = event.pop("iteration", None)
                 emit = event.pop("emit", False)
-                if stage == "gmres":
-                    return
                 event.setdefault("attempt", _attempt)
                 event.setdefault("continuation_fraction", _fraction)
                 event.setdefault(

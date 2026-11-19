@@ -403,12 +403,33 @@ when its independently recomputed true residual was adequate for the outer
 Newton step. The solver now uses a bounded inexact-Newton true-residual
 forcing tolerance, records the GMRES reported status separately, and the
 benchmark path uses restart 120. It reached the exact `M=20,L=10` endpoint.
+Only target load is continued: rheology, density law, full elasticity,
+geometry, thermal assumption, datum, boundary conditions and endpoint load
+remain fixed. The seed is a converged, prescribed-offset JFO/elastic solution
+at a lower calculated load, not a zero-pressure or digitized high-pressure
+seed. Failed stages halve the load increment and restart from the last
+accepted state; easy stages increase the increment within the configured
+bound. Each accepted stage has a checksummed state checkpoint, a stage report
+and heartbeat diagnostics. The correction gate remains the existing
+independently recomputed `||J*d+F||_2/||F||_2` bound
+`max(5*krylov_rtol, min(1e-6, 0.1*||F||_2))`; it is not changed by the
+diagnostic improvements. A failed gate triggers recovery/retry and then
+continuation rollback if the stage is rejected. GMRES's reported convergence
+flag is recorded but does not replace the independently computed gate.
 One accepted 513-node refinement and one 1025-node refinement were seeded by
 linear interpolation of the previous accepted dimensionless pressure/content
 state; `h0` was preserved. The 513/1025 solves used restart 240 after the
 restart-120 513-node attempt failed its nonlinear true-residual gate and
 showed substantial spike sensitivity. No physical
 parameters, constitutive laws, or endpoint load were changed.
+
+The continuation driver records the GMRES true-residual and estimated
+preconditioned histories per Newton correction, emits GMRES progress in the
+heartbeat, and preserves failure-stage/index diagnostics for non-finite
+pressure, fluid properties, elasticity, film, residual/JVP and line-search
+values. Historical accepted result directories predate the added per-Arnoldi
+history fields; no accepted numerical field was changed to add this
+observability.
 
 | Nodes | `h_c` (nm) | `h_min` (nm) | `p_max` (MPa, `x/b`) | Spike (`x/b`, `p/p_H`) | Spike width (um) | Load error |
 |---:|---:|---:|---:|---:|---:|---:|

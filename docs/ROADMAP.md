@@ -145,6 +145,15 @@ physical inputs. Accepted 257-, 513- and 1025-node roots close
 relative discrepancy is `6.76e-16`. The 513- and 1025-node refinements use
 interpolated accepted coarser-grid states and restart-240 GMRES.
 
+The continuation parameter is target line load only; full M=20, L=10
+rheology, elasticity, geometry, datum and boundary conditions stay fixed.
+It starts from the converged low-load JFO/elastic solution, grows accepted
+easy load steps, halves rejected steps, and rolls back to the last accepted
+checkpoint. The independently recomputed true-residual criterion remains
+unchanged. Current continuation runs now retain per-correction GMRES true and
+estimated residual histories, heartbeat progress and indexed non-finite
+failure-stage diagnostics; older accepted field summaries are not rewritten.
+
 The measured `h_c` sequence is `283.268, 285.147, 285.508 nm`; `h_min` is
 `247.225, 249.698, 250.444 nm`. Bulk pressure/film profiles contract to
 `0.00516% / 0.127%` relative L2 change from 513 to 1025 nodes, while
@@ -181,7 +190,7 @@ spike width/amplitude is required; do not start a 2049-node uniform solve
 automatically.
 
 Verification for this milestone: on Windows, `pytest -q` completed with
-`989 passed, 1 skipped` in 389.35 s, with three non-failing PyTorch sparse
+`995 passed, 1 skipped` in 301.34 s, with three non-failing PyTorch sparse
 tensor warnings. `ruff check . --exclude .kilo` passed.
 Unfiltered `ruff check .` reports one pre-existing E501 in the unrelated,
 untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; that local

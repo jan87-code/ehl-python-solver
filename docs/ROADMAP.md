@@ -38,12 +38,17 @@ The portable test suite now collects without the POSIX `resource` module;
 peak-RSS telemetry remains available through `getrusage` where supported and
 is `null` where it is not.
 
-Next, develop a distinct classical line-contact verification mode with an
-appropriate plane-strain elastic operator, load-per-unit-length units and
-Hertz line-pressure/width/approach tests. Only after that verification should
-the axial-profile interface be exercised as a finite crowned-roller contact.
-Tilt, crowned-roller implementations, transient EHL and thermal EHL remain
-out of scope for this foundation.
+The distinct dry classical line-contact mode is now implemented and verified:
+it uses a 1-D cell-integrated logarithmic plane-strain operator, explicit
+N/m line-load conventions, and Hertz pressure/width/approach references. The
+33x33, 65x65 and 129x129 study contracts pressure-profile, sampled
+half-width, peak-pressure and approach errors; direct influence quadrature and
+NumPy/Torch CPU/CUDA parity pass. This remains dry contact only. The next
+bounded step is to define and independently verify the stationary
+line-contact Reynolds/JFO formulation, including per-width flow/load
+normalization, cavitation/mass conservation, boundary conditions and
+independent load audits. Do not infer that line-contact EHL/JFO, crowned
+rollers, tilt, transient EHL or thermal EHL are implemented.
 
 The preserved 1025x1025 checkpoint 6 itself is accepted: its SHA-256 matches
 the retry-3 state byte-for-byte, and the retry-3 runner independently

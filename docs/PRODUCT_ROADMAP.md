@@ -208,11 +208,17 @@ released steady point-contact cases as regression references throughout.
 Line contact is proposed first to establish an additional steady reference
 before adding time and thermal coupling.
 
-Add a separate line-contact geometry, elastic operator, Reynolds/load
-normalization and Hertz line-contact benchmark. Line load is force per
-length, N/m, whereas point-contact load is total force, N. If the interface
-accepts total force for a line model, require an explicit modeled width and
-record the conversion assumptions. Never reinterpret 200 N as 200 N/m.
+The shared geometry interface, a distinct dry plane-strain elastic operator,
+explicit N/m line-load integration and Hertz line-contact dry benchmark are
+implemented. Their verified scope and evidence are in
+[`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md). The remaining F1 work is a
+stationary isothermal line-contact EHL/JFO formulation with independently
+verified Reynolds/load normalization, mass-conserving cavitation, boundary
+conditions and load audits, followed by a GUI/CLI point/line selector.
+Line load remains force per length, N/m, whereas point-contact load is total
+force, N. If the interface accepts total force for a line model, require an
+explicit modeled width and record the conversion assumptions. Never
+reinterpret 200 N as 200 N/m.
 
 Implement and validate the line model first, then enable the GUI/CLI
 point/line selector. Setting `ny=1` on the present point solver is not a line

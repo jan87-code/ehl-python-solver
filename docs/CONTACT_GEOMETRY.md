@@ -20,9 +20,10 @@ and output. The currently available implementations are:
   profile function.
 
 `CavitatingElasticityProblem` accepts this geometry interface and retains its
-legacy radii inputs for compatibility. The line and profile geometries are
-geometry models only: this does not implement a plane-strain line-contact
-elasticity model, crowned roller, or tilt.
+legacy radii inputs for compatibility. `LineContactGeometry` is used by the
+separate dry plane-strain line-contact mode below. `ProfiledRollerGeometry`
+remains a geometry interface only; crowned-roller contact and tilt are not
+implemented.
 
 `integrate_contact_pressure` provides the shared force and contact-moment
 hooks for cell-centered pressure fields. For positive compressive pressure
@@ -77,13 +78,59 @@ geometries. At 33x33, CUDA versus NumPy maximum pressure-field difference is
 `7.60e-15` relative to the NumPy peak. The CUDA test skips when no compatible
 GPU is available.
 
+## Dry plane-strain line contact
+
+`solve_dry_line_contact` is a separate one-dimensional, load-controlled dry
+contact mode. Its API accepts `line_load_n_m` in N/m; it must not be confused
+with the finite two-dimensional point-contact `load_n` in N. The line load is
+`sum(p_i) * dx`, where `p_i` is cell-centered pressure in Pa. The line moment
+hook reports `sum(x_i p_i) * dx` in N, i.e. moment per unit axial length.
+
+The plane-strain displacement uses the explicit datum
+`w(x)=2/(pi E*) integral(p(s) log(L_ref/abs(x-s)) ds)`. The operator integrates
+this logarithmic kernel over source cells and applies a zero-padded linear
+convolution in one dimension. `L_ref` must be positive and is recorded with
+the approach because it sets the additive displacement datum. This operator
+is mathematically distinct from the existing 2-D half-space point-contact
+operator; making the 2-D domain wider is not equivalent.
+
+The Hertz reference uses
+`b=sqrt(4 W R/(pi E*))`, `p0=2W/(pi b)`, and
+`p(x)=p0 sqrt(max(0,1-(x/b)**2))`. Its approach for the stated logarithmic
+datum is
+`2W/(pi E*) * (log(2 L_ref/b)+1/2)`. For `W=1000 N/m`, `R=10 mm`,
+`E*=113 GPa`, and `L_ref=45.1133 um`, the reference is
+`b=10.61490 um`, `p0=59.97418 MPa`, and `approach=14.87361 nm`.
+
+### Refinement and independent checks
+
+The uniform-grid study used the fixed domain `+/-4.25b`. Profile errors are
+relative discrete L2 differences against the nodal analytical Hertz profile;
+contact width is the farthest active pressure node and is therefore
+grid-quantized.
+
+| Nodes | Line-load relative error | Pressure-profile relative L2 | Half-width relative error | Peak-pressure relative error | Approach relative error | Scaled KKT residual |
+|---:|---:|---:|---:|---:|---:|---:|
+| 33 | `2.22e-16` | `1.619%` | `-20.31%` | `+0.5832%` | `+0.2172%` | `1.81e-6` |
+| 65 | `0` | `1.278%` | `-7.031%` | `-0.00776%` | `-0.0530%` | `1.68e-6` |
+| 129 | `2.22e-16` | `0.3259%` | `-0.3906%` | `+0.00380%` | `-0.00868%` | `1.66e-6` |
+
+A direct quadrature of the logarithmic influence integral, performed
+cell-by-cell on a 9-node pressure field, agrees with the FFT displacement to
+`2.44e-15` relative maximum error. The available Torch CPU and CUDA paths agree
+with NumPy to `3.39e-16` and `2.82e-16` relative to peak displacement. The
+NumPy implementation remains the independent reference, and all operators
+retain float64. The grid trend verifies this particular dry Hertz case; it is
+not a general error bound or proof for coupled lubrication.
+
 ## Limits and next step
 
-The present solver is for finite two-dimensional point-contact domains with
-the existing 3-D half-space kernel. `LineContactGeometry` does not make that
-kernel a classical line-contact model: a line-contact verification mode
-needs a suitable plane-strain elasticity formulation, explicit load-per-unit
-length conventions, and comparison against the analytical Hertz line
-pressure, width and approach. Establish that mode before using the profile
-interface for finite crowned rollers. Do not infer that crowned profiles,
-tilt, transient EHL or thermal EHL are implemented.
+The point-contact EHL and 2-D dry solvers remain finite-domain models using
+their respective 3-D half-space formulations. The new dry line mode verifies
+only plane-strain elastic Hertz contact; it does not yet include line-contact
+Reynolds/JFO equations or coupled load closure. Before using it for steady
+line-contact EHL/JFO, add and verify the corresponding 1-D/2-D flow
+normalization, cavitation/mass conservation, boundary conditions and
+independent load audits. Only after those pass should the axial-profile
+interface be exercised as finite crowned-roller contact. Tilt, transient EHL
+and thermal EHL remain unimplemented.

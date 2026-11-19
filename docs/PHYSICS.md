@@ -13,8 +13,9 @@ point contacts, an axially invariant line-contact parabola, and a parabola
 with a caller-supplied axial profile `g(y)`. `CavitatingElasticityProblem`
 accepts the geometry interface; its default circular expression is bitwise
 regression-tested against the frozen point-contact baseline. The profile and
-line models define geometry only and do not imply a line-contact solver,
-crowned roller or tilt implementation.
+profiled-roller models remain geometry inputs only; a distinct dry
+plane-strain line-contact verification mode is documented below. No
+crowned-roller or tilt implementation is implied.
 
 The separate dry-contact mode solves `p>=0`, fixed normal load, and
 `gap=h_geom+w(p)-approach>=0` with `p*gap=0`, using the existing
@@ -24,6 +25,61 @@ gap-closing. Dry contact is not coupled to Reynolds/JFO. Cell-centered
 pressure uses `sum(p)*dx*dy` force quadrature. See
 [`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md) for formulas, force/moment sign
 conventions, Hertz circular/elliptical evidence and current limitations.
+
+### Dry plane-strain line-contact verification mode
+
+The separate `solve_dry_line_contact` mode uses one rolling-direction grid
+`x_m`, the `LineContactGeometry.h_geom_x` parabola, and a 1-D plane-strain
+elasticity operator. Its prescribed load is a **line load**
+`W = integral(p(x) dx)` in N/m, not the finite-contact total force in N.
+Pressure is in Pa and the line-load constraint is
+`sum(p_i) * dx = W`. Its first-moment hook returns
+`integral(x p dx)` in N (moment per unit axial length).
+
+The elastic displacement and its explicit logarithmic datum are
+
+```text
+w(x) = 2/(pi E*) integral(p(s) log(L_ref/abs(x-s)) ds)
+gap(x) = x**2/(2R) + w(x) - approach
+```
+
+`L_ref` is a positive, caller-supplied length in metres. Changing it changes
+only the additive displacement/approach datum at fixed line load; report it
+with any approach result. The operator integrates the logarithmic kernel over
+each pressure cell, then uses a zero-padded 1-D linear FFT convolution (default
+backward-normalized forward/inverse FFT pair). It is not a wide 2-D
+point-contact approximation.
+
+The analytical Hertz line reference is
+
+```text
+b = sqrt(4 W R / (pi E*))
+p0 = 2 W / (pi b)
+p(x) = p0 sqrt(max(0, 1 - (x/b)**2))
+approach(L_ref) = 2 W/(pi E*) * (log(2 L_ref/b) + 1/2)
+```
+
+For `W=1000 N/m`, `R=10 mm`, `E*=113 GPa`, and
+`L_ref=45.1133 um` (the half-domain of the convergence case), the analytical
+values are `b=10.61490 um`, `p0=59.97418 MPa`, and
+`approach=14.87361 nm`. On the fixed `+/-4.25b` domain, the 33/65/129-node
+sequence gives relative L2 pressure-profile errors of `1.619%`, `1.278%`,
+and `0.326%`; sampled contact-half-width errors of `20.31%`, `7.031%`, and
+`0.391%`; approach errors of `0.217%`, `0.0530%`, and `0.00868%`; and peak
+pressure errors of `0.583%`, `0.00776%`, and `0.00380%`. Each grid closes
+line load to floating-point precision and meets the `2e-6` scaled KKT gate.
+The sampled width is grid-quantized; these are observed refinement results,
+not a continuum-error estimate. A direct cell-by-cell logarithmic-kernel
+quadrature on a 9-node grid agrees with the FFT operator to `2.44e-15`
+relative maximum displacement error. Torch CPU and available CUDA operators
+agree with NumPy to `3.39e-16` and `2.82e-16`, respectively, relative to peak
+displacement.
+
+This is dry elastic contact only. It does not add line-contact Reynolds/JFO
+flow, lubricant coupling, finite axial ends, crowned rollers, tilt, transient
+or thermal behavior. A future line-contact EHL mode must independently define
+its Reynolds normalization, mass-conserving cavitation and load/force
+conventions and verify them before claiming an EHL solution.
 
 ## Film thickness
 The prescribed-offset model uses

@@ -5,7 +5,7 @@ E_star: contact effective (plane-strain combined) modulus [Pa], defined by
 Do NOT insert the alternative E_prime = 2 E_star here without conversion.
 """
 from dataclasses import dataclass
-from math import isfinite, pi, sqrt
+from math import isfinite, log, pi, sqrt
 
 from scipy.optimize import brentq
 from scipy.special import ellipe, ellipk
@@ -26,6 +26,15 @@ class EllipticalHertzResult:
     approach_m: float
     axis_ratio_y_over_x: float
     elliptic_parameter: float
+
+
+@dataclass(frozen=True)
+class HertzLineContactResult:
+    line_load_n_m: float
+    half_width_m: float
+    peak_pressure_pa: float
+    approach_m: float
+    reference_length_m: float
 
 
 def circular_point_contact(load_n: float, radius_m: float, e_star_pa: float) -> HertzResult:
@@ -112,3 +121,47 @@ def pressure_elliptical(x_m: float, y_m: float, hertz: EllipticalHertzResult) ->
         y_m / hertz.semi_axis_y_m
     ) ** 2
     return hertz.peak_pressure_pa * sqrt(max(0.0, 1.0 - radius_squared))
+
+
+def line_contact_hertz(
+    line_load_n_m: float,
+    radius_m: float,
+    e_star_pa: float,
+    reference_length_m: float,
+) -> HertzLineContactResult:
+    """Analytical Hertz line contact with an explicit logarithmic datum.
+
+    The plane-strain displacement convention is
+    ``w(x)=2/(pi*E*) integral(p(s)*ln(L_ref/abs(x-s)) ds)``. Consequently,
+    the approach is reference-length dependent and is returned only with its
+    ``reference_length_m``.
+    """
+    values = (line_load_n_m, radius_m, e_star_pa, reference_length_m)
+    if not all(
+        not isinstance(value, bool) and isfinite(value) and value > 0 for value in values
+    ):
+        raise ValueError("Line load, radius, modulus and reference length must be positive SI")
+    half_width = sqrt(4.0 * line_load_n_m * radius_m / (pi * e_star_pa))
+    peak_pressure = 2.0 * line_load_n_m / (pi * half_width)
+    approach = (
+        2.0
+        * line_load_n_m
+        / (pi * e_star_pa)
+        * (log(2.0 * reference_length_m / half_width) + 0.5)
+    )
+    return HertzLineContactResult(
+        float(line_load_n_m),
+        half_width,
+        peak_pressure,
+        approach,
+        float(reference_length_m),
+    )
+
+
+def pressure_line(x_m: float, hertz: HertzLineContactResult) -> float:
+    """Evaluate the analytical semi-elliptic Hertz line-pressure profile."""
+    if not isfinite(x_m):
+        raise ValueError("x_m must be a finite SI coordinate")
+    return hertz.peak_pressure_pa * sqrt(
+        max(0.0, 1.0 - (x_m / hertz.half_width_m) ** 2)
+    )

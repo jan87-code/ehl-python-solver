@@ -10,6 +10,7 @@ from numpy.typing import ArrayLike
 
 from ehl_solver.backend import Backend, as_float64, make_backend
 from ehl_solver.contact import ContactLoadMoments, integrate_contact_pressure
+from ehl_solver.contact_numerics import positive_part, project_nonnegative_fixed_sum
 from ehl_solver.elasticity import ElasticityOperator
 from ehl_solver.geometry import ContactGeometry
 
@@ -50,39 +51,6 @@ def _uniform_axis(values: ArrayLike, name: str) -> np.ndarray:
     if not np.allclose(np.diff(axis), spacing, rtol=1e-10, atol=tolerance):
         raise ValueError(f"{name} must be uniformly spaced [m]")
     return axis
-
-
-def _project_simplex(values, total: float, backend: Backend):
-    """Euclidean projection onto nonnegative vectors with a fixed sum."""
-    xp = backend.xp
-    if backend.name == "numpy":
-        ordered = np.sort(values)[::-1]
-    else:
-        ordered = xp.sort(values, descending=True).values
-    cumulative = (
-        xp.cumsum(ordered, dim=0) if backend.name == "torch" else np.cumsum(ordered)
-    ) - total
-    size = int(values.numel()) if backend.name == "torch" else values.size
-    indices = (
-        xp.arange(1, size + 1, dtype=values.dtype, device=backend.device)
-        if backend.name == "torch"
-        else np.arange(1, size + 1, dtype=np.float64)
-    )
-    candidates = ordered - cumulative / indices
-    if backend.name == "numpy":
-        active_count = int(np.flatnonzero(candidates > 0)[-1]) + 1
-    else:
-        active_count = int(xp.count_nonzero(candidates > 0).item())
-    threshold = cumulative[active_count - 1] / active_count
-    if backend.name == "torch":
-        return xp.clamp_min(values - threshold, 0.0)
-    return np.maximum(values - threshold, 0.0)
-
-
-def _positive_part(values, backend: Backend):
-    if backend.name == "torch":
-        return backend.xp.clamp_min(values, 0.0)
-    return np.maximum(values, 0.0)
 
 
 def solve_dry_contact(
@@ -162,7 +130,7 @@ def solve_dry_contact(
             (accelerated / cell_area).reshape(shape)
         )
         gradient = (displacement_at_accelerated + geometry_device).reshape(-1)
-        updated = _project_simplex(accelerated - step * gradient, load, selected)
+        updated = project_nonnegative_fixed_sum(accelerated - step * gradient, load, selected)
         next_momentum = 0.5 * (1.0 + math.sqrt(1.0 + 4.0 * momentum**2))
         accelerated = updated + ((momentum - 1.0) / next_momentum) * (updated - q)
         q, momentum = updated, next_momentum
@@ -180,7 +148,7 @@ def solve_dry_contact(
         )
         inactive = ~active
         penetration = (
-            float(xp.max(_positive_part(-gap[inactive], selected)).item())
+            float(xp.max(positive_part(-gap[inactive], selected)).item())
             if bool(xp.any(inactive).item())
             else 0.0
         )
@@ -194,7 +162,7 @@ def solve_dry_contact(
             loads,
             iteration,
             kkt_residual,
-            float(xp.max(_positive_part(-gap, selected)).item()),
+            float(xp.max(positive_part(-gap, selected)).item()),
         )
         if kkt_residual <= tolerance:
             return last_result

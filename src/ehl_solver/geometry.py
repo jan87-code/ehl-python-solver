@@ -76,9 +76,21 @@ class LineContactGeometry:
     def __post_init__(self):
         object.__setattr__(self, "radius_x_m", _positive_finite(self.radius_x_m, "radius_x_m"))
 
+    def h_geom_x(self, x_m: ArrayLike) -> NDArray[np.float64]:
+        """Evaluate the line-contact cross-section on an ascending x axis."""
+        x = np.asarray(x_m, dtype=np.float64)
+        if (
+            x.ndim != 1
+            or x.size < 1
+            or not np.all(np.isfinite(x))
+            or np.any(np.diff(x) <= 0)
+        ):
+            raise ValueError("x_m must be a finite ascending 1-D SI coordinate axis")
+        return x**2 / (2.0 * self.radius_x_m)
+
     def h_geom(self, x_m: ArrayLike, y_m: ArrayLike) -> NDArray[np.float64]:
         xx, yy = _coordinates(x_m, y_m)
-        return np.broadcast_to(xx**2 / (2.0 * self.radius_x_m), yy.shape).copy()
+        return np.broadcast_to(self.h_geom_x(x_m)[None, :], yy.shape).copy()
 
 
 @dataclass(frozen=True)

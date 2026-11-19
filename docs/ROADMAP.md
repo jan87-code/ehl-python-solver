@@ -181,7 +181,8 @@ spike width/amplitude is required; do not start a 2049-node uniform solve
 automatically.
 
 Verification for this milestone: on Windows, `pytest -q` completed with
-`989 passed, 1 skipped` in 389.35 s. `ruff check . --exclude .kilo` passed.
+`989 passed, 1 skipped` in 389.35 s, with three non-failing PyTorch sparse
+tensor warnings. `ruff check . --exclude .kilo` passed.
 Unfiltered `ruff check .` reports one pre-existing E501 in the unrelated,
 untracked `.kilo/skills/jupyter-notebook/scripts/new_notebook.py`; that local
 tooling file is not part of this milestone.

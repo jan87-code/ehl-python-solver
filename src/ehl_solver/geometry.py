@@ -197,6 +197,51 @@ class LogarithmicAxialProfile:
 
 
 @dataclass(frozen=True)
+class SmoothLogarithmicAxialProfile:
+    """Logarithmic centre smoothly blended to finite relief at each end."""
+
+    half_length_m: float
+    scale_m: float
+    maximum_relief_m: float
+    blend_start_fraction: float
+
+    def __post_init__(self):
+        for name in ("half_length_m", "scale_m", "maximum_relief_m"):
+            object.__setattr__(self, name, _positive_finite(getattr(self, name), name))
+        start = self.blend_start_fraction
+        if isinstance(start, bool) or not isfinite(start) or not 0.0 < start < 1.0:
+            raise ValueError("blend_start_fraction must be strictly between zero and one")
+        object.__setattr__(self, "blend_start_fraction", float(start))
+        height = -self.scale_m * np.log1p(-(start**2))
+        slope = 2.0 * self.scale_m * start / (1.0 - start**2)
+        if height >= self.maximum_relief_m or (
+            (1.0 - start) * slope > 3.0 * (self.maximum_relief_m - height)
+        ):
+            raise ValueError("blend parameters do not yield monotone bounded relief")
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        s = np.abs(y) / self.half_length_m
+        if np.any(s > 1.0):
+            raise ValueError("axial coordinates lie outside the logarithmic profile length")
+        start = self.blend_start_fraction
+        inner = s <= start
+        relief = np.empty_like(s)
+        relief[inner] = -self.scale_m * np.log1p(-(s[inner] ** 2))
+        t = (s[~inner] - start) / (1.0 - start)
+        height = -self.scale_m * np.log1p(-(start**2))
+        slope = 2.0 * self.scale_m * start / (1.0 - start**2)
+        relief[~inner] = (
+            (2 * t**3 - 3 * t**2 + 1) * height
+            + (t**3 - 2 * t**2 + t) * (1.0 - start) * slope
+            + (-2 * t**3 + 3 * t**2) * self.maximum_relief_m
+        )
+        return relief
+
+
+@dataclass(frozen=True)
 class TabulatedAxialProfile:
     """Linearly interpolate measured or user-supplied ``(y,g(y))`` data.
 
@@ -327,7 +372,8 @@ def contact_geometry_from_config(config: Mapping[str, object]) -> ContactGeometr
 
     Supported ``type`` values are ``circular_point``, ``elliptical_point``,
     ``classical_line`` and ``profiled_roller``. A profile mapping can select
-    ``cylindrical``, ``parabolic``, ``circular``, ``logarithmic`` or
+    ``cylindrical``, ``parabolic``, ``circular``, ``logarithmic``,
+    ``smooth_logarithmic`` or
     ``tabulated``; Python callers may also provide a callable ``AxialProfile``.
     ``axial_tilt_rad`` is an independent additive component, never part of
     ``g(y)``.
@@ -419,6 +465,16 @@ def _axial_profile_from_config(config: object) -> AxialProfile | Callable:
             _positive_config_value(values, "half_length_m"),
             _positive_config_value(values, "scale_m"),
             _positive_config_value(values, "maximum_relief_m"),
+        )
+    if profile_type == "smooth_logarithmic":
+        _reject_unknown_fields(
+            values, {"half_length_m", "scale_m", "maximum_relief_m", "blend_start_fraction"}
+        )
+        return SmoothLogarithmicAxialProfile(
+            _positive_config_value(values, "half_length_m"),
+            _positive_config_value(values, "scale_m"),
+            _positive_config_value(values, "maximum_relief_m"),
+            _positive_config_value(values, "blend_start_fraction"),
         )
     if profile_type == "tabulated":
         _reject_unknown_fields(values, {"y_m", "height_m"})

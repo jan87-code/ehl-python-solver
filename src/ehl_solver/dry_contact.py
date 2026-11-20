@@ -10,8 +10,8 @@ from numpy.typing import ArrayLike
 
 from ehl_solver.backend import Backend, as_float64, make_backend
 from ehl_solver.contact import ContactLoadMoments, integrate_contact_pressure
+from ehl_solver.contact_compliance import ContactCompliance, HalfSpaceFFTCompliance
 from ehl_solver.contact_numerics import positive_part, project_nonnegative_fixed_sum
-from ehl_solver.elasticity import ElasticityOperator
 from ehl_solver.geometry import ContactGeometry
 
 
@@ -61,6 +61,7 @@ def solve_dry_contact(
     e_star_pa: float,
     *,
     backend: Backend | None = None,
+    compliance: ContactCompliance | None = None,
     tolerance: float = 2e-6,
     maximum_iterations: int = 20000,
     memory_limit_bytes: int = 2**30,
@@ -72,7 +73,8 @@ def solve_dry_contact(
     displacement opens the gap, so ``gap = h_geom + w - approach``. The
     projected accelerated-gradient solve enforces nonnegative gap and pressure
     complementarity; this is a dry-contact verification tool, not an EHL/JFO
-    solve.
+    solve. Explicit compliance owns its material properties; ``e_star_pa``
+    configures the default half-space operator only.
     """
     if isinstance(load_n, bool) or not math.isfinite(load_n) or load_n <= 0:
         raise ValueError("load_n must be positive finite N")
@@ -101,14 +103,18 @@ def solve_dry_contact(
     xp = selected.xp
     dx, dy = float(x[1] - x[0]), float(y[1] - y[0])
     cell_area = dx * dy
-    operator = ElasticityOperator(
-        shape,
-        dx,
-        dy,
-        e_star_pa,
-        selected,
-        memory_limit_bytes=memory_limit_bytes,
-    )
+    operator = compliance
+    if operator is None:
+        operator = HalfSpaceFFTCompliance(
+            shape, dx, dy, e_star_pa, selected, memory_limit_bytes=memory_limit_bytes
+        )
+    if (
+        operator.shape != shape
+        or operator.backend != selected
+        or not math.isclose(operator.dx_m, dx, rel_tol=1e-10)
+        or not math.isclose(operator.dy_m, dy, rel_tol=1e-10)
+    ):
+        raise ValueError("compliance must match the grid, spacing and selected backend")
     geometry_device = as_float64(geometry_m, selected)
     load = float(load_n)
     pressure_cells = int(np.prod(shape))
@@ -117,7 +123,7 @@ def solve_dry_contact(
         if selected.name == "torch" else np.full(pressure_cells, cell_load, dtype=np.float64)
     accelerated = q.clone() if selected.name == "torch" else q.copy()
     momentum = 1.0
-    lipschitz = float(xp.max(xp.abs(operator.kernel_spectrum)).item()) / cell_area
+    lipschitz = operator.pressure_norm_bound_m_per_pa / cell_area
     if not math.isfinite(lipschitz) or lipschitz <= 0:
         raise RuntimeError("Elasticity operator produced an invalid contact step bound")
     step = 1.0 / lipschitz
@@ -184,6 +190,7 @@ def solve_finite_roller_dry_contact(
     e_star_pa: float,
     *,
     backend: Backend | None = None,
+    compliance: ContactCompliance | None = None,
     tolerance: float = 2e-6,
     maximum_iterations: int = 20000,
     memory_limit_bytes: int = 2**30,
@@ -213,6 +220,7 @@ def solve_finite_roller_dry_contact(
         load_n,
         e_star_pa,
         backend=backend,
+        compliance=compliance,
         tolerance=tolerance,
         maximum_iterations=maximum_iterations,
         memory_limit_bytes=memory_limit_bytes,

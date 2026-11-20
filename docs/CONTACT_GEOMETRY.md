@@ -88,6 +88,21 @@ plateau at each end. Its centre has `g(y) ~ c*(y/a)**2`; the cap creates a
 slope discontinuity at its onset. This is a generic, explicitly capped
 convention, not a manufacturer-specific crown.
 
+`SmoothLogarithmicAxialProfile` uses the same logarithm up to
+`s=abs(y)/a=s0`. For `s0<s<=1`, let `t=(s-s0)/(1-s0)`,
+`g0=-c*log(1-s0**2)` and `d0=2*c*s0/(1-s0**2)`. Its generic cubic
+Hermite blend is
+
+```text
+g = (2t**3-3t**2+1)*g0 + (t**3-2t**2+t)*(1-s0)*d0
+    + (-2t**3+3t**2)*g_max
+```
+
+It matches value and slope at `s0`, has zero end slope, and rejects
+parameters that cannot satisfy the implemented monotonicity bound. This is
+a C1 blend, not a manufacturer profile. Tabulated profiles remain
+piecewise-linear and may have derivative discontinuities.
+
 Examples passed directly to `contact_geometry_from_config`:
 
 ```python
@@ -134,6 +149,20 @@ finite roller's end-face elastic compliance is **not** represented. Axial
 grid refinement keeps the same physical span. Rolling-direction domain
 changes must keep the active footprint away from its computational edges.
 No moment balance, finite-body elasticity, or finite-roller EHL is implied.
+
+Dry-contact solvers optionally accept `ContactCompliance` with grid shape,
+spacing, backend, a pressure-to-displacement callable and a safe L2 operator
+norm bound in m/Pa. The compliance must be linear, self-adjoint and
+positive; externally supplied operators are responsible for that contract.
+The default `HalfSpaceFFTCompliance` retains the existing FFT kernel and
+bound. `DirectHalfSpaceCompliance` explicitly builds the same cell-integrated
+influence coefficients for small reference grids, with a conservative norm
+bound and bounded allocation. A future finite-body matrix can implement the
+interface, but is not provided or validated. A supplied operator owns its
+material properties; `e_star_pa` configures only the default half-space.
+
+The matched end-loading study and its failed finite-roller EHL gate are
+documented in [PHYSICS.md](PHYSICS.md) and [ROADMAP.md](ROADMAP.md).
 
 ## Dry elastic contact
 

@@ -2,10 +2,12 @@ import numpy as np
 import pytest
 
 from ehl_solver.backend import make_backend
+from ehl_solver.contact_compliance import DirectHalfSpaceCompliance, HalfSpaceFFTCompliance
 from ehl_solver.dry_contact import solve_finite_roller_dry_contact
 from ehl_solver.elasticity import cell_integrated_kernel
 from ehl_solver.geometry import contact_geometry_from_config
 from ehl_solver.hertz import elliptical_point_contact
+from examples.run_roller_end_loading import band_loads, feature_cells, profiles
 
 
 def _case(angle=0.0, radius_y=1.0, nodes=33):
@@ -171,3 +173,113 @@ def test_finite_roller_cuda_matches_numpy_reference():
     )
     assert gpu.loads.force_n == pytest.approx(cpu.loads.force_n, rel=2e-14)
     assert gpu.loads.moment_x_n_m == pytest.approx(cpu.loads.moment_x_n_m, rel=1e-10)
+
+
+def test_direct_compliance_matches_fft_and_load_controlled_contact():
+    x, y, geometry = _case(nodes=9)
+    dx, dy = x[1] - x[0], y[1] - y[0]
+    direct = DirectHalfSpaceCompliance((9, 9), dx, dy, 113e9)
+    fft = HalfSpaceFFTCompliance((9, 9), dx, dy, 113e9)
+    pressure = np.random.default_rng(42).random((9, 9)) * 1e9
+    np.testing.assert_allclose(direct(pressure), fft(pressure), rtol=2e-15, atol=1e-20)
+    matrix_norm = np.linalg.norm(direct._matrix, ord=2)
+    assert direct.pressure_norm_bound_m_per_pa >= matrix_norm * (1 - 1e-14)
+    direct_result = solve_finite_roller_dry_contact(
+        x, y, geometry, 1e-3, 100.0, 113e9, compliance=direct, tolerance=1e-8
+    )
+    fft_result = solve_finite_roller_dry_contact(
+        x, y, geometry, 1e-3, 100.0, 113e9, tolerance=1e-8
+    )
+    np.testing.assert_allclose(
+        direct_result.pressure_pa, fft_result.pressure_pa, rtol=2e-5, atol=100
+    )
+    assert direct_result.loads.force_n == pytest.approx(100.0, rel=1e-14)
+    assert direct_result.relative_kkt_residual <= 1e-8
+
+
+def test_compliance_rejects_mismatched_spacing_and_excess_memory():
+    x, y, geometry = _case(nodes=9)
+    dx, dy = x[1] - x[0], y[1] - y[0]
+    compliance = DirectHalfSpaceCompliance((9, 9), 2 * dx, dy, 113e9)
+    with pytest.raises(ValueError, match="spacing"):
+        solve_finite_roller_dry_contact(x, y, geometry, 1e-3, 100.0, 113e9, compliance=compliance)
+    with pytest.raises(MemoryError, match="budget"):
+        DirectHalfSpaceCompliance((9, 9), dx, dy, 113e9, memory_limit_bytes=128)
+
+
+def test_smooth_logarithmic_profile_is_bounded_monotone_and_c1():
+    profile = contact_geometry_from_config(
+        {
+            "type": "profiled_roller",
+            "radius_x_m": 0.01,
+            "axial_profile": {
+                "type": "smooth_logarithmic",
+                "half_length_m": 5e-4,
+                "scale_m": 7.5e-8,
+                "maximum_relief_m": 1.25e-7,
+                "blend_start_fraction": 0.8,
+            },
+        }
+    ).axial_profile_m
+    y = np.linspace(-5e-4, 5e-4, 10001)
+    relief = profile(y)
+    np.testing.assert_allclose(relief, relief[::-1], atol=1e-22)
+    assert relief[len(y) // 2] == 0
+    assert relief[-1] == pytest.approx(1.25e-7)
+    assert np.all(np.diff(relief[len(y) // 2 :]) >= 0)
+    eps = 1e-10
+    for location in (0.8 * 5e-4, 5e-4):
+        if location < 5e-4:
+            values = profile(np.array([location - eps, location, location + eps]))
+            assert (values[1] - values[0]) / eps == pytest.approx(
+                (values[2] - values[1]) / eps, rel=2e-5
+            )
+        else:
+            values = profile(np.array([location - eps, location]))
+            assert abs((values[1] - values[0]) / eps) < 1e-8
+
+
+def test_smooth_logarithmic_rejects_nonmonotone_blend():
+    with pytest.raises(ValueError, match="monotone"):
+        contact_geometry_from_config(
+            {
+                "type": "profiled_roller",
+                "radius_x_m": 0.01,
+                "axial_profile": {
+                    "type": "smooth_logarithmic",
+                    "half_length_m": 5e-4,
+                    "scale_m": 1e-7,
+                    "maximum_relief_m": 1e-8,
+                    "blend_start_fraction": 0.8,
+                },
+            }
+        )
+
+
+def test_end_band_integral_handles_partial_cells_and_resolves_features():
+    ny, nx = 37, 5
+    dy, dx = 1e-3 / ny, 1e-5
+    y = (np.arange(ny) - (ny - 1) / 2) * dy
+    pressure = np.ones((ny, nx)) * 1e9
+    for fraction in (0.02, 0.05, 0.1):
+        expected = 1e9 * nx * dx * 1e-3 * fraction
+        assert band_loads(pressure, dx, dy, y, fraction) == pytest.approx([expected, expected])
+    assert feature_cells(pressure, y) == [4, 4]
+    pressure[-4:] = 0
+    assert feature_cells(pressure, y)[1] == 0
+
+
+def test_study_profiles_match_end_relief_and_tabulate_hard_log():
+    definitions = profiles()
+    coordinates = np.linspace(-5e-4, 5e-4, 2001)
+    values = {}
+    for name, profile in definitions.items():
+        geometry = contact_geometry_from_config(
+            {"type": "profiled_roller", "radius_x_m": 0.01, "axial_profile": profile}
+        )
+        values[name] = geometry.axial_profile_m(coordinates)
+        assert values[name][1000] == pytest.approx(0.0, abs=1e-20)
+        expected_end = 0 if name == "cylindrical" else 125e-9
+        assert values[name][0] == pytest.approx(expected_end, abs=1e-19)
+        assert values[name][-1] == pytest.approx(expected_end, abs=1e-19)
+    np.testing.assert_allclose(values["log_tabulated"], values["log_hard"], atol=1e-11, rtol=0)

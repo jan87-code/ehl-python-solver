@@ -103,6 +103,95 @@ They verify a bounded dry half-space calculation and prescribed tilt; they do
 not validate finite-roller EHL, end-face compliance, design-grade peak
 pressure or moment-controlled tilt.
 
+### Matched roller profiles and axial end loading
+
+`examples/run_roller_end_loading.py --output-dir <new-directory>` performs
+54 float64 CUDA solves with independent NumPy FFT reconstruction and direct
+cell-kernel influence checks at five locations per field. All use `Rx=10 mm`,
+length `1 mm`, `E*=113 GPa`, `F=100 N`, `x` half-domain `0.4 mm`, and
+rectangular `(ny,nx)=(65,33),(129,49),(257,65)` grids. Axial cell edges
+coincide with the physical ends. All crown centres are zero and positive
+relief increases the gap; the cylinder is the **zero-relief control**.
+Nonzero profiles match `g(+/-0.5 mm)=125 nm`: parabolic `Ry=1 m`;
+circular `Ry=(a**2+g_max**2)/(2*g_max)=1.0000000625 m`; generic logarithm
+`a=0.5 mm`, `c=75.2680503 nm`, `g_max=125 nm`, hard cap onset `|y|=0.9a`;
+and its bounded linear interpolation using 1001 points plus cap onsets.
+The C1 logarithmic blend starts at `|y|=0.8a` and has the same end relief.
+See [CONTACT_GEOMETRY.md](CONTACT_GEOMETRY.md) for formulas; neither
+logarithmic profile is manufacturer-specific.
+
+End-band loads integrate pressure over each fixed outer 10%, 5%, or 2% of
+the *full roller length*, accounting for partially intersected cells.
+Footprint uses `p>1e-8*p_max`, so its area is itself grid-dependent. The
+reported axial feature count is the contiguous span within a 10% end band
+whose rolling-integrated line load is at least half the band's maximum; it
+is not an extrapolated continuum FWHM.
+
+At zero tilt, the following lists give approach [nm], peak pressure [MPa],
+and each end's outer-10% load [N] on 65, 129 and 257 axial cells:
+
+| Profile | Approach | Peak | Each 10% end |
+|---|---|---|---|
+| Cylinder | 1750.80, 1747.66, 1746.26 | 1810.7, 2504.4, 3503.2 | 15.53, 15.62, 15.66 |
+| Parabolic | 1803.13, 1801.40, 1800.39 | 1686.1, 2328.5, 3253.3 | 14.36, 14.43, 14.47 |
+| Circular | 1803.13, 1801.40, 1800.39 | 1686.1, 2328.5, 3253.3 | 14.36, 14.43, 14.47 |
+| Hard log | 1801.65, 1799.85, 1798.85 | 1703.2, 2360.0, 3302.7 | 14.04, 14.12, 14.16 |
+| Smooth log | 1800.38, 1798.61, 1797.63 | 1688.8, 2342.7, 3281.5 | 14.12, 14.20, 14.24 |
+| Tabulated log | 1801.65, 1799.85, 1798.85 | 1703.2, 2360.0, 3302.7 | 14.04, 14.12, 14.16 |
+
+At `+0.003 rad`, the finest-grid negative/positive outer 10% loads [N] are
+39.817/0 (cylinder), 38.090/0 (parabolic or circular), 37.658/0
+(hard log), 37.763/0 (smooth log), and 37.658/0 (tabulated log).
+The corresponding `Mx` [N m] is 0.028986, 0.028239, 0.028150,
+0.028176 and 0.028150 respectively. Negative tilt swaps ends and reverses
+moment. Across all profiles/grids the maximum reflected-field L2 difference
+is `2.26e-14`; `x` symmetry error is at most `1.70e-14`, load absolute error
+at most `4.27e-14 N`, KKT at most `2.000e-6`, CPU FFT displacement
+discrepancy at most `1.06e-15` and sampled direct-influence discrepancy at
+most `5.69e-16`. The tabulated/hard pressure relative L2 discrepancy is
+at most `1.07e-5` in these cases.
+
+Finest-grid 5%/2% band loads [N] at **each** end for zero tilt are
+10.214/6.053 (cylinder), 9.274/5.436 (parabolic or circular),
+9.085/5.479 (hard or tabulated log) and 9.136/5.421 (smooth log).
+At positive tilt the negative-end 5%/2% loads are respectively
+27.483/16.935, 26.098/16.000, 25.823/16.072 and 25.899/15.984 N;
+the positive end carries zero. Negative tilt swaps these values.
+
+For the smooth profile at positive tilt, approach changes
+1625.19 -> 1622.28 -> 1620.48 nm; footprint area changes
+0.17077 -> 0.16809 -> 0.16673 mm^2; `Mx` changes
+0.027992 -> 0.028109 -> 0.028176 N m. On the last grid centroid is
+`-0.28176 mm` and the footprint spans `y=-0.49805` to `+0.33074 mm`.
+Negative-end 10%, 5%, 2% loads change from
+37.38/25.37/15.34 to 37.62/25.70/15.67 to 37.76/25.90/15.98 N.
+Its nodal peak instead rises 3284 -> 4597 -> 6467 MPa and remains in the
+outermost axial cell; the half-peak line-load feature occupies **one cell**
+on each grid. The outermost row alone carries 13.57 -> 9.58 -> 6.80 N.
+At zero tilt each outermost row still carries 2.25 N at 257 cells.
+Thus integrated windows and approach are much more stable than the local
+peak, but an unresolved end-cell contribution remains material.
+
+The hard-cap onset is nonsmooth, but a similar end-cell peak appears with
+the C1 blend, the cylinder, and parabolic/circular profiles. This indicates
+that a cap kink alone does not explain the observed behavior; finite
+pressure-support truncation and insufficient axial peak resolution are
+consistent with it. These tests do **not** isolate or validate actual
+finite-body end compliance. The direct calculation verifies the same
+half-space discrete kernel, not its finite-body applicability.
+
+For the smooth positive-tilt case, increasing the x half-domain to `0.5 mm`
+at the same spacing changes pressure by `0.0150%` relative L2 and the
+negative 10% band by `0.00027 N`. At `(129,49)`, independent CPU/CUDA
+pressure difference is `1.05e-14` relative L2; single observed CPU/CUDA
+solve times were 1.93/1.39 s, not a general performance claim. The run used
+PyTorch `2.15.0+cu132` on an NVIDIA RTX A2000 Laptop GPU.
+Fields, metrics and plots are local ignored outputs in
+[`../results/roller_end_study_20261113/`](../results/roller_end_study_20261113/).
+They are numerical half-space evidence, not experimental or finite-body
+validation. The explicit decision gate and next action are in
+[ROADMAP.md](ROADMAP.md).
+
 ### Dry plane-strain line-contact verification mode
 
 The separate `solve_dry_line_contact` mode uses one rolling-direction grid

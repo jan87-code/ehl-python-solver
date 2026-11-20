@@ -99,6 +99,48 @@ film data and extend JFO/load audits to finite geometries. Prescribed tilt
 does not solve moment equilibrium. Do not infer transient, roughness,
 thermal or moment-controlled behavior from this dry half-space study.
 
+### Matched roller end-loading decision
+
+The 54-case CUDA profile/grid/tilt comparison and independent CPU audits are
+recorded in [PHYSICS.md](PHYSICS.md); crown definitions and the compliance
+interface are in [CONTACT_GEOMETRY.md](CONTACT_GEOMETRY.md). All noncylindrical
+profiles match 125 nm end relief; the cylinder is the zero-relief control.
+The hard logarithmic cap, C1 blend, and bounded tabulated reproduction are
+generic, not manufacturer-specific.
+
+For a transparent conservative screening gate, compare both successive grid
+pairs, at zero and both prescribed tilts: approach change <=1%; footprint
+area change <=5%; each fixed end-band load change <=1 N; centroid change
+<=10 micrometres; moment change <=0.001 N m; each outermost axial row load
+<1 N; and each load-bearing end feature has at least five cells in its
+within-band half-peak span. These are engineering screening criteria for
+this study, not established error bounds or universal acceptance standards.
+Every field must also pass load, complementarity and elasticity audits.
+
+**Gate: fails.** The smooth logarithmic profile has stable approach,
+footprint, window loads and moment by those checks, but at the finest grid
+the loaded end's single row carries 6.80 N under positive tilt, while the
+half-peak feature has only one cell. The nodal peak rises about 41% on the
+last refinement. At zero tilt each end row still carries 2.25 N. Neither
+the smooth profile nor other matched profiles establishes adequately
+resolved end loading. Hard log has the lowest 10% end load in this set,
+but no profile can be declared generally best from an unresolved local peak
+or one window. Similar peaks with a cylinder and C1 blend argue against the
+hard-cap kink as the sole cause; truncation and grid resolution remain
+implicated. Half-space end compliance is not independently validated.
+
+The CUDA-enabled full test run reported `1024 passed, 1 skipped` with three
+existing PyTorch warnings. The final focused finite-roller tests passed
+(`19 passed`). Unfiltered `ruff check .` reports the unrelated pre-existing
+untracked `.kilo` E501; `ruff check . --exclude .kilo` passes.
+
+Next, investigate a physically justified smooth end profile/edge treatment
+that moves the contact patch away from the finite axial boundary, then
+repeat these matched-load and resolution audits; if boundary contact is
+unavoidable, compare with finite-body/FE compliance before relying on
+half-space end loads. Continue to defer finite-roller EHL, moment equilibrium,
+transience, roughness and thermal modeling.
+
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m
 line-load conventions, and Hertz pressure/width/approach references. The

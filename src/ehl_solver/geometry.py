@@ -146,6 +146,43 @@ class ParabolicAxialProfile:
 
 
 @dataclass(frozen=True)
+class BlendedParabolicAxialProfile:
+    """Parabolic crown with a bounded C1 Hermite blend at each roller end."""
+
+    half_length_m: float
+    maximum_relief_m: float
+    end_zone_fraction: float = 0.1
+
+    def __post_init__(self):
+        for name in ("half_length_m", "maximum_relief_m"):
+            object.__setattr__(self, name, _positive_finite(getattr(self, name), name))
+        fraction = self.end_zone_fraction
+        if isinstance(fraction, bool) or not isfinite(fraction) or not 0 < fraction <= 0.5:
+            raise ValueError("end_zone_fraction must lie in (0, 0.5]")
+        object.__setattr__(self, "end_zone_fraction", float(fraction))
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        s = np.abs(y) / self.half_length_m
+        if np.any(s > 1.0):
+            raise ValueError("axial coordinates lie outside the parabolic profile length")
+        start = 1.0 - 2.0 * self.end_zone_fraction
+        relief = self.maximum_relief_m * s**2
+        blend = s > start
+        t = (s[blend] - start) / (1.0 - start)
+        height = self.maximum_relief_m * start**2
+        slope = 2.0 * self.maximum_relief_m * start
+        relief[blend] = (
+            (2.0 * t**3 - 3.0 * t**2 + 1.0) * height
+            + (t**3 - 2.0 * t**2 + t) * (1.0 - start) * slope
+            + (-2.0 * t**3 + 3.0 * t**2) * self.maximum_relief_m
+        )
+        return relief
+
+
+@dataclass(frozen=True)
 class CircularAxialProfile:
     """Circular-arc axial relief ``R-sqrt(R**2-y**2)``."""
 

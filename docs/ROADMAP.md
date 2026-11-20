@@ -92,12 +92,13 @@ updated finite-roller and geometry tests passed (`28 passed`). Unfiltered
 `ruff check .` reports the unrelated untracked `.kilo` E501 described below;
 `ruff check . --exclude .kilo` passes.
 
-**Remaining before finite-roller EHL:** independently assess finite-body
-end compliance and realistic end geometry; establish grid/edge convergence
-for any local stress or edge-load target; benchmark relevant pressure and
-film data and extend JFO/load audits to finite geometries. Prescribed tilt
-does not solve moment equilibrium. Do not infer transient, roughness,
-thermal or moment-controlled behavior from this dry half-space study.
+**Remaining beyond one bounded finite-roller EHL starter:** independently
+assess finite-body end compliance and realistic end geometry before making
+design-grade edge-load claims; establish grid/edge convergence for any local
+stress target; and obtain relevant experimental pressure/film data for
+physical validation. Prescribed tilt does not solve moment equilibrium.
+Do not infer transient, roughness, thermal or moment-controlled behavior
+from the dry-contact study.
 
 ### Matched roller end-loading decision
 
@@ -175,6 +176,68 @@ The CUDA-enabled full suite reported `1034 passed, 1 skipped` with three
 existing PyTorch warnings; focused relief/tilt tests reported `10 passed`.
 Unfiltered `ruff check .` still reports the unrelated untracked `.kilo`
 E501; the repository check excluding `.kilo` passes.
+
+The later bounded stationary finite-roller EHL starter below supersedes the
+preceding "do not start" recommendation only for the specified 100 N,
+2000 nm-relief, zero and +/-0.00025 rad cases; it does not close the
+finite-body or experimental-validation limitations.
+
+### Stationary isothermal finite-roller JFO/EHL starter (2026-11-20)
+
+The starter reuses the established donor/JFO load Newton, Roelands viscosity,
+Dowson-Higginson density, zero-padded half-space elasticity, hybrid CUDA
+float64 operators and CPU SuperLU preconditioner. No solver physics changed.
+Because no separate lubricant/speed was supplied, it uses the existing
+`PointContactCase` values (`eta0=0.04 Pa s`, `rho0=850 kg/m^3`,
+`Ue=2 m/s`, ambient viscosity slope `2.21e-8 Pa^-1`). It is isothermal.
+The geometry is `Rx=10 mm`, `L=1 mm`, 100 N, 2,000 nm end relief with a
+C1 parabolic blend over the outer 10% at each end (`Ry=62.5 mm`).
+
+Cases A (`alpha=0`), B (`+0.00025 rad`) and its reflected
+`-0.00025 rad` case were accepted on `(nx,ny)=65x129,129x257,193x385`.
+One additional axial-only refinement to `193x513` was justified by the
+boundary-adjacent pressure tail. At that grid:
+
+- Case A: `h_c=488.078 nm`, `h_min=359.242 nm`,
+  `p_max=786.030 MPa`; zero moment and symmetric fields.
+- Cases B: `h_c=488.115 nm`, `h_min=343.973 nm`,
+  `p_max=786.157 MPa`; `y` pressure centroids `-13.727/+13.727 um` and
+  moments `-0.00137266/+0.00137266 N m` for positive/negative tilt.
+- The positive-tilt global minimum is about `(x,y)=(29.26,-404.30) um`,
+  95.70 um from the loaded physical end; the negative case reflects it.
+  The pressure/film/theta mirror check passed to roundoff.
+- The positive-tilt outer 2% band loads are `0.01758/0.01155 N`
+  (negative/positive y ends); outermost pressure rows are zero, and
+  endpoint film remains positive. `p>=1% p_max` support clears the loaded
+  and unloaded ends by 7 and 11 axial cells. A sub-1% pressure tail persists
+  on the nearest interior row but its pressure and integrated row load
+  decrease under axial refinement.
+- From 65x129 to 129x257, bulk pressure/film relative L2 changes contract
+  from 6.67%/0.365% to 3.83%/0.182% on the next 193x385 refinement.
+  Axial-only 193x385 to 193x513 changes are 0.249% in bulk pressure L2 and
+  0.00116% in film L2; `h_c`, `h_min`, centroid and moment are stable.
+- Worst final relative load error is below `3e-16`, local/global mass
+  balance below `1e-13/2e-15`, complementarity below `7e-28`, and
+  independent film reconstruction error below `3e-21 m`. CPU/CUDA residual
+  parity is below `2e-15`; field errors are at roundoff.
+
+**Starter-case gate: passes, with a sharp-feature limitation.** This is
+numerical verification of the exact modeled low-tilt cases, not experimental
+validation or a claim that half-space compliance is physically exact. The
+downstream local pressure peak is only 0.56-0.83 x-cells wide and its
+prominence increases under x refinement; it is unresolved and its amplitude
+must not be treated as converged. The full tabulated audits and standardized
+plots are in [PHYSICS.md](PHYSICS.md) and the ignored outputs
+[`../results/finite_roller_ehl_debug_20261120_145111/`](../results/finite_roller_ehl_debug_20261120_145111/),
+[`../results/finite_roller_ehl_eng_20261120_145218/`](../results/finite_roller_ehl_eng_20261120_145218/)
+and
+[`../results/finite_roller_ehl_axial_20261120_150009/`](../results/finite_roller_ehl_axial_20261120_150009/).
+
+Next, perform one bounded rolling-direction refinement to characterize the
+outlet pressure spike before continuing tilt to `0.0005 rad`. Retain the
+half-space model unless measured end-load sensitivity indicates otherwise;
+do not add moment-controlled tilt yet. Finite-body/FE compliance and
+experimental comparisons remain separate validation work.
 
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m

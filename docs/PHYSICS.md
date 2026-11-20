@@ -1,7 +1,7 @@
 # Physics model and numerical conventions
 
 ## Ultimate target
-Steady, isothermal 2D point-contact EHL, extended stage-wise to pressure-dependent viscosity and density, cavitation, shear thinning and thermal effects. The initial foundation is *not yet an EHL solver*.
+Steady, isothermal 2D point-contact EHL, extended stage-wise to pressure-dependent viscosity and density, cavitation, shear thinning and thermal effects. The repository has an incrementally verified stationary finite-roller JFO/EHL starter for one detached low-tilt geometry; it is not a general finite-roller solver or experimental validation.
 
 ## Coordinates
 Array shape `(ny, nx)`. `x` follows lubricant entrainment; `y` is transverse. Use SI units at interfaces and explicit grid spacing `dx`, `dy`. Center odd-sized grids about x=y=0 for analytical comparisons.
@@ -14,8 +14,10 @@ with a caller-supplied axial profile `g(y)`. `CavitatingElasticityProblem`
 accepts the geometry interface; its default circular expression is bitwise
 regression-tested against the frozen point-contact baseline. Finite
 profiled-roller geometry now also feeds a separate dry-contact mode; a
-distinct dry plane-strain line-contact verification mode is documented
-below. No finite crowned-roller or tilted EHL validation is implied.
+distinct dry plane-strain line-contact verification mode and a bounded
+stationary isothermal finite-roller EHL starter are documented below. The
+starter does not imply general crowned-roller, larger-tilt, moment-controlled,
+finite-body or experimental validation.
 
 The shared `contact_geometry_from_config` factory accepts circular point,
 elliptical point, classical infinite-line, and profiled-roller geometry
@@ -23,9 +25,9 @@ selections. Profiled rollers use an axial `g(y)` callable, with a bounded
 tabulated-data adapter; axial tilt is a separate additive `y*tan(alpha)`
 component. Additive components accept an optional time coordinate so future
 surface/roughness terms can share the same composition without being mixed
-into the axial profile. This is geometry/configuration infrastructure only;
-solver dispatch, transient surface models, and finite crowned-roller EHL are
-not implied.
+into the axial profile. This is geometry/configuration infrastructure only; it does not provide
+general solver dispatch or transient surface models. The bounded
+finite-roller EHL adapter below is a separate, explicitly scoped path.
 
 The separate dry-contact mode solves `p>=0`, fixed normal load, and
 `gap=h_geom+w(p)-approach>=0` with `p*gap=0`, using the existing
@@ -102,6 +104,132 @@ Reproduce them with
 They verify a bounded dry half-space calculation and prescribed tilt; they do
 not validate finite-roller EHL, end-face compliance, design-grade peak
 pressure or moment-controlled tilt.
+
+### Stationary finite-roller JFO/EHL starter
+
+`src/ehl_solver/finite_roller_ehl.py` adapts the existing donor/JFO,
+load-controlled `solve_limited_load` path to the shared profiled geometry.
+It does not change Reynolds, cavitation, rheology, elasticity or nonlinear
+solver equations. The accepted starter uses `Rx=10 mm`, full roller length
+`1 mm`, 100 N, 2,000 nm end relief, and the shared C1 parabolic blend over
+the outer 10% of full roller length at each end (`s0=0.8`). Thus the inner
+parabola has `Ry=62.5 mm`. Cases A and B use `alpha=0` and
+`+0.00025 rad`; the negative case is the reflected `-0.00025 rad` solution.
+
+The flow inputs are the existing `PointContactCase` defaults, because no
+separate lubricant or speed was specified: `eta0=0.04 Pa s`,
+`rho0=850 kg/m^3`, `Ue=2 m/s`, and ambient log-viscosity slope
+`2.21e-8 Pa^-1`. Viscosity is Roelands with its index matched to that
+ambient slope; density is the existing Dowson-Higginson rational law with
+default coefficients. This is an isothermal calculation; it does not solve
+or assert a temperature. Pressure is gauge pressure in Pa, total force is N,
+the load unknown is `h0` in metres, and fields use `(ny,nx)` with positive-x
+entrainment. At the 193x513 grid, `ax` is 133.77 um, the Hertz scale pressure
+is 799.68 MPa, the Hamrock-Dowson central-film scale is 528.05 nm, and
+`Lambda=12 eta0 Ue ax/(href^2 pref)`.
+
+The EHL axial nodes include the physical roller endpoints `y=+/-0.5 mm`;
+gauge pressure is fixed to zero on all four computational boundaries. This
+differs from the dry-contact cell-centred convention, whose outer cell edges
+coincide with the roller ends. The EHL problem uses a zero-padded 2-D
+half-space FFT, CUDA float64 residual/JVP/elasticity, CPU SuperLU
+preconditioning, and independent CPU audits. The unaccepted starter is an
+elliptical-Hertz pressure field with `theta=1` and a Hamrock-Dowson central
+film offset. Case B is seeded from A; the negative case is seeded by
+reflecting the accepted positive-tilt field.
+
+All three cases were accepted and independently audited on `(nx,ny)=
+(65,129),(129,257),(193,385),(193,513)`. The last step refines only the axial
+grid because the edge-band results justified resolving the axial tail. The
+main film and pressure results are:
+
+| Grid (nx,ny) | Case | `h_c` [nm] | Global `h_min` [nm] | `p_max` [MPa] | `h_min` axial coordinate [um] |
+|---|---|---:|---:|---:|---:|
+| 65x129 | A, zero tilt | 506.670 | 372.592 | 788.877 | +/-398.438 |
+| 65x129 | B, either tilt sign | 506.710 | 357.059 | 789.003 | +/-406.250 |
+| 129x257 | A, zero tilt | 494.461 | 363.512 | 786.728 | +/-398.438 |
+| 129x257 | B, either tilt sign | 494.499 | 348.274 | 786.855 | +/-406.250 |
+| 193x385 | A, zero tilt | 488.077 | 359.295 | 786.035 | +/-398.438 |
+| 193x385 | B, either tilt sign | 488.114 | 343.956 | 786.162 | +/-403.646 |
+| 193x513 | A, zero tilt | 488.078 | 359.242 | 786.030 | +/-396.484 |
+| 193x513 | B, either tilt sign | 488.115 | 343.973 | 786.157 | +/-404.297 |
+
+At `(193,513)`, the zero-tilt global minima are the symmetric pair at
+`x=25.08 um`, `y=+/-396.48 um`; the reported minimum is 103.52 um inside
+either axial end. Its rolling-centreline minimum is 421.06 nm, its outer-10%
+film minima are 359.30 nm at each end, and the endpoint-row minimum is
+709.39 nm. For positive tilt, `h_min=343.97 nm` at approximately
+`(x,y)=(29.26,-404.30) um`, 95.70 um inside the loaded physical end. The
+rolling-centreline minimum remains 421.08 nm; the two outer-10% minima are
+343.97/384.38 nm and the endpoint-row minima are 614.83/809.13 nm. Negative
+tilt reflects these axial values.
+
+The corresponding `p_max` values are at `(x,y)=(4.18,0) um` for A and
+`(4.18,-15.625) um` for positive tilt; the negative case reflects in y.
+
+At `(193,513)`, the pressure centroid is `y=0` for A and
+`y=+/-13.7266 um` for negative/positive tilt; the pressure-weighted film
+centroid is `y=0` and `+/-12.1599 um`. The axial moment
+`Mx=int(y*p dx dy)` is zero to rounding for A and
+`-0.00137266/+0.00137266 N m` for positive/negative tilt. The mirror check
+gave zero pressure and theta differences and a film difference below
+`6.5e-15` relative to the film scale. The positive-tilt outer 2%, 5% and
+10% band loads at the negative/positive ends are respectively
+`0.01758/0.01155 N`, `0.11218/0.07318 N`, and `0.67005/0.38891 N`; reversing
+tilt swaps the ends. The symmetric outer-2% load is `0.01413 N` per end.
+All physical endpoint pressure rows are exactly zero by the boundary
+condition; endpoint-row loads are zero and endpoint film stays positive.
+
+The accepted-grid changes contract: between 65x129 and 129x257, bulk
+pressure and film relative L2 changes are 6.67% and 0.365%; between
+129x257 and 193x385 they are 3.83% and 0.182%. `h_c` and `h_min` changes
+fall from about 2.4% to 1.2%. The axial-only 193x385-to-193x513 change is
+0.249% in bulk pressure L2 and 0.00116% in film L2; `h_c` changes by less
+than 0.0002% and `h_min` by at most 0.015%. The 2% end-band loads change by
+less than 0.00014 N on the 129x257-to-193x385 refinement and by less than
+0.000004 N on the axial-only refinement. Richardson/GCI is not asserted
+because refinement is anisotropic and the local pressure spike is unresolved.
+
+At 193x513 the one-cell boundary-adjacent pressure tail is below 1.4 MPa;
+the largest adjacent-row load is `0.00035 N` (`0.00035%` of total load),
+and it decreases under axial refinement. The load-bearing support, defined
+as `p >= 1% p_max`, clears the ends by 7/11 cells for the loaded/unloaded
+ends in B (13.67/21.48 um); the global `h_min` remains about 96 um inside
+the end. This is distinct from the tiny sub-1% tail at the first interior
+node and is not evidence of finite-body accuracy.
+
+The rolling-centreline outlet-film constriction is 4.49 cells wide at
+129x257 and 6.37 cells at 193x385/193x513 (about 26.6 um on the latter
+grids). A separate downstream local pressure peak is much sharper: its
+half-prominence width is only 0.56, 0.67 and 0.83 rolling cells at the
+65-, 129- and 193-node x resolutions, while prominence grows from 15 to
+69 to 107 MPa. Treat this local outlet pressure peak as **unresolved**;
+do not infer a converged spike amplitude from these fields.
+
+The worst final load-relative error is below `3e-16`, relative local mass
+balance below `1e-13`, global mass balance below `2e-15`, complementarity
+below `7e-28`, and independent film reconstruction error below `3e-21 m`.
+The minimum fractional content is about 0.058 and `h_min` remains positive.
+Final CUDA/CPU parity errors are below `2e-15` in the residual, exact for
+pressure and theta, and below `3e-21 m` for film/deformation. For the
+193x513 positive-tilt root the reported accumulated CUDA JVP time is 46.8 s,
+CPU SuperLU setup is 48.8 s, GMRES wall time is 175 s and total correction
+time is 280 s. These are workload timings, not a CPU-versus-GPU speedup
+claim.
+
+The finite-roller EHL starter gate **passes for these specific steady,
+isothermal, low-tilt cases**: both tilted signs and the symmetric root pass
+all audits; main pressure support and `h_min` are detached from the physical
+ends; outer-band loads are small and stable; bulk fields, `h_c`, `h_min`,
+centroids and moment contract under refinement. This is numerical
+verification for the stated model, not an experimental benchmark or
+general validation. The downstream pressure spike and boundary-adjacent
+sub-1% tail remain explicit local limitations. Full fields, centreline
+pressure/film/flux files and standardized plots are in the ignored outputs
+[`../results/finite_roller_ehl_debug_20261120_145111/`](../results/finite_roller_ehl_debug_20261120_145111/),
+[`../results/finite_roller_ehl_eng_20261120_145218/`](../results/finite_roller_ehl_eng_20261120_145218/)
+and
+[`../results/finite_roller_ehl_axial_20261120_150009/`](../results/finite_roller_ehl_axial_20261120_150009/).
 
 ### Matched roller profiles and axial end loading
 

@@ -17,15 +17,15 @@ and output. The currently available implementations are:
 - `EllipticalPointContactGeometry`: `x**2/(2Rx) + y**2/(2Ry)`.
 - `LineContactGeometry`: `x**2/(2Rx)`, invariant in `y`.
 - `ProfiledRollerGeometry`: `x**2/(2Rx) + g(y)` for a caller-supplied axial
-  profile function. A dry finite-roller solver uses the same component and
-  requires explicit physical roller length as a separate mechanical input.
+  profile function. Dry-contact and the bounded stationary EHL starter use
+  this component with explicit physical roller length.
 
-`contact_geometry_from_config` is the shared case-input factory for
+`contact_geometry_from_config` is the shared geometry-input factory for
 `circular_point`, `elliptical_point`, `classical_line`, and `profiled_roller`
 geometry types. It builds geometry objects; it does not dispatch a solver or
 turn the finite 2-D point-contact elasticity into an infinite-line model.
-Contact formulations select their mathematically appropriate solver after
-the geometry is built.
+The finite-roller EHL starter has its own case adapter over the established
+donor/JFO load solver.
 
 The profiled-roller `g(y)` contract is the `AxialProfile` callable protocol.
 No profile or a `cylindrical` profile means `g(y)=0`; `TabulatedAxialProfile`
@@ -47,9 +47,10 @@ terms.
 
 `CavitatingElasticityProblem` accepts this geometry interface and retains its
 legacy radii inputs for compatibility. `LineContactGeometry` is used by the
-separate dry plane-strain line-contact mode below. No finite crowned-roller
-EHL solver is implemented. Tilt is composed independently from the profile;
-its dry-contact verification does not validate tilted EHL.
+separate dry plane-strain line-contact mode below. A bounded stationary
+finite-roller EHL starter is documented later; its verification does not
+generalize to larger tilt, finite-body compliance or moment equilibrium.
+Tilt is composed independently from the profile.
 
 `integrate_contact_pressure` provides the shared force and contact-moment
 hooks for cell-centered pressure fields. For positive compressive pressure
@@ -103,8 +104,8 @@ parameters that cannot satisfy the implemented monotonicity bound. This is
 a C1 blend, not a manufacturer profile. Tabulated profiles remain
 piecewise-linear and may have derivative discontinuities.
 
-The relief/tilt study also uses a study-specific smooth parabolic blend.
-For `s=abs(y)/a`, its inner profile is `g=G*s**2` up to `s0`; the same
+The shared `BlendedParabolicAxialProfile` implements a smooth parabolic
+blend. For `s=abs(y)/a`, its inner profile is `g=G*s**2` up to `s0`; the same
 Hermite formula above connects `g0=G*s0**2` and `d0=2*G*s0` to
 `g(1)=G`, `dg/ds(1)=0`. For each logarithmic or parabolic profile the
 blend extends across `q` of the *full* roller length at each end, so
@@ -160,7 +161,37 @@ The elasticity is the existing 2-D semi-infinite half-space operator; a real
 finite roller's end-face elastic compliance is **not** represented. Axial
 grid refinement keeps the same physical span. Rolling-direction domain
 changes must keep the active footprint away from its computational edges.
-No moment balance, finite-body elasticity, or finite-roller EHL is implied.
+This dry-contact mode alone does not provide moment balance, finite-body
+elasticity or an EHL solution.
+
+### Stationary finite-roller EHL starter convention
+
+`FiniteRollerEHLCase` in `src/ehl_solver/finite_roller_ehl.py` composes
+`ProfiledRollerGeometry` and `AxialTiltGeometry` as
+`h_geom=x**2/(2*Rx)+g(y)+y*tan(alpha)`. Its accepted starter uses
+`Rx=10 mm`, `L=1 mm`, `G=2000 nm`, and the C1 parabolic profile with an
+outer-10%-of-full-length blend at each end. The inner profile is parabolic
+with `Ry=L**2/(8G)=62.5 mm`; the independent tilt is zero or +/-0.00025 rad.
+The total load is 100 N.
+
+Unlike the dry-contact cell-centred grid, the EHL `y` axis has nodes exactly
+at `+/-L/2`. Gauge pressure is prescribed as zero on each x and y boundary;
+the axial endpoint film and copied JFO content are still reported. Arrays
+are `(ny,nx)`, x is the positive entrainment direction, and all public
+length, pressure and force inputs are SI. Scales are explicitly
+`X=x/ax`, `Y=y/ax`, `H=h/href`, `P=p/pref` and
+`Lambda=12*eta0*Ue*ax/(href**2*pref)`; the load controller solves for the
+dimensional `h0` in metres.
+
+The runner reuses the established donor/JFO limited load Newton, CUDA
+float64 residual/JVP and half-space FFT, and CPU SuperLU preconditioner.
+Accepted states are independently audited on CPU for load, local/global
+mass balance, complementarity, film feasibility and elasticity. This
+specific starter gate passes at the stated load, fluid defaults and tilts;
+it does not establish finite-body compliance, experimental validation,
+larger-tilt behavior or moment equilibrium. The outlet pressure spike
+remains unresolved. Detailed grid data and acceptance evidence are in
+[`PHYSICS.md`](PHYSICS.md) and [`ROADMAP.md`](ROADMAP.md).
 
 Dry-contact solvers optionally accept `ContactCompliance` with grid shape,
 spacing, backend, a pressure-to-displacement callable and a safe L2 operator

@@ -374,17 +374,64 @@ These component timings overlap (for example, preconditioner applications
 occur within GMRES) and are not additive. No full CPU-only comparison was
 run, so they do not establish end-to-end GPU speedup.
 
-The requested `+/-0.0005 rad` continuation passes the root, load, mass,
-JFO, elasticity, parity, mirror and detachment checks on 769x513. It is
-not yet a refinement-qualified 0.5 mrad benchmark: the rolling-direction
-refinement was performed at zero and `+0.00025 rad`, not at 0.5 mrad, and
-the low-threshold pressure tail remains near the boundary. Keep the pressure
-spike unresolved and do not infer finite-body accuracy, moment equilibrium,
-or experimental validation. The next bounded step is an axial-grid check
-of the accepted 0.5 mrad root, for example 769x577 (443,713 nodes, within
-the 450,000-node budget), including the pressure tail and outer-band metrics;
-only after that should a separate task consider further prescribed tilt. No
-moment-controlled tilt or finite-body compliance was added.
+The `+0.0005 rad` root was seeded from 769x513 and solved on 769x577,
+changing only axial resolution. The 100 N load, 2 um C1 parabolic crown,
+outer-10% blend, half-space compliance, donor/JFO formulation, fluid laws,
+domain, boundaries and nonlinear tolerances were unchanged. The source to
+refined changes were:
+
+- `h_c`: 476.464706 to 476.464973 nm
+  (`+0.000267 nm`, `+0.0000560%`); `h_min`: 328.465748 to 328.487023 nm
+  (`+0.021275 nm`, `+0.006477%`). The refined minimum is at
+  `(x,y)=(30.307,-411.458) um`, 88.542 um or 51 axial cells inside the
+  loaded end. The rolling-centreline minimum changes by only 0.000280 nm.
+- Bulk pressure relative L2/RMS change is `0.32584% / 0.982 MPa`;
+  bulk-film relative L2/RMS change is `0.000673% / 0.02047 nm`.
+  The pressure centroid moves by 0.000256 um in x and -0.000163 um in y;
+  `Mx` changes from `-0.0027441142` to `-0.0027441306 N m`
+  (`0.000595%` in magnitude).
+- At the `1% p_max` support threshold, loaded/unloaded clearance increases
+  from 5/15 cells (9.766/29.297 um) to 6/17 cells
+  (10.417/29.514 um). The 1 kPa low-pressure tail remains within about one
+  cell of the boundary, as before; no new boundary feature appeared.
+  The minimum-film point remains well inside the loaded end. Both outermost
+  pressure rows carry zero load. Negative/positive-y outer-2% loads are
+  0.022202/0.009473 N (0.02220%/0.00947% of total); their sum is 0.03167%.
+  Outer-5% loads are 0.142627/0.059889 N and outer-10% loads are
+  0.952302/0.306489 N. No new boundary-adjacent cavitation appeared.
+- The fixed outlet window `[89.506,119.506] um` has integrated pressure load
+  5.359039 to 5.358971 N (`-0.000069 N`). The outlet spike remains unresolved:
+  its half-prominence width is about 2.037 x-cells (2.128 um); its peak is
+  845.517 to 845.441 MPa, and this nodal change is not an axial gate.
+  The outlet constriction remains at 122.272 um with film 415.731 to
+  415.731 nm (change `0.000280 nm`).
+
+The refined CUDA float64 solve converged in 4 Newton corrections and 233
+GMRES iterations over 6 linear-model attempts. Maximum independently
+recomputed true relative Krylov residual was `3.532e-10`. Load closed to
+100 N; relative local/global mass balance was `3.905e-11 / 9.718e-16`,
+maximum complementarity `3.317e-22`, and independent CPU FFT-elasticity
+film reconstruction error `2.12e-21 m`. CUDA/CPU parity passed (residual
+`9.97e-15`, pressure and theta exact at reported precision). The mirrored
+negative-tilt CPU audit passed: pressure relative L-infinity error
+`4.23e-16`, film `1.92e-14`, theta zero, and `Mx` reverses to
+`+0.0027441306 N m`; scalar films agree within `2.01e-15`.
+
+**Axial qualification passes for this prescribed 0.5 mrad half-space case.**
+All task-specific criteria pass, including `h_c`, `h_min`, bulk film,
+centroid/moment, detachment, outer-row/end-band load and audits. The complete
+769x577 case took 226.54 s (221.53 s solver wall time); seed transfer,
+checkpoints, CPU audit, parity and summary output took 1.84, 1.08, 0.75,
+1.41 and 2.31 s, respectively. Summed component timings include 110.71 s
+SuperLU setup, 37.90 s preconditioner-application wall time, 55.33 s GMRES,
+10.58 s CUDA JVP/FFT and 1.41 s CUDA residual; these components overlap.
+No matched CPU-only full-solve timing exists, so no end-to-end GPU speedup
+is claimed. Keep the outlet pressure spike unresolved and do not infer
+finite-body accuracy, moment equilibrium or experimental validation. The
+detached, axially insensitive root and small end loads support making
+simultaneous force-and-moment closure the next bounded numerical milestone;
+finite-body/FE compliance remains a separate future comparison before
+stronger physical claims. Neither capability was implemented here.
 
 ### Matched roller profiles and axial end loading
 

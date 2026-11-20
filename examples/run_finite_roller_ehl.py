@@ -156,6 +156,7 @@ def physical_node_budget(nx, ny):
 
 def write_history_and_heartbeat(directory, stem):
     heartbeat_path = directory / f"{stem}_heartbeat.jsonl"
+    checkpoint_timing = {"wall_seconds": 0.0, "count": 0}
 
     def heartbeat_observer(**event):
         if event.get("emit", False):
@@ -165,13 +166,16 @@ def write_history_and_heartbeat(directory, stem):
 
     def state_observer(iteration, state, audit):
         checkpoint = directory / f"{stem}_checkpoint_{iteration:03d}.npz"
+        started = time.perf_counter()
         np.savez_compressed(
             checkpoint,
             state=state,
             audit_json=np.asarray(json.dumps(json_value(audit), allow_nan=False)),
         )
+        checkpoint_timing["wall_seconds"] += time.perf_counter() - started
+        checkpoint_timing["count"] += 1
 
-    return state_observer, heartbeat_observer
+    return state_observer, heartbeat_observer, checkpoint_timing
 
 
 def save_profiles(directory, stem, case, probe, state, metrics, profiles, audit):
@@ -281,7 +285,9 @@ def solve_case(
     stem = f"{label}_{nx}x{ny}"
     directory = output / stem
     directory.mkdir()
-    state_observer, heartbeat_observer = write_history_and_heartbeat(directory, stem)
+    state_observer, heartbeat_observer, checkpoint_timing = write_history_and_heartbeat(
+        directory, stem
+    )
     report = {
         "case": json_value(case.physical_signature()),
         "grid_nx_ny": [nx, ny],
@@ -297,25 +303,31 @@ def solve_case(
     }
     initial_state = None
     probe = None
+    seed_transfer_wall_seconds = 0.0
     started = time.perf_counter()
     try:
         probe = LimitedLoadProbe(case, transport_fraction=0.0)
         system = probe.system
-        if seed_state is None:
-            initial_state = finite_roller_hertz_seed(case, system)
-            report["seed"] = (
-                "unaccepted elliptical-Hertz pressure, theta=1, HD central-film offset"
-            )
-        elif mirror_seed:
-            initial_state = mirror_finite_roller_seed(
-                seed_case, seed_state, case, system
-            )
-            report["seed"] = "y-mirrored accepted opposite-tilt state"
-        else:
-            initial_state = transfer_finite_roller_seed(
-                seed_case, seed_state, case, system
-            )
-            report["seed"] = "interpolated accepted lower-grid or zero-tilt state"
+        seed_transfer_started = time.perf_counter()
+        try:
+            if seed_state is None:
+                initial_state = finite_roller_hertz_seed(case, system)
+                report["seed"] = (
+                    "unaccepted elliptical-Hertz pressure, theta=1, "
+                    "HD central-film offset"
+                )
+            elif mirror_seed:
+                initial_state = mirror_finite_roller_seed(
+                    seed_case, seed_state, case, system
+                )
+                report["seed"] = "y-mirrored accepted opposite-tilt state"
+            else:
+                initial_state = transfer_finite_roller_seed(
+                    seed_case, seed_state, case, system
+                )
+                report["seed"] = "interpolated accepted lower-grid or zero-tilt state"
+        finally:
+            seed_transfer_wall_seconds = time.perf_counter() - seed_transfer_started
         if not probe.feasible(initial_state):
             raise ValueError(
                 f"{stem} starting state failed the original strict feasibility gate"
@@ -344,6 +356,9 @@ def solve_case(
             newton_history=compact_history(exc.history),
             runtime_seconds=time.perf_counter() - started,
             solver_wall_seconds=time.perf_counter() - started,
+            seed_transfer_wall_seconds=seed_transfer_wall_seconds,
+            checkpoint_wall_seconds=checkpoint_timing["wall_seconds"],
+            checkpoint_count=checkpoint_timing["count"],
             complete_wall_seconds=time.perf_counter() - started,
         )
         (directory / f"{stem}_report.json").write_text(
@@ -361,6 +376,9 @@ def solve_case(
             ),
             runtime_seconds=time.perf_counter() - started,
             solver_wall_seconds=time.perf_counter() - started,
+            seed_transfer_wall_seconds=seed_transfer_wall_seconds,
+            checkpoint_wall_seconds=checkpoint_timing["wall_seconds"],
+            checkpoint_count=checkpoint_timing["count"],
             complete_wall_seconds=time.perf_counter() - started,
         )
         if initial_state is not None:
@@ -390,6 +408,9 @@ def solve_case(
             metrics=json_value(metrics),
             newton_history=compact_history(root.history),
             solver_wall_seconds=runtime,
+            seed_transfer_wall_seconds=seed_transfer_wall_seconds,
+            checkpoint_wall_seconds=checkpoint_timing["wall_seconds"],
+            checkpoint_count=checkpoint_timing["count"],
             cpu_audit_wall_seconds=cpu_audit_wall,
             complete_wall_seconds=time.perf_counter() - started,
         )
@@ -413,6 +434,9 @@ def solve_case(
             newton_history=compact_history(root.history),
             runtime_seconds=runtime,
             solver_wall_seconds=runtime,
+            seed_transfer_wall_seconds=seed_transfer_wall_seconds,
+            checkpoint_wall_seconds=checkpoint_timing["wall_seconds"],
+            checkpoint_count=checkpoint_timing["count"],
             cpu_audit_wall_seconds=cpu_audit_wall,
             parity_wall_seconds=time.perf_counter() - parity_started,
             complete_wall_seconds=time.perf_counter() - started,
@@ -449,6 +473,9 @@ def solve_case(
         summary_files=summary_files,
         runtime_seconds=runtime,
         solver_wall_seconds=runtime,
+        seed_transfer_wall_seconds=seed_transfer_wall_seconds,
+        checkpoint_wall_seconds=checkpoint_timing["wall_seconds"],
+        checkpoint_count=checkpoint_timing["count"],
         cpu_audit_wall_seconds=cpu_audit_wall,
         parity_wall_seconds=parity_wall,
         summary_io_wall_seconds=summary_wall,

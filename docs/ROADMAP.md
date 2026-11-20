@@ -256,14 +256,65 @@ cells, although a low-threshold sub-1% pressure tail is one cell from the
 boundary. The result passes root, conservation, complementarity, elasticity,
 parity, mirror and detachment checks on this grid.
 
-Do not treat 0.5 mrad as a refinement-qualified benchmark yet: the 0.5 mrad
-case itself has not been grid-refined, and the sharp pressure spike is
-unresolved. The next bounded action is an axial-grid check within the
-existing node budget, for example 769x577 (443,713 nodes), including the
-pressure tail and end-band metrics.
-Reconsider prescribed tilt only after that check. No moment-controlled tilt
-or finite-body/FE compliance has been implemented; neither is justified by
-the current evidence, and no experimental validation is implied.
+### Axial qualification of prescribed +0.5 mrad (2026-11-20)
+
+The accepted 769x513 positive-tilt state was transferred to 769x577
+(443,713 physical nodes) with only `Ny` changed. The 100 N load, 2 um
+parabolic crown, smooth outer-10% blend, +0.0005 rad tilt, half-space
+elasticity, donor/JFO model, Roelands/Dowson-Higginson laws, domain,
+boundaries and acceptance tolerances were preserved.
+
+The qualification passes all specified engineering criteria for this
+modeled half-space case:
+
+- `h_c` changes by `0.0000560%` (476.464706 to 476.464973 nm);
+  `h_min` by `0.006477%` (328.465748 to 328.487023 nm). The refined minimum
+  is at `(30.307,-411.458) um`, 88.542 um (51 axial cells) inside the loaded
+  end. Rolling-centreline minimum-film change is `0.000280 nm`.
+- Bulk pressure relative L2/RMS change is `0.32584% / 0.982 MPa`;
+  bulk-film change is `0.000673% / 0.02047 nm`. Pressure centroid changes
+  by less than `0.0003 um`; `Mx` changes by `0.000595%`.
+- The `1% p_max` pressure-support edge is 6/17 axial cells
+  (10.417/29.514 um) from loaded/unloaded ends. The 1 kPa low-pressure tail
+  remains within about one cell of the boundary, as in the source solution;
+  no new axial boundary feature appears. Outermost-row load is zero.
+  Negative/positive-y outer-2% loads are 0.022202/0.009473 N, totaling
+  0.03167% of 100 N; outer-5% and outer-10% integrated loads remain small
+  and stable.
+- The fixed outlet window `[89.506,119.506] um` integrates to 5.359039 N
+  at 769x513 and 5.358971 N at 769x577. The downstream pressure spike is
+  still unresolved at about 2.037 x-cells; `p_max` moves from 845.517 to
+  845.441 MPa, but nodal peak amplitude is deliberately not an axial
+  qualification criterion. The outlet constriction is stable at 122.272 um
+  and about 415.731 nm.
+- Load closes to 100 N; local/global mass balance is
+  `3.905e-11 / 9.718e-16`, complementarity `3.317e-22`, and independent CPU
+  FFT-elasticity reconstruction error `2.12e-21 m`. CUDA/CPU residual and
+  field parity pass. The mirrored negative-tilt CPU audit passes with
+  pressure/film/theta reflection errors `4.23e-16 / 1.92e-14 / 0`,
+  scalar-film relative difference `2.01e-15`, and exact moment sign reversal.
+
+The 769x577 solve took 226.54 s end-to-end (221.53 s solver), with 4 Newton
+corrections, 6 linear-model attempts, 233 GMRES iterations and maximum
+recomputed true relative residual `3.532e-10`. CPU SuperLU setup/application
+wall totals were 110.71/37.90 s; GMRES was 55.33 s; CUDA JVP/FFT and residual
+were 10.58/1.41 s. Seed transfer, checkpointing, CPU audit, parity and
+summary output took 1.84/1.08/0.75/1.41/2.31 s. Timings overlap; no matched
+CPU-only wall-time measurement exists, so no end-to-end GPU speedup is
+claimed. Full reports and fields are in the ignored
+[`../results/finite_roller_ehl_axial_20261120_184013/`](../results/finite_roller_ehl_axial_20261120_184013/)
+output.
+
+**Decision:** freeze `+0.0005 rad`, 769x577 as the current
+refinement-qualified prescribed-tilt regression case for the half-space
+model. Because the detached support, film, centroid, moment and end loads
+are insensitive to axial refinement, the next bounded numerical milestone
+should evaluate simultaneous force-and-moment closure (moment-controlled
+tilt). Do not increase prescribed tilt in the same milestone. A finite-body
+or FE-derived compliance comparison remains important before physical
+validation or stronger claims; this axial result does not validate
+end-face compliance, experiments, or the unresolved rolling-direction
+pressure spike. No moment-control or finite-body capability was implemented.
 
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m

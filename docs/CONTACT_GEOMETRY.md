@@ -195,11 +195,23 @@ pressure spike remains unresolved at only a few x-cells. A bounded
 769x513, with independent CPU audits, CUDA/CPU parity for the positive root,
 and a mirrored negative-tilt CPU check. The positive-tilt root has zero
 outermost-row pressure, small outer-band load and its main pressure support
-and minimum film inside the axial boundary. This 0.5 mrad result is not yet
-refinement-qualified at that tilt; an axial-grid check is the next bounded
-step. None of these calculations establishes finite-body compliance,
-experimental validation, moment equilibrium or general larger-tilt
-behavior. Detailed convergence data and acceptance limits are in
+and minimum film inside the axial boundary. The prescribed `+0.0005 rad`
+case is now refinement-qualified for the current half-space model: its
+769x513 to 769x577 changes are 0.000056% in `h_c`, 0.00648% in `h_min`,
+0.000673% in bulk-film relative L2, and below 0.001% in pressure centroid
+and contact moment. At 769x577 the 1%-peak support clears the loaded and
+unloaded ends by 6 and 17 axial cells; outermost-row load is zero and the
+combined outer-2% load is 0.0317% of 100 N. The pressure spike remains
+unresolved at about 2.04 x-cells; its nodal peak does not govern axial
+qualification. A CPU-audited mirrored `-0.0005 rad` field passes pressure,
+film, theta, scalar-film and moment-sign checks.
+
+This qualifies only the specified prescribed-tilt, isothermal half-space
+case; it does not establish finite-body compliance, experimental validation,
+moment equilibrium or general larger-tilt behavior. Simultaneous force and
+moment closure is the next bounded numerical capability to consider; a
+finite-body/FE compliance comparison remains necessary before making stronger
+physical claims. Detailed convergence data and acceptance limits are in
 [`PHYSICS.md`](PHYSICS.md) and [`ROADMAP.md`](ROADMAP.md).
 
 Dry-contact solvers optionally accept `ContactCompliance` with grid shape,

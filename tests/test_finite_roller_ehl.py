@@ -89,6 +89,28 @@ def test_hertz_seed_is_feasible_and_tilt_transfer_preserves_pressure_state():
     ) * target_system.problem.film_scale_m == pytest.approx(expected_offset_change)
 
 
+def test_accepted_state_transfer_to_axially_refined_grid_preserves_feasibility():
+    source_case = FiniteRollerEHLCase(
+        nx=17, ny=33, axial_tilt_rad=0.0005
+    )
+    source_state = finite_roller_hertz_seed(source_case)
+    target_case = FiniteRollerEHLCase(
+        nx=17, ny=49, axial_tilt_rad=0.0005
+    )
+    target_system = target_case.system()
+    target_state = transfer_finite_roller_seed(
+        source_case, source_state, target_case, target_system
+    )
+    target_probe = LimitedLoadProbe(target_case, transport_fraction=0.0)
+    pressure, theta, film = target_probe.fields(target_state)
+
+    assert target_probe.feasible(target_state)
+    assert target_system.problem.load_n(pressure) == pytest.approx(target_case.load_n)
+    assert pressure[[0, -1], :].max() == 0.0
+    assert np.all((theta >= 0.0) & (theta <= 1.0))
+    assert film.min() > target_system.problem.film_floor_m
+
+
 def test_mirrored_seed_reverses_axial_fields_for_opposite_tilt():
     positive = small_case(axial_tilt_rad=0.00025)
     negative = small_case(axial_tilt_rad=-0.00025)
@@ -177,6 +199,21 @@ def test_finite_roller_case_allows_the_bounded_769_by_513_grid():
         FiniteRollerEHLCase(
             nx=769,
             ny=513,
+            maximum_physical_nodes=300000,
+        )
+
+
+def test_finite_roller_case_allows_769_by_577_within_node_budget():
+    case = FiniteRollerEHLCase(
+        nx=769,
+        ny=577,
+        maximum_physical_nodes=450000,
+    )
+    assert case.nx * case.ny == 443713
+    with pytest.raises(ValueError, match="exceeds"):
+        FiniteRollerEHLCase(
+            nx=769,
+            ny=577,
             maximum_physical_nodes=300000,
         )
 

@@ -364,6 +364,15 @@ and continuation reports are in the ignored output
 Continuation plus mirror-verification wall time was 4353.87 s. Per-stage
 complete times for `+0.00030`, `+0.00035`, `+0.00040`, `+0.00045`, and
 `+0.00050 rad` were 929.87, 972.01, 859.08, 756.90, and 826.88 s.
+For the accepted `+0.00050 rad` solve, the 8 Newton corrections contained
+20 linear-model attempts including recoveries. Summed component times were
+63.14 s CUDA JVP, 3.97 s CUDA residual, 296.35 s CPU SuperLU setup,
+230.13 s CPU preconditioner-application wall time, and 336.68 s GMRES wall
+time. Solver wall time was 821.72 s; CPU audit, parity and summary output
+took 0.78, 1.61 and 2.21 s, respectively, for 826.88 s complete case time.
+These component timings overlap (for example, preconditioner applications
+occur within GMRES) and are not additive. No full CPU-only comparison was
+run, so they do not establish end-to-end GPU speedup.
 
 The requested `+/-0.0005 rad` continuation passes the root, load, mass,
 JFO, elasticity, parity, mirror and detachment checks on 769x513. It is

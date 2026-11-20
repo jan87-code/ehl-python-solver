@@ -168,8 +168,8 @@ The corresponding `p_max` values are at `(x,y)=(4.18,0) um` for A and
 `(4.18,-15.625) um` for positive tilt; the negative case reflects in y.
 
 At `(193,513)`, the pressure centroid is `y=0` for A and
-`y=+/-13.7266 um` for negative/positive tilt; the pressure-weighted film
-centroid is `y=0` and `+/-12.1599 um`. The axial moment
+`y=-13.7266/+13.7266 um` for positive/negative tilt; the pressure-weighted
+film centroid is `y=0` and `-12.1599/+12.1599 um`. The axial moment
 `Mx=int(y*p dx dy)` is zero to rounding for A and
 `-0.00137266/+0.00137266 N m` for positive/negative tilt. The mirror check
 gave zero pressure and theta differences and a film difference below

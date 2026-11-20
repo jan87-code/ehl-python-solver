@@ -46,11 +46,13 @@ class PropertyLoadSystem:
                     70000,
                     100000,
                     300000,
+                    450000,
                     1100000,
                 )):
             raise ValueError(
                 "physical node budget must be one of the explicitly supported budgets: "
-                "20000, 30000, 40000, 50000, 70000, 100000, 300000, or 1100000"
+                "20000, 30000, 40000, 50000, 70000, 100000, 300000, 450000, "
+                "or 1100000"
             )
         if np.prod(problem.shape) > maximum_physical_nodes:
             raise ValueError(f"physical node budget exceeds {maximum_physical_nodes}")

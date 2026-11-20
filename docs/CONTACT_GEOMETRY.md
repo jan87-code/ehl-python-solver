@@ -187,10 +187,19 @@ The runner reuses the established donor/JFO limited load Newton, CUDA
 float64 residual/JVP and half-space FFT, and CPU SuperLU preconditioner.
 Accepted states are independently audited on CPU for load, local/global
 mass balance, complementarity, film feasibility and elasticity. This
-specific starter gate passes at the stated load, fluid defaults and tilts;
-it does not establish finite-body compliance, experimental validation,
-larger-tilt behavior or moment equilibrium. The outlet pressure spike
-remains unresolved. Detailed grid data and acceptance evidence are in
+specific starter gate passes at the stated load, fluid defaults and tilts.
+Rolling-direction refinement at fixed `Ny=513` reaches `Nx=769` for zero
+and `+0.00025 rad`; bulk and integrated metrics contract while the outlet
+pressure spike remains unresolved at only a few x-cells. A bounded
+`0.00005 rad` continuation also obtains accepted `+/-0.0005 rad` roots at
+769x513, with independent CPU audits, CUDA/CPU parity for the positive root,
+and a mirrored negative-tilt CPU check. The positive-tilt root has zero
+outermost-row pressure, small outer-band load and its main pressure support
+and minimum film inside the axial boundary. This 0.5 mrad result is not yet
+refinement-qualified at that tilt; an axial-grid check is the next bounded
+step. None of these calculations establishes finite-body compliance,
+experimental validation, moment equilibrium or general larger-tilt
+behavior. Detailed convergence data and acceptance limits are in
 [`PHYSICS.md`](PHYSICS.md) and [`ROADMAP.md`](ROADMAP.md).
 
 Dry-contact solvers optionally accept `ContactCompliance` with grid shape,

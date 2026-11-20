@@ -84,7 +84,16 @@ class FiniteRollerEHLCase:
             raise ValueError("end_zone_fraction must lie in (0, 0.5]")
         if any(type(n) is not int or n < 5 or n % 2 == 0 for n in (self.nx, self.ny)):
             raise ValueError("Odd rectangular grids >=5 are required")
-        supported_budgets = (20000, 30000, 40000, 50000, 70000, 100000, 300000)
+        supported_budgets = (
+            20000,
+            30000,
+            40000,
+            50000,
+            70000,
+            100000,
+            300000,
+            450000,
+        )
         if type(self.maximum_physical_nodes) is not int or (
             self.maximum_physical_nodes not in supported_budgets
         ):
@@ -369,7 +378,22 @@ def _axial_window_load(pressure, x_m, y_m, lower, upper) -> float:
     return float(trapezoid(trapezoid(values, x=x_m, axis=1), x=coordinates))
 
 
-def finite_roller_metrics(case, probe, state, audit=None) -> tuple[dict, dict]:
+def _integrate_x_window(field, x_m, lower, upper):
+    if not np.isfinite(lower) or not np.isfinite(upper) or upper <= lower:
+        raise ValueError("fixed x-window bounds must be finite and increasing")
+    if lower < x_m[0] or upper > x_m[-1]:
+        raise ValueError("fixed x-window must lie within the rolling-direction domain")
+    interior = (x_m > lower) & (x_m < upper)
+    coordinates = np.r_[lower, x_m[interior], upper]
+    sampled = np.vstack(
+        [np.interp(coordinates, x_m, row) for row in np.asarray(field)]
+    )
+    return trapezoid(sampled, x=coordinates, axis=1)
+
+
+def finite_roller_metrics(
+    case, probe, state, audit=None, *, spike_window_m=None
+) -> tuple[dict, dict]:
     """Compute independently useful load, boundary, film, and flux diagnostics."""
     problem = probe.system.problem
     pressure, theta, film = probe.fields(state)
@@ -450,6 +474,20 @@ def finite_roller_metrics(case, probe, state, audit=None) -> tuple[dict, dict]:
             "prominence_pa": float(outlet_pressure_properties["prominences"][selected]),
             "half_prominence_width_cells": width_cells,
             "half_prominence_width_m": width_cells * problem.dx_m,
+        }
+    fixed_spike_window = None
+    if spike_window_m is not None:
+        lower, upper = spike_window_m
+        centerline_integral = float(
+            _integrate_x_window(
+                centerline_pressure[None, :], x_m, lower, upper
+            )[0]
+        )
+        pressure_by_y = _integrate_x_window(pressure, x_m, lower, upper)
+        fixed_spike_window = {
+            "x_bounds_m": [float(lower), float(upper)],
+            "centerline_pressure_integral_pa_m": centerline_integral,
+            "integrated_pressure_load_n": float(trapezoid(pressure_by_y, x=y_m)),
         }
     pressure_axial_profile = pressure[:, peak_x]
     axial_peak_width_cells = int(
@@ -564,6 +602,7 @@ def finite_roller_metrics(case, probe, state, audit=None) -> tuple[dict, dict]:
         ],
         "outer_10_percent_pressure_peak": end_pressure_peaks,
         "outlet_centerline_pressure_spike": outlet_pressure_spike,
+        "fixed_spike_window": fixed_spike_window,
         "outlet_centerline_constriction": {
             "x_m": float(x_m[outlet_minimum_index]),
             "film_m": float(h_centerline[outlet_minimum_index]),

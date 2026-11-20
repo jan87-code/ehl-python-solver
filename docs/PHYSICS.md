@@ -231,6 +231,152 @@ pressure/film/flux files and standardized plots are in the ignored outputs
 and
 [`../results/finite_roller_ehl_axial_20261120_150009/`](../results/finite_roller_ehl_axial_20261120_150009/).
 
+### Rolling-direction refinement and 0.5 mrad continuation
+
+The accepted 193x513 symmetric and `+0.00025 rad` roots were continued at
+fixed `Ny=513` through `Nx=385` and `769`, using the prior accepted root as
+the next-grid seed. Every production root used the hybrid CUDA float64
+operators and CPU SuperLU; independent CPU audits and CUDA/CPU field parity
+passed. The 193x513 baselines are listed in the preceding section. At 769x513,
+the symmetric case has `h_c=476.313 nm`, `h_min=351.848 nm`,
+`p_max=845.457 MPa`, and zero moment. The `+0.00025 rad` case has
+`h_c=476.351 nm`, `h_min=336.936 nm` at `(x,y)=(28.217,-404.297) um`,
+`p_max=845.505 MPa`, pressure centroid `y=-13.731 um` and moment
+`Mx=-0.0013731 N m`.
+
+The grid-by-grid film and pressure extrema are:
+
+| Grid | Tilt [rad] | `h_c` [nm] | `h_min` [nm] at `(x,y)` [um]; end clearance [um] | Centreline / negative-end / positive-end outer-10% `h_min` [nm] | `p_max` [MPa] at `(x,y)` [um] |
+|---|---:|---:|---|---|---|
+| 193x513 | 0 | 488.078 | 359.242 at (25.081, +/-396.484); 103.516 | 421.063 / 359.305 / 359.305 | 786.030 at (4.180, 0) |
+| 385x513 | 0 | 480.525 | 354.466 at (22.991, +/-398.438); 101.563 | 417.946 / 354.466 / 354.466 | 787.769 at (106.596, 50.781) |
+| 769x513 | 0 | 476.313 | 351.848 at (24.036, +/-398.438); 101.563 | 415.625 / 351.848 / 351.848 | 845.457 at (108.686, -33.203) |
+| 193x513 | +0.00025 | 488.115 | 343.973 at (29.262, -404.297); 95.703 | 421.082 / 343.973 / 384.384 | 786.157 at (4.180, -15.625) |
+| 385x513 | +0.00025 | 480.562 | 339.361 at (27.171, -404.297); 95.703 | 417.941 / 339.361 / 379.126 | 787.770 at (106.596, 35.156) |
+| 769x513 | +0.00025 | 476.351 | 336.936 at (28.217, -404.297); 95.703 | 415.647 / 336.936 / 376.263 | 845.505 at (108.686, 17.578) |
+
+The measured successive-grid changes are:
+
+| Case and refinement | Bulk pressure relative L2 (RMS) | Bulk film relative L2 (RMS) | `h_c` change | `h_min` change |
+|---|---:|---:|---:|---:|
+| 0, 193 to 385 | 4.416% (13.323 MPa) | 0.2090% (6.329 nm) | -1.548% | -1.330% |
+| 0, 385 to 769 | 3.246% (9.785 MPa) | 0.1160% (3.522 nm) | -0.876% | -0.738% |
+| +0.00025, 193 to 385 | 4.417% (13.327 MPa) | 0.2089% (6.330 nm) | -1.547% | -1.341% |
+| +0.00025, 385 to 769 | 3.246% (9.787 MPa) | 0.1160% (3.522 nm) | -0.876% | -0.715% |
+
+All six fields, including independently re-audited 193x513 seeds, close
+100 N to the reported precision. The worst relative local/global mass defects
+are below `2.8e-11/1.4e-15`, maximum complementarity is below `1.4e-22`,
+and independent film reconstruction error is below `2.6e-21 m`. Every
+CUDA/CPU parity check passed.
+
+Pressure centroid y, moment, `p>=1% p_max` support clearance, outermost-row
+load, and fixed outer-band loads for every accepted grid are:
+
+| Grid | Tilt [rad] | Centroid y [um] | `Mx` [N m] | 1%-peak clearance, negative/positive ends [um (cells)] | Outermost row load, negative/positive [N] | Outer 2% load negative/positive [N] | Outer 5% load negative/positive [N] | Outer 10% load negative/positive [N] |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 193x513 | 0 | 0 | 0 | 17.578/17.578 (9/9) | 0/0 | 0.01413/0.01413 | 0.08980/0.08980 | 0.50200/0.50200 |
+| 385x513 | 0 | 0 | 0 | 17.578/17.578 (9/9) | 0/0 | 0.01405/0.01405 | 0.08927/0.08927 | 0.50079/0.50079 |
+| 769x513 | 0 | 0 | 0 | 17.578/17.578 (9/9) | 0/0 | 0.01401/0.01401 | 0.08905/0.08905 | 0.50062/0.50062 |
+| 193x513 | +0.00025 | -13.727 | -0.0013727 | 13.672/21.484 (7/11) | 0/0 | 0.01758/0.01155 | 0.11218/0.07318 | 0.67005/0.38891 |
+| 385x513 | +0.00025 | -13.730 | -0.0013730 | 13.672/21.484 (7/11) | 0/0 | 0.01749/0.01147 | 0.11162/0.07270 | 0.67052/0.38725 |
+| 769x513 | +0.00025 | -13.731 | -0.0013731 | 13.672/23.438 (7/12) | 0/0 | 0.01746/0.01144 | 0.11142/0.07250 | 0.67151/0.38669 |
+
+The endpoint-row minimum film at the symmetric ends changes from 709.39 nm
+at 193x513 to 700.15 nm at 769x513. At positive tilt, negative/positive
+endpoint-row film minima change from 614.83/809.13 nm to 605.59/799.89 nm;
+all endpoint rows have zero pressure. Their fractional content ranges from
+about 0.077 to 1 at positive tilt and 0.087 to 1 in the symmetric case.
+The maximum load in either adjacent interior axial row is below 0.00035 N.
+The cavitated-cell bounding extent at 769x513 is approximately
+`y=[-498.047,498.047] um`, `x=[29.262,400.257] um`; this is the bounding
+box of cavitated cells, not a single-valued cavitation-front curve.
+
+From 385x513 to 769x513, bulk pressure relative L2 changes are 3.246%
+(9.785 MPa RMS) for zero tilt and 3.246% (9.787 MPa RMS) for positive tilt;
+bulk film changes are 0.1160% (3.522 nm RMS) in both cases. `h_c` and
+`h_min` change by 0.876% and 0.738% for zero tilt, and 0.876% and 0.715%
+for positive tilt. The outlet-film constriction is 23.60 cells wide at
+769x513 (about 24.66 um), compared with 12.12 cells at 385x513. Using the
+fixed physical x-window `[89.5056,119.5056] um` around the 193-grid spike,
+the 385-to-769 centerline pressure integral changes by 0.90%, and its
+full-window integrated pressure load by 1.39%, for either case. The symmetric
+outer-band loads at 769 are 0.0140 N in each outer 2% band; for positive
+tilt they are 0.01746/0.01144 N at the negative/positive ends. Outermost
+axial-row pressure and load are zero. The primary bulk, film and integrated
+quantities contract, so 769 is the highest justified rolling-direction grid
+for this bounded study.
+
+For completeness, the centerline outlet-peak and film-constriction diagnostics
+at all accepted grids are:
+
+| Grid | Tilt [rad] | Peak x [um]; pressure/prominence [MPa]; half-width [x cells; um] | Fixed-window centerline pressure integral [Pa m]; integrated pressure [N] | Outlet constriction x [um]; film [nm]; width [cells; um] |
+|---|---:|---|---|---|---|
+| 193x513 | 0 | 104.506; 746.054/107.347; 0.833; 3.482 | 14692.04; 5.09380 | 121.227; 421.063; 6.37; 26.622 |
+| 385x513 | 0 | 106.596; 751.552/127.012; 1.734; 3.625 | 15016.15; 5.25465 | 121.227; 417.946; 12.12; 25.332 |
+| 769x513 | 0 | 108.686; 820.577/202.778; 2.466; 2.578 | 15151.75; 5.32785 | 122.272; 415.625; 23.60; 24.663 |
+| 193x513 | +0.00025 | 104.506; 746.012/107.489; 0.835; 3.492 | 14652.63; 5.10147 | 121.227; 421.082; 6.37; 26.631 |
+| 385x513 | +0.00025 | 106.596; 755.345/130.880; 1.596; 3.337 | 14974.28; 5.26243 | 121.227; 417.941; 12.13; 25.349 |
+| 769x513 | +0.00025 | 108.686; 827.299/209.583; 2.268; 2.370 | 15110.04; 5.33567 | 122.272; 415.647; 23.61; 24.670 |
+
+The fixed pressure window is `[89.5056,119.5056] um` in x for all grids.
+The pressure integral is along the rolling centreline; the N value integrates
+pressure over that fixed x-window and the full axial span.
+
+The spike remains unresolved, not a converged nodal peak. Its width is only
+2.3-2.5 cells at 769x513, its location moves about 2.09 um on each x
+refinement, and global `p_max` rises to about 845.5 MPa. The fixed-window
+integrals are stabilizing, but no further x refinement was run. The report
+and fields are in the ignored output
+[`../results/finite_roller_ehl_xref_20261120_152600_retry1/`](../results/finite_roller_ehl_xref_20261120_152600_retry1/).
+The complete refinement-run wall time was 692.01 s. The two 769-grid case
+wall times were 248.32 s and 249.73 s. These are hybrid end-to-end case
+times; no CPU-only end-to-end comparison was run, so no GPU speedup is
+claimed.
+
+The direct `+0.0005 rad` solve made insufficient nonlinear progress. It was
+preserved as an unsuccessful diagnostic, then replaced by bounded
+`0.00005 rad` continuation from the accepted `+0.00025 rad` root. All five
+intermediate positive-tilt roots (`+0.00030` through `+0.00050 rad`) passed
+the nonlinear acceptance, independent CPU audit and CUDA/CPU parity checks.
+At `+0.0005 rad` and 769x513, the accepted root has `h_c=476.465 nm`,
+`h_min=328.466 nm` at `(32.397,-410.156) um`, and `p_max=845.517 MPa`
+near `(108.686,3.906) um`. The minimum film is 89.844 um inside the loaded
+negative-y end. At the `1% p_max` pressure-support threshold, clearance is
+9.766 um (5 cells) at the loaded end and 29.297 um (15 cells) at the
+unloaded end. A lower 1 kPa threshold reaches to within one axial cell of
+the end; this is a small sub-1%-peak pressure tail, not the location of
+`h_min` or the main support. The outermost pressure rows and their loads are
+zero. The positive-tilt outer 2% loads are 0.02220/0.00947 N; outer 5%
+loads are 0.14265/0.05989 N, and outer 10% loads are 0.95266/0.30651 N
+(negative/positive y). The pressure centroid is `y=-27.441 um` and
+`Mx=-0.0027441 N m`.
+
+The `+0.0005 rad` audits close 100 N exactly, with local/global mass
+balance `6.18e-11/1.61e-15`, maximum complementarity `1.30e-21`, positive
+film, `theta` in `[0.0555,1]`, and independent CPU elasticity/film
+reconstruction error `2.96e-21 m`. CUDA/CPU parity passed. The mirrored
+`-0.0005 rad` field passed its independent CPU audit; pressure and theta
+mirror to zero maximum difference, film relative maximum difference is
+`8.02e-15`, and moment reverses to `+0.0027441 N m`. Mirror verification
+and continuation reports are in the ignored output
+[`../results/finite_roller_ehl_tilt_cont_20261120_160500/`](../results/finite_roller_ehl_tilt_cont_20261120_160500/).
+Continuation plus mirror-verification wall time was 4353.87 s. Per-stage
+complete times for `+0.00030`, `+0.00035`, `+0.00040`, `+0.00045`, and
+`+0.00050 rad` were 929.87, 972.01, 859.08, 756.90, and 826.88 s.
+
+The requested `+/-0.0005 rad` continuation passes the root, load, mass,
+JFO, elasticity, parity, mirror and detachment checks on 769x513. It is
+not yet a refinement-qualified 0.5 mrad benchmark: the rolling-direction
+refinement was performed at zero and `+0.00025 rad`, not at 0.5 mrad, and
+the low-threshold pressure tail remains near the boundary. Keep the pressure
+spike unresolved and do not infer finite-body accuracy, moment equilibrium,
+or experimental validation. The next bounded step is an axial-grid check
+of the accepted 0.5 mrad root, for example 769x577 (443,713 nodes, within
+the 450,000-node budget), including the pressure tail and outer-band metrics;
+only after that should a separate task consider further prescribed tilt. No
+moment-controlled tilt or finite-body compliance was added.
+
 ### Matched roller profiles and axial end loading
 
 `examples/run_roller_end_loading.py --output-dir <new-directory>` performs

@@ -233,11 +233,37 @@ plots are in [PHYSICS.md](PHYSICS.md) and the ignored outputs
 and
 [`../results/finite_roller_ehl_axial_20261120_150009/`](../results/finite_roller_ehl_axial_20261120_150009/).
 
-Next, perform one bounded rolling-direction refinement to characterize the
-outlet pressure spike before continuing tilt to `0.0005 rad`. Retain the
-half-space model unless measured end-load sensitivity indicates otherwise;
-do not add moment-controlled tilt yet. Finite-body/FE compliance and
-experimental comparisons remain separate validation work.
+### Rolling-direction refinement and prescribed 0.5 mrad continuation
+
+The bounded `Nx` refinement is complete at fixed `Ny=513` for the symmetric
+and `+0.00025 rad` cases, through `193x513`, `385x513` and `769x513`. Bulk
+pressure/film, `h_c`, `h_min`, outlet constriction and fixed-window integrated
+spike pressure contract; 769 is the highest justified `Nx`. The pressure
+spike remains unresolved at only 2.3-2.5 cells wide, so no additional
+uniform x-refinement was run. See [PHYSICS.md](PHYSICS.md) for the numerical
+sequence and exact fixed-window definition.
+
+A direct `+0.0005 rad` solve made insufficient progress. Bounded
+`0.00005 rad` continuation from the accepted `+0.00025 rad` root produced
+accepted, CPU-audited and CUDA-parity-passing roots through `+0.0005 rad`;
+the mirrored `-0.0005 rad` CPU audit confirms pressure/film/theta symmetry
+and moment sign reversal. At 769x513, the positive case has
+`h_c=476.465 nm`, `h_min=328.466 nm` 89.844 um inside the loaded end,
+`p_max=845.517 MPa`, `Mx=-0.0027441 N m`, zero outermost-row load and
+0.02220/0.00947 N in the negative/positive outer 2% bands. Its main
+`1% p_max` pressure support clears the loaded/unloaded ends by 5/15 axial
+cells, although a low-threshold sub-1% pressure tail is one cell from the
+boundary. The result passes root, conservation, complementarity, elasticity,
+parity, mirror and detachment checks on this grid.
+
+Do not treat 0.5 mrad as a refinement-qualified benchmark yet: the 0.5 mrad
+case itself has not been grid-refined, and the sharp pressure spike is
+unresolved. The next bounded action is an axial-grid check within the
+existing node budget, for example 769x577 (443,713 nodes), including the
+pressure tail and end-band metrics.
+Reconsider prescribed tilt only after that check. No moment-controlled tilt
+or finite-body/FE compliance has been implemented; neither is justified by
+the current evidence, and no experimental validation is implied.
 
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from scipy.integrate import trapezoid
 
 from ehl_solver.finite_roller_ehl import (
     FiniteRollerEHLCase,
@@ -117,6 +118,67 @@ def test_finite_roller_metrics_include_end_rows_windows_and_flux_profiles():
     }
     assert profiles["qx_centerline_kg_m_s"].shape == (case.nx - 1,)
     assert profiles["qy_centerline_kg_m_s"].shape == (case.ny - 1,)
+
+
+def test_finite_roller_metrics_integrate_a_fixed_physical_spike_window():
+    case = small_case()
+    probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    state = finite_roller_hertz_seed(case)
+    x_m = probe.system.problem.x_m
+    y_m = probe.system.problem.y_m
+    pressure, _, _ = probe.fields(state)
+    bounds = (
+        float((x_m[3] + x_m[4]) / 2.0),
+        float((x_m[6] + x_m[7]) / 2.0),
+    )
+
+    metrics, _ = finite_roller_metrics(
+        case, probe, state, spike_window_m=bounds
+    )
+
+    coordinates = np.r_[
+        bounds[0],
+        x_m[(x_m > bounds[0]) & (x_m < bounds[1])],
+        bounds[1],
+    ]
+    pressure_in_window = np.vstack(
+        [np.interp(coordinates, x_m, row) for row in pressure]
+    )
+    expected_centerline = trapezoid(
+        np.interp(coordinates, x_m, pressure[len(y_m) // 2]), x=coordinates
+    )
+    expected_load = trapezoid(
+        trapezoid(pressure_in_window, x=coordinates, axis=1), x=y_m
+    )
+    window = metrics["fixed_spike_window"]
+    assert window["x_bounds_m"] == list(bounds)
+    assert window["centerline_pressure_integral_pa_m"] == pytest.approx(
+        expected_centerline
+    )
+    assert window["integrated_pressure_load_n"] == pytest.approx(expected_load)
+
+    with pytest.raises(ValueError, match="within"):
+        finite_roller_metrics(
+            case,
+            probe,
+            state,
+            spike_window_m=(float(x_m[0] - 1e-9), float(x_m[2])),
+        )
+
+
+def test_finite_roller_case_allows_the_bounded_769_by_513_grid():
+    case = FiniteRollerEHLCase(
+        nx=769,
+        ny=513,
+        maximum_physical_nodes=450000,
+    )
+    assert case.nx * case.ny <= case.maximum_physical_nodes
+    with pytest.raises(ValueError, match="exceeds"):
+        FiniteRollerEHLCase(
+            nx=769,
+            ny=513,
+            maximum_physical_nodes=300000,
+        )
 
 
 def test_finite_roller_cuda_fields_and_donor_residual_match_cpu():

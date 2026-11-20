@@ -36,6 +36,7 @@ class PropertyWarmSystem(CavitatingNewtonSystem):
                 70000,
                 100000,
                 300000,
+                450000,
                 1100000,
             )
             or self.n > maximum_interior_nodes

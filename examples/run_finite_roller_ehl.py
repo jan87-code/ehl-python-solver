@@ -20,6 +20,7 @@ from ehl_solver.finite_roller_ehl import (
     verify_finite_roller_cuda_parity,
 )
 from ehl_solver.hybrid_jfo import HybridJFOCorrectionSolver
+from ehl_solver.limited_audit import audit_limited_state
 from ehl_solver.limited_newton import LimitedNewtonError, solve_limited_load
 from ehl_solver.limited_system import LimitedLoadProbe
 from ehl_solver.visualization import write_run_summary
@@ -145,6 +146,14 @@ def state_diagnostics(case, probe, state):
     return report
 
 
+def physical_node_budget(nx, ny):
+    node_count = nx * ny
+    for budget in (20000, 40000, 100000, 300000, 450000):
+        if node_count <= budget:
+            return budget
+    raise ValueError(f"{node_count} grid nodes exceed the 450000-node budget")
+
+
 def write_history_and_heartbeat(directory, stem):
     heartbeat_path = directory / f"{stem}_heartbeat.jsonl"
 
@@ -260,8 +269,9 @@ def solve_case(
     seed_case=None,
     seed_state=None,
     mirror_seed=False,
+    spike_window_m=None,
 ):
-    budget = 20000 if nx * ny <= 20000 else 40000 if nx * ny <= 40000 else 100000
+    budget = physical_node_budget(nx, ny)
     case = FiniteRollerEHLCase(
         nx=nx,
         ny=ny,
@@ -271,8 +281,6 @@ def solve_case(
     stem = f"{label}_{nx}x{ny}"
     directory = output / stem
     directory.mkdir()
-    probe = LimitedLoadProbe(case, transport_fraction=0.0)
-    system = probe.system
     state_observer, heartbeat_observer = write_history_and_heartbeat(directory, stem)
     report = {
         "case": json_value(case.physical_signature()),
@@ -288,8 +296,11 @@ def solve_case(
         "status": "running",
     }
     initial_state = None
+    probe = None
     started = time.perf_counter()
     try:
+        probe = LimitedLoadProbe(case, transport_fraction=0.0)
+        system = probe.system
         if seed_state is None:
             initial_state = finite_roller_hertz_seed(case, system)
             report["seed"] = (
@@ -332,6 +343,8 @@ def solve_case(
             last_audit=json_value(exc.audit),
             newton_history=compact_history(exc.history),
             runtime_seconds=time.perf_counter() - started,
+            solver_wall_seconds=time.perf_counter() - started,
+            complete_wall_seconds=time.perf_counter() - started,
         )
         (directory / f"{stem}_report.json").write_text(
             json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
@@ -343,10 +356,12 @@ def solve_case(
             failure_reason=f"{type(exc).__name__}: {exc}",
             failure_diagnostics=(
                 None
-                if initial_state is None
+                if initial_state is None or probe is None
                 else state_diagnostics(case, probe, initial_state)
             ),
             runtime_seconds=time.perf_counter() - started,
+            solver_wall_seconds=time.perf_counter() - started,
+            complete_wall_seconds=time.perf_counter() - started,
         )
         if initial_state is not None:
             np.savez_compressed(
@@ -357,9 +372,38 @@ def solve_case(
         )
         return None, report
     runtime = time.perf_counter() - started
-    metrics, profiles = finite_roller_metrics(case, probe, root.state, root.audit)
+    audit_started = time.perf_counter()
+    independent_cpu_audit = audit_limited_state(probe, root.state, direct=True)
+    cpu_audit_wall = time.perf_counter() - audit_started
+    metrics, profiles = finite_roller_metrics(
+        case,
+        probe,
+        root.state,
+        independent_cpu_audit,
+        spike_window_m=spike_window_m,
+    )
+    if not independent_cpu_audit["numerically_accepted"]:
+        report.update(
+            status="independent_cpu_audit_failed",
+            audit=json_value(root.audit),
+            independent_cpu_audit=json_value(independent_cpu_audit),
+            metrics=json_value(metrics),
+            newton_history=compact_history(root.history),
+            solver_wall_seconds=runtime,
+            cpu_audit_wall_seconds=cpu_audit_wall,
+            complete_wall_seconds=time.perf_counter() - started,
+        )
+        np.savez_compressed(
+            directory / f"{stem}_cpu_audit_failed_state.npz", state=root.state
+        )
+        (directory / f"{stem}_report.json").write_text(
+            json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+        )
+        return None, report
     try:
+        parity_started = time.perf_counter()
         parity = verify_finite_roller_cuda_parity(case, root.state, probe)
+        parity_wall = time.perf_counter() - parity_started
     except (ValueError, RuntimeError, FloatingPointError) as exc:
         report.update(
             status="accepted_cpu_root_cuda_parity_failed",
@@ -368,6 +412,10 @@ def solve_case(
             audit=json_value(root.audit),
             newton_history=compact_history(root.history),
             runtime_seconds=runtime,
+            solver_wall_seconds=runtime,
+            cpu_audit_wall_seconds=cpu_audit_wall,
+            parity_wall_seconds=time.perf_counter() - parity_started,
+            complete_wall_seconds=time.perf_counter() - started,
         )
         np.savez_compressed(directory / f"{stem}_parity_failed_state.npz", state=root.state)
         (directory / f"{stem}_report.json").write_text(
@@ -376,9 +424,15 @@ def solve_case(
         return None, report
     metrics["newton_corrections"] = len(root.history)
     metrics["runtime_seconds"] = runtime
+    metrics["solver_wall_seconds"] = runtime
+    metrics["cpu_audit_wall_seconds"] = cpu_audit_wall
+    metrics["parity_wall_seconds"] = parity_wall
+    summary_started = time.perf_counter()
     summary_files = save_profiles(
         directory, stem, case, probe, root.state, metrics, profiles, root.audit
     )
+    summary_wall = time.perf_counter() - summary_started
+    metrics["summary_io_wall_seconds"] = summary_wall
     np.savez_compressed(directory / f"{stem}_accepted_state.npz", state=root.state)
     report.update(
         status=(
@@ -389,10 +443,16 @@ def solve_case(
         ),
         metrics=json_value(metrics),
         audit=json_value(root.audit),
+        independent_cpu_audit=json_value(independent_cpu_audit),
         cuda_cpu_parity=json_value(parity),
         newton_history=compact_history(root.history),
         summary_files=summary_files,
         runtime_seconds=runtime,
+        solver_wall_seconds=runtime,
+        cpu_audit_wall_seconds=cpu_audit_wall,
+        parity_wall_seconds=parity_wall,
+        summary_io_wall_seconds=summary_wall,
+        complete_wall_seconds=time.perf_counter() - started,
     )
     (directory / f"{stem}_report.json").write_text(
         json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
@@ -466,7 +526,9 @@ def mirror_solution_metrics(positive_case, positive_root, negative_case, negativ
     return errors
 
 
-def refinement_differences(coarse_case, coarse_root, fine_case, fine_root):
+def refinement_differences(
+    coarse_case, coarse_root, fine_case, fine_root, *, spike_window_m=None
+):
     coarse_probe = LimitedLoadProbe(coarse_case, transport_fraction=0.0)
     fine_probe = LimitedLoadProbe(fine_case, transport_fraction=0.0)
     coarse_fields = coarse_probe.fields(coarse_root.state)
@@ -497,11 +559,41 @@ def refinement_differences(coarse_case, coarse_root, fine_case, fine_root):
         fine_root.audit["force_relative_error"] - coarse_root.audit["force_relative_error"]
     )
     coarse_metrics, _ = finite_roller_metrics(
-        coarse_case, coarse_probe, coarse_root.state, coarse_root.audit
+        coarse_case,
+        coarse_probe,
+        coarse_root.state,
+        coarse_root.audit,
+        spike_window_m=spike_window_m,
     )
     fine_metrics, _ = finite_roller_metrics(
-        fine_case, fine_probe, fine_root.state, fine_root.audit
+        fine_case,
+        fine_probe,
+        fine_root.state,
+        fine_root.audit,
+        spike_window_m=spike_window_m,
     )
+    coarse_spike = coarse_metrics["outlet_centerline_pressure_spike"]
+    fine_spike = fine_metrics["outlet_centerline_pressure_spike"]
+    result["outlet_spike_location_change_m"] = (
+        None
+        if coarse_spike is None or fine_spike is None
+        else fine_spike["x_m"] - coarse_spike["x_m"]
+    )
+    result["outlet_spike_width_cells"] = (
+        None if fine_spike is None else fine_spike["half_prominence_width_cells"]
+    )
+    result["outlet_spike_width_m"] = (
+        None if fine_spike is None else fine_spike["half_prominence_width_m"]
+    )
+    if coarse_metrics["fixed_spike_window"] and fine_metrics["fixed_spike_window"]:
+        result["fixed_spike_window_centerline_pressure_integral_change_pa_m"] = (
+            fine_metrics["fixed_spike_window"]["centerline_pressure_integral_pa_m"]
+            - coarse_metrics["fixed_spike_window"]["centerline_pressure_integral_pa_m"]
+        )
+        result["fixed_spike_window_load_change_n"] = (
+            fine_metrics["fixed_spike_window"]["integrated_pressure_load_n"]
+            - coarse_metrics["fixed_spike_window"]["integrated_pressure_load_n"]
+        )
     result["pressure_centroid_y_change_m"] = float(
         fine_metrics["pressure_centroid_m"][1] - coarse_metrics["pressure_centroid_m"][1]
     )
@@ -527,7 +619,7 @@ def refinement_differences(coarse_case, coarse_root, fine_case, fine_root):
 
 
 def run_grid(output, nx, ny, previous=None):
-    budget = 20000 if nx * ny <= 20000 else 40000 if nx * ny <= 40000 else 100000
+    budget = physical_node_budget(nx, ny)
     roots, reports = {}, {}
     source_a = None if previous is None else previous["A"]
     root_a, report_a = solve_case(

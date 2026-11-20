@@ -34,8 +34,8 @@ case.
 Geometry selection is centralized in a configuration factory for circular
 point, elliptical point, classical infinite-line and finite profiled-roller
 geometries. The roller uses a common axial `g(y)` protocol, including
-cylindrical/no-crown and tabulated profiles; arbitrary callable profile laws
-can add parabolic or logarithmic crowns later. Axial tilt is a separate
+cylindrical, parabolic, circular, capped generic logarithmic and bounded
+tabulated profiles; arbitrary callable profile laws remain supported. Axial tilt is a separate
 additive `y*tan(alpha)` component, and the sum can accept future time-varying
 surface or roughness components. This does not implement a GUI/CLI solver
 dispatcher or transient/crowned-roller EHL.
@@ -46,6 +46,58 @@ the recorded test resolutions. It remains a finite 2-D point-contact solver.
 The portable test suite now collects without the POSIX `resource` module;
 peak-RSS telemetry remains available through `getrusage` where supported and
 is `null` where it is not.
+
+### Finite profiled-roller dry-contact milestone (2026-11-20)
+
+The Venner-ten Napel M=20, L=10 bulk regression is frozen at
+`9c30039b4d46acfa00136d7064dc3cffad8fbad5`. All five accepted local fields,
+profile tables and metadata remain unchanged; their checksums and storage
+limitation are recorded in [PHYSICS.md](PHYSICS.md). Load, conservation,
+complementarity, elasticity and bulk-grid contraction are numerically
+verified; the published **numerical** benchmark supports bulk pressure and
+film. Outlet and minimum film, spike width and exact spike amplitude remain
+unresolved; its 4097-node spike spans only 3.46 cells. No further uniform
+refinement is planned now, and this is not experimental validation.
+
+The new bounded finite-roller dry mode uses the shared profile/tilt geometry,
+the existing 2-D half-space FFT and force in N. The full axial cell span
+equals the specified roller length; x-boundary contact is rejected. Built-in
+cylindrical, parabolic, circular, capped generic logarithmic and bounded
+tabulated profiles are documented in [CONTACT_GEOMETRY.md](CONTACT_GEOMETRY.md).
+The logarithmic cap is explicitly not a manufacturer formula.
+
+For the reproducible 100 N, 1 mm long, parabolically crowned case, CUDA
+17x17, 33x33 and 65x65 approach is `1811.132, 1807.218, 1803.707 nm`;
+peak pressure is `958.19, 1246.95, 1685.32 MPa`. Force closure,
+complementarity at the existing KKT tolerance, independently reconstructed
+elasticity and symmetry pass; CPU/CUDA tilted pressure relative L2
+difference is `7.65e-15`. A wider rolling-direction domain changes pressure
+by `0.0173%` relative L2. The increasing end peak is explicitly unresolved,
+not a validated edge-stress prediction.
+
+At prescribed tilt `+/-0.003 rad`, reflected pressure fields agree to
+`7.75e-15` relative L2 and moment reverses at `+/-0.028053 N m`; the
+100 N load still closes. At positive tilt, `39.31% / 0%` of load falls in
+the negative/positive outer 10% length bands and the footprint no longer
+reaches the positive end. Edge fractions are grid-dependent. NumPy was
+`0.836 s` versus CUDA `0.886 s` for this small tilted case. The parabolic
+interior-contact limit agrees with elliptical Hertz to `0.0197%` in peak
+and `0.0315%` in approach. Detailed audits, plots and limitations are in
+[PHYSICS.md](PHYSICS.md).
+
+The CUDA-enabled Windows full suite reported `1018 passed, 1 skipped` in
+303.86 s, with three existing PyTorch warnings. After that run began, a
+large-radius solved-pressure comparison was added to an existing test; the
+updated finite-roller and geometry tests passed (`28 passed`). Unfiltered
+`ruff check .` reports the unrelated untracked `.kilo` E501 described below;
+`ruff check . --exclude .kilo` passes.
+
+**Remaining before finite-roller EHL:** independently assess finite-body
+end compliance and realistic end geometry; establish grid/edge convergence
+for any local stress or edge-load target; benchmark relevant pressure and
+film data and extend JFO/load audits to finite geometries. Prescribed tilt
+does not solve moment equilibrium. Do not infer transient, roughness,
+thermal or moment-controlled behavior from this dry half-space study.
 
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m
@@ -188,8 +240,8 @@ so no material GPU speedup is assumed beyond this measured case.
 Freeze the accepted M20 benchmark as a numerical regression baseline for
 bulk pressure/film and audited equations. This is not design-grade or
 experimental validation: outlet/minimum film and sharp spike metrics remain
-unresolved. Finite profiled-roller geometry development can begin separately,
-with dry-contact and geometry verification before coupled roller EHL. Do not
+unresolved. Finite profiled-roller dry-contact development is documented
+above; additional verification remains before coupled roller EHL. Do not
 infer crowned-roller, tilt, transient or thermal performance from this mode.
 Further local-resolution work is conditional on requiring sharp-feature
 outputs; do not start another uniform solve automatically.

@@ -173,3 +173,51 @@ def solve_dry_contact(
         f"{last_result.relative_kkt_residual:.3e}",
         last_result,
     )
+
+
+def solve_finite_roller_dry_contact(
+    x_m: ArrayLike,
+    y_m: ArrayLike,
+    geometry: ContactGeometry,
+    roller_length_m: float,
+    load_n: float,
+    e_star_pa: float,
+    *,
+    backend: Backend | None = None,
+    tolerance: float = 2e-6,
+    maximum_iterations: int = 20000,
+    memory_limit_bytes: int = 2**30,
+) -> DryContactResult:
+    """Solve dry contact on the finite roller's full cell-centred axial span.
+
+    The outer axial cell edges must coincide with ``+/-roller_length_m/2``.
+    No pressure exists beyond the modelled roller end. Elasticity remains a
+    two-dimensional half-space approximation rather than a finite-body model.
+    """
+    if (
+        isinstance(roller_length_m, bool)
+        or not math.isfinite(roller_length_m)
+        or roller_length_m <= 0.0
+    ):
+        raise ValueError("roller_length_m must be positive finite metres")
+    y = _uniform_axis(y_m, "y_m")
+    dy = float(y[1] - y[0])
+    edges = np.array([y[0] - dy / 2.0, y[-1] + dy / 2.0])
+    expected_edges = np.array([-roller_length_m / 2.0, roller_length_m / 2.0])
+    if not np.allclose(edges, expected_edges, rtol=1e-10, atol=0.0):
+        raise ValueError("axial cell edges must coincide with the finite roller ends")
+    result = solve_dry_contact(
+        x_m,
+        y,
+        geometry,
+        load_n,
+        e_star_pa,
+        backend=backend,
+        tolerance=tolerance,
+        maximum_iterations=maximum_iterations,
+        memory_limit_bytes=memory_limit_bytes,
+    )
+    pressure = result.pressure_pa
+    if bool((pressure[:, 0] > 0).any().item()) or bool((pressure[:, -1] > 0).any().item()):
+        raise RuntimeError("contact reaches a rolling-direction computational boundary")
+    return result

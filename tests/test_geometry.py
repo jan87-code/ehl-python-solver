@@ -7,10 +7,13 @@ from ehl_solver.backend import make_backend
 from ehl_solver.convolution import fft_convolve_same
 from ehl_solver.geometry import (
     AxialTiltGeometry,
+    CircularAxialProfile,
     CircularPointContactGeometry,
     CompositeContactGeometry,
     EllipticalPointContactGeometry,
     LineContactGeometry,
+    LogarithmicAxialProfile,
+    ParabolicAxialProfile,
     ProfiledRollerGeometry,
     TabulatedAxialProfile,
     contact_geometry_from_config,
@@ -146,6 +149,60 @@ def test_tabulated_axial_profile_is_bounded_and_interpolated():
     y = np.array([-1e-3, 0.0, 1e-3])
     expected = x[None, :] ** 2 / 0.02 + np.array([0.5e-6, 1e-6, 0.5e-6])[:, None]
     np.testing.assert_allclose(geometry.h_geom(x, y), expected)
+
+
+def test_analytic_crowns_are_symmetric_and_have_expected_local_curvature():
+    y = np.array([-1e-3, -1e-6, 0.0, 1e-6, 1e-3])
+    radius = 0.2
+    parabola = ParabolicAxialProfile(radius)(y)
+    circular = CircularAxialProfile(radius)(y)
+    np.testing.assert_array_equal(parabola, parabola[::-1])
+    np.testing.assert_array_equal(circular, circular[::-1])
+    assert circular[2] == 0.0
+    assert circular[3] == pytest.approx(parabola[3], rel=1e-10)
+    assert circular[-1] > parabola[-1]
+    with pytest.raises(ValueError, match="within the circular crown radius"):
+        CircularAxialProfile(radius)(np.array([radius * 1.01]))
+
+
+def test_capped_logarithmic_crown_has_finite_symmetric_end_relief():
+    half_length = 1e-3
+    scale = 2e-6
+    cap = 4e-6
+    profile = LogarithmicAxialProfile(half_length, scale, cap)
+    y = np.array([-half_length, -0.5 * half_length, 0.0, 0.5 * half_length, half_length])
+    values = profile(y)
+    np.testing.assert_allclose(values, values[::-1], atol=0)
+    assert values[2] == 0.0
+    assert values[3] == pytest.approx(-scale * np.log1p(-0.25))
+    assert values[-1] == cap
+    assert np.all(np.isfinite(values))
+    assert profile(np.array([np.nextafter(half_length, 0.0)]))[0] == cap
+    with pytest.raises(ValueError, match="outside the logarithmic profile length"):
+        profile(np.array([half_length * 1.01]))
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_type"),
+    [
+        ({"type": "parabolic", "radius_m": 0.2}, ParabolicAxialProfile),
+        ({"type": "circular", "radius_m": 0.2}, CircularAxialProfile),
+        (
+            {
+                "type": "logarithmic",
+                "half_length_m": 1e-3,
+                "scale_m": 2e-6,
+                "maximum_relief_m": 4e-6,
+            },
+            LogarithmicAxialProfile,
+        ),
+    ],
+)
+def test_geometry_config_selects_analytic_profiles(config, expected_type):
+    geometry = contact_geometry_from_config(
+        {"type": "profiled_roller", "radius_x_m": 0.01, "axial_profile": config}
+    )
+    assert isinstance(geometry.axial_profile_m, expected_type)
 
 
 def test_tilt_is_an_independent_additive_component_of_axial_profile():

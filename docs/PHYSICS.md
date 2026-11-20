@@ -12,10 +12,10 @@ an `(ny,nx)` grid. Current models include circular and elliptical parabolic
 point contacts, an axially invariant line-contact parabola, and a parabola
 with a caller-supplied axial profile `g(y)`. `CavitatingElasticityProblem`
 accepts the geometry interface; its default circular expression is bitwise
-regression-tested against the frozen point-contact baseline. The profile and
-profiled-roller models remain geometry inputs only; a distinct dry
-plane-strain line-contact verification mode is documented below. No finite
-crowned-roller EHL or tilted-contact validation is implied.
+regression-tested against the frozen point-contact baseline. Finite
+profiled-roller geometry now also feeds a separate dry-contact mode; a
+distinct dry plane-strain line-contact verification mode is documented
+below. No finite crowned-roller or tilted EHL validation is implied.
 
 The shared `contact_geometry_from_config` factory accepts circular point,
 elliptical point, classical infinite-line, and profiled-roller geometry
@@ -35,6 +35,73 @@ gap-closing. Dry contact is not coupled to Reynolds/JFO. Cell-centered
 pressure uses `sum(p)*dx*dy` force quadrature. See
 [`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md) for formulas, force/moment sign
 conventions, Hertz circular/elliptical evidence and current limitations.
+
+### Finite profiled-roller dry-contact verification
+
+The finite roller uses `h_geom=x**2/(2 Rx)+g(y)+y*tan(alpha)` and the existing
+load-controlled half-space dry solver. The axial cell edges coincide with the
+finite roller ends, so pressure is confined to the physical axial span; the
+solver rejects contact at its computational x edges. This is a finite
+*pressure-support* model on elastic half-spaces, not a finite-body elasticity
+model. Profile formulas, truncation and force/moment signs are specified in
+[`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md).
+
+The reproducible CPU-audited CUDA study
+`examples/run_finite_roller_dry_verification.py` uses `Rx=10 mm`,
+`E*=113 GPa`, `F=100 N`, roller length `1 mm`, a parabolic axial crown radius
+of `1 m`, and `x` half-domain `0.4 mm`. Each grid spans the full length;
+the axial ends remain fixed. The following footprint area is the sum of
+cell areas with pressure exceeding `1e-8` of the grid peak.
+
+| Grid (ny,nx) | Approach [nm] | Peak pressure [MPa] | Footprint [mm^2] | Scaled KKT |
+|---|---:|---:|---:|---:|
+| 17x17 | 1811.132 | 958.192 | 0.2500 | `1.44e-6` |
+| 33x33 | 1807.218 | 1246.954 | 0.2250 | `1.22e-6` |
+| 65x65 | 1803.707 | 1685.316 | 0.2140 | `1.94e-6` |
+
+At 65x65, load closes to `2.22e-16` relative, pressure is nonnegative, and
+the KKT test includes gap feasibility and active-contact stationarity. A
+separately computed CPU direct cell-kernel convolution agrees with CUDA FFT
+displacement to `1.64e-15` relative maximum, reconstructs the gap within
+`2.97e-21 m`, and finds minimum gap `-1.58e-11 m` at the finite KKT tolerance.
+Pressure symmetry errors in x and y are below `6.4e-15` relative L2, and
+`Mx` is zero to rounding. These are discrete audits, not exact continuum
+complementarity.
+
+On the identical 65-row grid and x spacing, extending the x half-domain from
+`0.4` to `0.5 mm` (65 to 81 x cells) changes pressure by `0.0173%` relative
+L2 and approach by `0.00123 nm`. The KKT scale depends on the maximum
+geometric gap, so this is an observed sensitivity at the stated stopping
+tolerance, not a rigorous domain error. The approach and footprint area
+change less between successive grids; however peak pressure increases
+strongly with refinement, and edge-band loads vary with discrete band
+sampling. No converged end peak or universal grid-error estimate is claimed.
+
+For `alpha=+/-0.003 rad`, load remains `100 N`, `Mx=+/-0.028053 N m`
+and the reflected pressure fields agree to `7.75e-15` relative L2.
+For positive tilt, the pressure centroid moves from zero to `-0.2805 mm`,
+the sampled footprint spans `y=-0.4923` to `+0.3231 mm` instead of both
+ends, and its area is `0.1669 mm^2`. In the fixed outer bands
+`abs(y)>=0.4 mm`, the negative/positive end carries `39.31% / 0%` of the
+load; reversing tilt reverses these values. The untilted crown carries
+`15.09%` at each end. These band fractions and especially peak pressure are
+grid-dependent discrete indicators, not verified edge stresses.
+
+At 65x65 and positive tilt, NumPy and CUDA pressures agree to `7.65e-15`
+relative L2, with direct CPU elasticity discrepancy `9.93e-16`. The
+measured CUDA solve took `0.886 s`, versus `0.836 s` for NumPy on this
+machine; no speedup is claimed. The matching parabolic-profile elliptical
+Hertz case at 65x65 has peak and approach errors of `+0.0197%` and
+`-0.0315%`, with no end contact. Zero tilt is bitwise identical to the
+untilted solve; large crown radii tend to the cylindrical geometry.
+
+Figures and tables are local ignored outputs in
+[`../results/finite_roller_dry_20261120_v3/`](../results/finite_roller_dry_20261120_v3/).
+Reproduce them with
+`python examples/run_finite_roller_dry_verification.py --output-dir <new-directory> --backend cuda`.
+They verify a bounded dry half-space calculation and prescribed tilt; they do
+not validate finite-roller EHL, end-face compliance, design-grade peak
+pressure or moment-controlled tilt.
 
 ### Dry plane-strain line-contact verification mode
 
@@ -589,6 +656,27 @@ These result files are ignored, not stored in Git; the recorded hashes
 identify this local reference but do not supply a portable full-field
 regression fixture. The existing benchmark input/property tests and new
 analysis tests run without those result files.
+
+The line-contact bulk numerical baseline is frozen at commit
+`9c30039b4d46acfa00136d7064dc3cffad8fbad5`. The five local result directories
+remain untouched; the following SHA-256 values identify the saved fields and
+metadata, but do not themselves archive the files:
+
+| Nodes | Result directory under `results/` | `solution.npz` SHA-256 |
+|---:|---|---|
+| 257 | `line_ehl_m20_newton_257_finalized` | `2a930988a23ee04462fc935c9eb24cc700a4e80b16ce19a82a6d501ded6029fd` |
+| 513 | `line_ehl_m20_newton_513_refine_v3` | `192d6f90569ec5b4f8c6e1b8ff52ce78d67ded06ea87d881caad4e75385e913b` |
+| 1025 | `line_ehl_m20_newton_1025_refine_v1` | `32d6be2997f5a9aee2a575ddf2aebd33a51b3be277e44d45fe1518dc9ec31151` |
+| 2049 | `line_ehl_m20_newton_2049_refine_v1` | `2f91b8939764c3cf070068537fcaea0ac2eafaf3a06c63e0e70e37a970c1cdbc` |
+| 4097 | `line_ehl_m20_newton_4097_refine_v1` | `4f154b3ef6b28b6b4f8806ce7fbf0cc033719860de8a571c75f49205dafced73` |
+
+| Nodes | `summary.json` SHA-256 | `profiles.csv` SHA-256 |
+|---:|---|---|
+| 257 | `bea064bc8c6f3160c655b03b743fef7ed7ad5734633a41f69766163e216b826c` | `dba87a0978a059a81ee7cb3c00810e69734473807da75883697ff4a2670a87ec` |
+| 513 | `08e464c85a5f8a6d3e273bebe7fbfad9556ce0ce69de4d939f5f8ca0e9b9f686` | `e8d469358147d18a9655593430ca478a513a350d4f9d977ef16dd8fa780e2f52` |
+| 1025 | `d1a68ba71c88be8172cf59d8d44035379b5ce3d8ea90a9997513d7ffb3631e8b` | `e7bdab2cfaa088e0fe41ba6314f30e7164cd4ff936bf7e70feb2ca8e9ae93718` |
+| 2049 | `348bbc7a2fdfbd798de3f7b13f3cd5b23b80a67cbde2556beef3b3bcbf2895b4` | `fd2f8e4d091e2104d2bd05c88db20c1e026a305953f7ca3fff38edceb104bb98` |
+| 4097 | `359558f05033ac77b6b1df6d758f4d1a7ca33532791a463b262f1af4c83b3363` | `01564738313643e2506f82759f1e7c0910ae2bfa7219a388ca8f31e6e79fc309` |
 
 Analysis tables and figures are saved under
 [`../results/line_ehl_m20_grid_analysis_corrected_v2/`](../results/line_ehl_m20_grid_analysis_corrected_v2/);

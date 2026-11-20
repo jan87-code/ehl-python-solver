@@ -17,7 +17,8 @@ and output. The currently available implementations are:
 - `EllipticalPointContactGeometry`: `x**2/(2Rx) + y**2/(2Ry)`.
 - `LineContactGeometry`: `x**2/(2Rx)`, invariant in `y`.
 - `ProfiledRollerGeometry`: `x**2/(2Rx) + g(y)` for a caller-supplied axial
-  profile function.
+  profile function. A dry finite-roller solver uses the same component and
+  requires explicit physical roller length as a separate mechanical input.
 
 `contact_geometry_from_config` is the shared case-input factory for
 `circular_point`, `elliptical_point`, `classical_line`, and `profiled_roller`
@@ -30,9 +31,8 @@ The profiled-roller `g(y)` contract is the `AxialProfile` callable protocol.
 No profile or a `cylindrical` profile means `g(y)=0`; `TabulatedAxialProfile`
 linearly interpolates user-supplied or measured `(y_m, g_m)` values and rejects
 queries outside their tabulated range. Arbitrary callable profiles can also
-be supplied. Built-in circular/parabolic crown and logarithmic profile laws
-are intentionally not added yet; they can implement the same protocol without
-changing `ProfiledRollerGeometry`.
+be supplied. Built-in `ParabolicAxialProfile`, `CircularAxialProfile`, and
+`LogarithmicAxialProfile` use the same interface.
 
 `AxialTiltGeometry` is a distinct additive component, `h_tilt(y)=y*tan(alpha)`,
 and is never folded into `g(y)`. The case-input factory currently permits
@@ -47,10 +47,9 @@ terms.
 
 `CavitatingElasticityProblem` accepts this geometry interface and retains its
 legacy radii inputs for compatibility. `LineContactGeometry` is used by the
-separate dry plane-strain line-contact mode below. `ProfiledRollerGeometry`
-remains a geometry interface only; no finite crowned-roller EHL solver is
-implemented. Tilt is available as geometry composition but has not been
-independently validated in a coupled solver.
+separate dry plane-strain line-contact mode below. No finite crowned-roller
+EHL solver is implemented. Tilt is composed independently from the profile;
+its dry-contact verification does not validate tilted EHL.
 
 `integrate_contact_pressure` provides the shared force and contact-moment
 hooks for cell-centered pressure fields. For positive compressive pressure
@@ -58,6 +57,83 @@ acting in `-z`, it returns `F=integral(p dA)`,
 `Mx=-integral(y p dA)`, and `My=integral(x p dA)` about the coordinate
 origin. The current dry solver uses rectangular cell-area quadrature, not
 nodal trapezoidal integration.
+
+### Axial profile conventions and case inputs
+
+All coordinates, radii, lengths and reliefs are in metres. The independent
+profile and tilt are added to the rolling-direction parabola:
+
+```text
+h_geom(x,y) = x**2/(2 Rx) + g(y) + y*tan(alpha)
+```
+
+The built-in profiles are `g(y)=0` for cylindrical,
+`g(y)=y**2/(2 R_y)` for parabolic, and
+`g(y)=R_y-sqrt(R_y**2-y**2)` for circular, evaluated in a
+cancellation-resistant equivalent form. The circular profile requires
+`abs(y)<=R_y`. Both approach zero axial relief as `R_y` grows. Tabulated
+profiles use linear interpolation strictly inside the supplied coordinate
+range; no extrapolation or imposed symmetry is performed.
+
+The generic logarithmic profile has physical half-length `a`, relief scale
+`c`, and maximum end relief `g_max`:
+
+```text
+g(y) = min(-c*log(1-(y/a)**2), g_max),  abs(y)<a
+g(+/-a) = g_max
+```
+
+It rejects `abs(y)>a`, is even, has zero centre relief, and reaches a finite
+plateau at each end. Its centre has `g(y) ~ c*(y/a)**2`; the cap creates a
+slope discontinuity at its onset. This is a generic, explicitly capped
+convention, not a manufacturer-specific crown.
+
+Examples passed directly to `contact_geometry_from_config`:
+
+```python
+circular = {"type": "circular_point", "radius_m": 0.01}
+elliptical = {"type": "elliptical_point", "radius_x_m": 0.01, "radius_y_m": 0.06}
+line = {"type": "classical_line", "radius_x_m": 0.01}
+cylinder = {
+    "type": "profiled_roller", "radius_x_m": 0.01,
+    "axial_profile": {"type": "cylindrical"},
+}
+crowned = {
+    "type": "profiled_roller", "radius_x_m": 0.01,
+    "axial_profile": {"type": "parabolic", "radius_m": 1.0},
+}
+tilted = {**crowned, "axial_tilt_rad": 1e-4}
+arc = {"type": "circular", "radius_m": 1.0}
+logarithmic = {
+    "type": "logarithmic", "half_length_m": 0.0005,
+    "scale_m": 1e-7, "maximum_relief_m": 5e-7,
+}
+measured = {
+    "type": "tabulated", "y_m": [-0.0005, 0.0, 0.0005],
+    "height_m": [1e-7, 0.0, 1e-7],
+}
+```
+
+The last three mappings are alternatives for `axial_profile` in the
+`profiled_roller` configuration. Infinite-line contact uses its separate
+plane-strain solver and N/m load. Finite rollers use total load in N.
+
+### Finite-roller dry-contact boundary convention
+
+`solve_finite_roller_dry_contact` reuses `solve_dry_contact`, with the same
+nonnegative-pressure simplex, fixed total load and KKT convergence gate.
+The caller supplies `roller_length_m`; the full axial grid consists of
+uniform cell centres whose outer **cell edges** coincide with
+`y=+/-roller_length_m/2`. Pressure is supported only on this finite span.
+Contact reaching either computational `x` edge raises an error. Contact at an
+axial end is allowed and reported as edge loading, not treated as an
+artificial zero-pressure boundary.
+
+The elasticity is the existing 2-D semi-infinite half-space operator; a real
+finite roller's end-face elastic compliance is **not** represented. Axial
+grid refinement keeps the same physical span. Rolling-direction domain
+changes must keep the active footprint away from its computational edges.
+No moment balance, finite-body elasticity, or finite-roller EHL is implied.
 
 ## Dry elastic contact
 
@@ -251,6 +327,6 @@ substantially from Figure 5; minimum film is not validated.
 
 The reported `outlet_constriction_film_m` is the minimum film value over
 `x>=0.5b`, not a local-minimum detector. It can therefore exceed the global
-minimum when the film is increasing throughout that outlet window. Finite
-crowned rollers, tabulated measured profiles, tilt-coupled EHL, transient
-EHL and thermal behavior remain out of scope.
+minimum when the film is increasing throughout that outlet window. Finite-roller EHL, tilt-coupled EHL, transient EHL and thermal
+behavior remain out of scope; bounded tabulated geometry and finite-roller
+dry contact do not implement those extensions.

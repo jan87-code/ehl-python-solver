@@ -130,6 +130,73 @@ class ZeroAxialProfile:
 
 
 @dataclass(frozen=True)
+class ParabolicAxialProfile:
+    """Parabolic axial relief ``g(y)=y**2/(2*radius_m)``."""
+
+    radius_m: float
+
+    def __post_init__(self):
+        object.__setattr__(self, "radius_m", _positive_finite(self.radius_m, "radius_m"))
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        return y**2 / (2.0 * self.radius_m)
+
+
+@dataclass(frozen=True)
+class CircularAxialProfile:
+    """Circular-arc axial relief ``R-sqrt(R**2-y**2)``."""
+
+    radius_m: float
+
+    def __post_init__(self):
+        object.__setattr__(self, "radius_m", _positive_finite(self.radius_m, "radius_m"))
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        ratio = np.abs(y) / self.radius_m
+        if np.any(ratio > 1.0):
+            raise ValueError("axial coordinates must lie within the circular crown radius")
+        return np.abs(y) * ratio / (1.0 + np.sqrt((1.0 - ratio) * (1.0 + ratio)))
+
+
+@dataclass(frozen=True)
+class LogarithmicAxialProfile:
+    """Capped generic logarithmic relief on ``[-half_length_m, half_length_m]``."""
+
+    half_length_m: float
+    scale_m: float
+    maximum_relief_m: float
+
+    def __post_init__(self):
+        for name in ("half_length_m", "scale_m", "maximum_relief_m"):
+            object.__setattr__(self, name, _positive_finite(getattr(self, name), name))
+
+    def __call__(self, y_m: NDArray[np.float64]) -> NDArray[np.float64]:
+        y = np.asarray(y_m, dtype=np.float64)
+        if y.ndim != 1 or not np.all(np.isfinite(y)):
+            raise ValueError("y_m must be a finite 1-D axial coordinate array")
+        absolute = np.abs(y)
+        if np.any(absolute > self.half_length_m):
+            raise ValueError("axial coordinates lie outside the logarithmic profile length")
+        interior = absolute < self.half_length_m
+        relief = np.full_like(y, self.maximum_relief_m)
+        ratio = absolute[interior] / self.half_length_m
+        log_distance = np.empty_like(ratio)
+        near_center = ratio <= 0.5
+        log_distance[near_center] = np.log1p(-ratio[near_center] ** 2)
+        log_distance[~near_center] = np.log(
+            (self.half_length_m - absolute[interior][~near_center]) / self.half_length_m
+        ) + np.log1p(ratio[~near_center])
+        relief[interior] = np.minimum(-self.scale_m * log_distance, self.maximum_relief_m)
+        return relief
+
+
+@dataclass(frozen=True)
 class TabulatedAxialProfile:
     """Linearly interpolate measured or user-supplied ``(y,g(y))`` data.
 
@@ -260,8 +327,8 @@ def contact_geometry_from_config(config: Mapping[str, object]) -> ContactGeometr
 
     Supported ``type`` values are ``circular_point``, ``elliptical_point``,
     ``classical_line`` and ``profiled_roller``. A profile mapping can select
-    ``cylindrical`` or ``tabulated``; Python callers may also provide a
-    callable ``AxialProfile`` object.
+    ``cylindrical``, ``parabolic``, ``circular``, ``logarithmic`` or
+    ``tabulated``; Python callers may also provide a callable ``AxialProfile``.
     ``axial_tilt_rad`` is an independent additive component, never part of
     ``g(y)``.
     """
@@ -340,6 +407,19 @@ def _axial_profile_from_config(config: object) -> AxialProfile | Callable:
     if profile_type == "cylindrical":
         _reject_unknown_fields(values, set())
         return ZeroAxialProfile()
+    if profile_type in {"parabolic", "circular"}:
+        _reject_unknown_fields(values, {"radius_m"})
+        radius = _positive_config_value(values, "radius_m")
+        if profile_type == "parabolic":
+            return ParabolicAxialProfile(radius)
+        return CircularAxialProfile(radius)
+    if profile_type == "logarithmic":
+        _reject_unknown_fields(values, {"half_length_m", "scale_m", "maximum_relief_m"})
+        return LogarithmicAxialProfile(
+            _positive_config_value(values, "half_length_m"),
+            _positive_config_value(values, "scale_m"),
+            _positive_config_value(values, "maximum_relief_m"),
+        )
     if profile_type == "tabulated":
         _reject_unknown_fields(values, {"y_m", "height_m"})
         y_m = _required_config_value(values, "y_m")

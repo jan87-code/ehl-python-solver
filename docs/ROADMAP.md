@@ -141,6 +141,41 @@ unavoidable, compare with finite-body/FE compliance before relying on
 half-space end loads. Continue to defer finite-roller EHL, moment equilibrium,
 transience, roughness and thermal modeling.
 
+### Bounded relief/tilt follow-up
+
+The requested smooth-relief matrix now has a **conditional dry-contact
+gate pass**, not a blanket validation for every tilt. At 0, 0.0001, 0.00025
+rad, the smallest sampled relief passing the extended peak-trend check is
+2000 nm. At 0.0005 rad the best two-grid candidate has a persistent
+increasing end-window peak over four grids, so the gate is unresolved. At
+0.001 and 0.003 rad no tested profile/zone/relief passes. These are sampled,
+coarse-screened minima, not continuous thresholds or proof that every
+unsampled profile fails.
+
+At 0.00025 rad a parabolic 10%-length C1 end blend with 2000 nm end relief
+passes the stated force, KKT, edge-clearance, end-load and stability
+criteria on four axial grids. Its final clearances are 62.5/80.5
+micrometres, with no load in either outer 2% band. The global peak remains
+unresolved under the requested strict increasing-`p_max` rule. The explicit
+peak-change and trend checks and all data are in
+[PHYSICS.md](PHYSICS.md). A 1500 nm near-threshold profile and the best
+2000 nm high-tilt profiles remain boundary-attached under refinement.
+
+Relief scale controls the observed attachment transition; profile and
+blend-zone shape still affect local pressure and acceptance. The 3 mrad
+tilt creates a 1.5 micrometre centre-to-end gap difference, much larger
+than the earlier 125 nm relief. Half-space elasticity is a viable
+**conditional numerical starting point** for the detached low-tilt case,
+but its finite-body accuracy, realistic geometry and experimental relevance
+remain unproven. Do not start finite-roller EHL in this milestone; for
+boundary-attached high-tilt cases, compare finite-body/FE compliance rather
+than treating the half-space end peak as validated.
+
+The CUDA-enabled full suite reported `1034 passed, 1 skipped` with three
+existing PyTorch warnings; focused relief/tilt tests reported `10 passed`.
+Unfiltered `ruff check .` still reports the unrelated untracked `.kilo`
+E501; the repository check excluding `.kilo` passes.
+
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m
 line-load conventions, and Hertz pressure/width/approach references. The

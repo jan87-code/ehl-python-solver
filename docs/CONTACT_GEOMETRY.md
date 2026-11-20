@@ -103,6 +103,18 @@ parameters that cannot satisfy the implemented monotonicity bound. This is
 a C1 blend, not a manufacturer profile. Tabulated profiles remain
 piecewise-linear and may have derivative discontinuities.
 
+The relief/tilt study also uses a study-specific smooth parabolic blend.
+For `s=abs(y)/a`, its inner profile is `g=G*s**2` up to `s0`; the same
+Hermite formula above connects `g0=G*s0**2` and `d0=2*G*s0` to
+`g(1)=G`, `dg/ds(1)=0`. For each logarithmic or parabolic profile the
+blend extends across `q` of the *full* roller length at each end, so
+`s0=1-2q`. It is C1, not necessarily C2, and changes neither the independent
+prescribed tilt nor the half-space elasticity. The inner portion still has
+relief; `q` describes the blend zone, not a flat central region. The
+logarithmic scale in this comparison is `c/G=1/(-log(1-0.9**2))`, keeping
+the earlier generic logarithmic shape while varying relief. No manufacturer
+formula is implied.
+
 Examples passed directly to `contact_geometry_from_config`:
 
 ```python

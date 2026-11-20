@@ -192,6 +192,121 @@ They are numerical half-space evidence, not experimental or finite-body
 validation. The explicit decision gate and next action are in
 [ROADMAP.md](ROADMAP.md).
 
+### Smooth relief and tilt parameter study
+
+The fixed `100 N`, `1 mm` roller and `E*=113 GPa` half-space case above is
+also screened over tilts 0, 0.0001, 0.00025, 0.0005, 0.001 and 0.003 rad
+and end reliefs 125, 250, 500, 1000, 1500 and 2000 nm. At `0.003 rad`,
+tilt alone changes the gap by `a*tan(alpha)=1.5000 micrometres` between the
+centre and one end: the former 125 nm relief is much smaller than this.
+Smooth logarithmic and smooth parabolic blends each cover the outer 10%,
+20% or 30% of full roller length, with the cylinder as zero-relief control.
+Their exact definitions and C1 limitations are in
+[CONTACT_GEOMETRY.md](CONTACT_GEOMETRY.md).
+
+The reproducible command is
+`python -m examples.run_roller_relief_tilt --output-dir <new-directory>`.
+All cases use CUDA, `(ny,nx)=(257,49)` for screening, and independent CPU
+FFT reconstruction plus five sampled direct-influence sums. Candidate
+minimum reliefs are checked on `(513,49)`; CPU/CUDA and a `(513,65)`
+rolling-resolution comparison and a third `(1025,49)` grid are performed
+for one selected candidate. Each tilt's widest-clearance two-grid candidate
+is also checked on a third grid, and on a fourth `(2049,49)` when its
+end-window peak increases twice in succession. Two 1500 nm near-threshold screens and all 12
+profiles/zones at 2000 nm for the two highest tilts are also refined to
+`(513,49)`. The measured run has 265 CUDA fields: 222 screens, 20 candidate
+refinements, 14 diagnostic refinements, three rolling-grid checks and six
+additional axial grids. Two extra rolling checks are earlier candidates; the
+final selection uses partial-cell end-peak handling.
+For each fixed end band, the reported force includes fractional cell
+overlaps; force in N is the pressure integral over that window. Contact-edge
+distance counts fully inactive rows to the physical end, using strictly
+positive cell pressure rather than the separate `1e-8*p_max` footprint
+display threshold. The end-window peak includes any cell intersecting the
+window, even if its centre lies outside.
+
+The explicit discrete screen requires at least five empty rows at *each*
+end, less than 0.5 N in each outermost row, and less than 2 N in each outer
+2% band. Both grids must meet this conservative screen. The two-grid
+stability checks use <=1% approach change, <=0.001 N m moment change,
+<=10 micrometres centroid change and <=1 N change in each 2%, 5% and 10%
+end-window load. To avoid mistaking roundoff or a marginal grid shift for
+systematic peak growth, an end-window nodal peak must not increase by more
+than 1% plus 1 MPa. Two grids only bound the observed change; they cannot
+prove asymptotic convergence. In addition, the extended check rejects two
+successive increases in either end-window peak; if this happens on the
+first three grids, it checks a fourth grid and applies the same test to
+the last three. A boundary-attached or increasing nodal `p_max` remains
+unresolved even if integrated measures pass.
+
+Among the sampled reliefs, the smallest passing value after the extended
+trend check of the widest-clearance two-grid candidate is:
+
+| Tilt [rad] | Smallest sampled, verified relief [nm] | Checked C1 blend (zone) |
+|---:|---:|---|
+| 0 | 2000 | log 30% |
+| 0.0001 | 2000 | log 30% |
+| 0.00025 | 2000 | parabolic 10% |
+| 0.0005 | unresolved | parabolic 10% fails peak trend |
+| 0.001 | none passed | all 2000 nm blends contact end |
+| 0.003 | none passed | all 2000 nm blends contact end |
+
+These are discrete sampled thresholds, not continuous minimum-relief
+estimates. Values at and below 1500 nm did not pass the coarse screen.
+Every 2000 nm profile remains boundary-attached at both 0.001 and 0.003 rad
+on the 513-row grid. At zero tilt the
+1500 nm, 10%-zone log has only `0.070 N` in each outer 2% band at 513
+rows but still touches both ends; its end-window peak rises
+`463 -> 562 MPa`. At 0.001 rad and 2000 nm the same blend still touches
+the negative end on both grids; its end-window peak rises
+`527 -> 733 MPa`. At 0.003 rad it remains boundary-attached, negative-end
+2% load is `3.75 N`, outermost-row load `1.30 N`, and peak rises
+`2871 -> 4107 MPa`. These are unresolved nodal peaks, not material stress
+predictions.
+
+The strongest-tilt verified candidate is the parabolic 10%-zone, 2000 nm
+blend. Its centre parabola corresponds to `Ry=62.5 mm`; the end blend
+is a different C1 profile, at `0.00025 rad`. For axial rows
+257 -> 513 -> 1025 -> 2049, negative and positive end clearances
+are `62.26/81.71 -> 62.38/79.92 -> 62.44/80.00 -> 62.47/80.53`
+micrometres (16/21 -> 32/41 -> 64/82 -> 128/165 cells). Outermost rows
+and both 2% and 5% bands carry zero; 10% loads change from
+`1.05182/0.28151` to `1.05177/0.28213` to `1.05168/0.28176` to
+`1.05177/0.28167 N`. Approach is `2489.031 -> 2489.030 -> 2489.034 ->
+2489.034 nm`; final moment is `0.001483149 N m` and centroid
+`-14.8315 micrometres`. The two end-window peaks [MPa] are
+`463.41/327.46 -> 466.16/328.01 -> 465.84/328.61 -> 465.78/328.42`.
+The final grid reverses the positive-end increasing trend; the stated gate
+passes without claiming asymptotic convergence. Global nodal `p_max` is
+`800.87873 -> 800.87573 -> 800.87623 -> 800.87657 MPa`; it remains
+**unresolved** under the requested strict increasing-`p_max` rule. Its
+finest location is `(x,y)=(0,-15.62) micrometres`.
+
+At `0.0005 rad` the same profile detaches and passes the two-grid
+finite-change thresholds, but its positive-end window peak grows
+`228.15 -> 229.15 -> 229.23 -> 229.96 MPa`. The end-peak trend gate is
+therefore unresolved, despite stable integrated 10% loads near
+`1.6145/0.0747 N` and 2049-row clearances `50.76/89.31 micrometres`.
+
+The result is sensitive to shape as well as scale. For example, at
+0.0005 rad, 125 nm parabolic/log 10%-zone cases remain boundary-attached
+with about 7.1 N in the loaded outer 2% band; at 2000 nm both detach.
+However the 2000 nm log 20%-zone case has only 0.157 N in its loaded 10%
+band, but its partial-cell end peak increases `248.14 -> 257.91 MPa` and
+therefore fails the two-grid peak criterion. A low integrated band load
+alone is not a pass. Changing relief scale dominates the transition seen
+here, but profile/zone shape materially changes local loads and the gate.
+
+Across all 265 CUDA fields, independent CPU load error is at most
+`5.69e-14 N`, KKT at most `1.99997e-6`, CPU FFT displacement discrepancy
+at most `1.02e-15`, and sampled direct-influence discrepancy at most
+`5.06e-16`. For the selected candidate, CPU/CUDA pressure differs by
+`3.11e-14` relative L2; the 49 versus 65 rolling-grid integrated pressure
+profile differs by `1.11%` relative L2 at 513 axial rows. These establish
+discrete half-space consistency, not finite-body validity. Complete per-case
+metrics, fields, a CSV report and a screening plot are in local ignored
+[`../results/roller_relief_tilt_20261120/`](../results/roller_relief_tilt_20261120/).
+
 ### Dry plane-strain line-contact verification mode
 
 The separate `solve_dry_line_contact` mode uses one rolling-direction grid

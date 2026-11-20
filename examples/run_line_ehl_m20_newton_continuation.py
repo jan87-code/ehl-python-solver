@@ -513,7 +513,12 @@ def _build_reference_comparison(case, hertz, solution, features):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--nodes", type=int, choices=(257, 513, 1025), default=257)
+    parser.add_argument(
+        "--nodes",
+        type=int,
+        choices=(257, 513, 1025, 2049, 4097),
+        default=257,
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--refine-from", type=Path)

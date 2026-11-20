@@ -214,12 +214,13 @@ acceptance gate or an exact matched reference for the solver's Roelands and
 Dowson-Higginson property laws. A dimensionless M=20, L=10 published case is
 configured in `examples/run_line_ehl_physical_diagnostics.py` and has now
 been reached with the fixed-input, CUDA/CPU-SuperLU Newton continuation in
-`examples/run_line_ehl_m20_newton_continuation.py`. Accepted 257-, 513- and
-1025-node roots, CPU audits and digitized Figure 5/6 comparisons are recorded
-in `PHYSICS.md`. This closes the earlier high-pressure continuation blocker,
-not the physical-validation phase: the outlet-film discrepancy and sharp
-spike resolution remain open, and the publication's cavitation treatment is
-not the solver's JFO closure.
+`examples/run_line_ehl_m20_newton_continuation.py`. Accepted 257-, 513-,
+1025-, 2049- and 4097-node roots, CPU audits and digitized Figure 5/6
+comparisons are recorded in `PHYSICS.md`. This closes the high-pressure
+continuation and bulk-grid questions, not all validation questions: bulk
+film and pressure show agreement with a published numerical benchmark, while
+outlet/minimum-film agreement and sharp spike resolution remain open. The
+publication's cavitation treatment is not the solver's JFO closure.
 
 ### Limits
 
@@ -229,7 +230,9 @@ Roelands/Dowson-Higginson fluid, plane-strain elastic datum and fully
 developed infinite line assumptions limit physical claims. The fixed-input
 Venner-ten Napel `M=20,L=10` case is now accepted and compared with the
 digitized pressure/film profiles; see `PHYSICS.md` and `ROADMAP.md` for the
-continuation evidence, regional comparison and remaining limitations.
+five-grid evidence, regional comparison and remaining limitations. Freeze
+the case as a bulk/profile regression baseline, not design-grade or
+experimental physical validation.
 Pressure-spike width and other
 sharp local features remain unresolved despite bulk load closure. The former
 outlet-spike detector searched only at `x>b`; this excluded the published
@@ -237,10 +240,14 @@ Venner-ten Napel spike near `x/b=0.9035`. The corrected diagnostic searches
 for the most prominent local maximum at `x>=0.5b` with prominence at least
 0.1% of the global pressure maximum. Width is measured at half prominence and
 the pressure integral is over that interpolated interval. It is a grid
-diagnostic, not a physical acceptance gate. The accepted 4097-node field was
-re-analyzed with the corrected search and still has no qualifying outlet
-maximum; prior coarser-grid “not detected” records used the incomplete search
-region and must not be interpreted as evidence of spike convergence.
+diagnostic, not a physical acceptance gate. The earlier low-pressure
+4097-node field was re-analyzed with the corrected search and still has no
+qualifying outlet maximum; that result is distinct from M20, where a feature
+is detected but remains grid-sensitive. Prior coarser-grid “not detected”
+records used the incomplete search region and must not be interpreted as
+evidence of spike convergence. The M20 4097-node width spans 3.46 cells and
+changes by about 30% from 2049 nodes. Outlet film is grid-stable but differs
+substantially from Figure 5; minimum film is not validated.
 
 The reported `outlet_constriction_film_m` is the minimum film value over
 `x>=0.5b`, not a local-minimum detector. It can therefore exceed the global

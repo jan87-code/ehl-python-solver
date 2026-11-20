@@ -139,11 +139,13 @@ reached by `examples/run_line_ehl_m20_newton_continuation.py`. The
 when a tightened GMRES retry was rejected despite an independently measured
 true residual. A bounded inexact-Newton forcing threshold and restart-120
 GMRES resolved that Krylov gate without changing the endpoint equations or
-physical inputs. Accepted 257-, 513- and 1025-node roots close
-`302642.095760196 N/m`; the 1025-node relative local/global mass defects are
-`2.33e-11 / 7.27e-15`, complementarity is `4.65e-28`, and direct-elasticity
-relative discrepancy is `6.76e-16`. The 513- and 1025-node refinements use
-interpolated accepted coarser-grid states and restart-240 GMRES.
+physical inputs. Accepted 257-, 513-, 1025-, 2049- and 4097-node roots close
+`302642.095760196 N/m`. The 4097-node saved-root audit gives relative
+local/global mass defects `6.53e-11 / 1.63e-14`, complementarity
+`6.78e-29`, direct-elasticity discrepancy `8.11e-16`, and film-reconstruction
+error `6.78e-21 m`. The refinements use interpolated accepted coarser-grid
+states and restart-240 GMRES. The 2049- and 4097-node solves used CUDA
+residual/JVP/elasticity, CPU SuperLU and independent CPU audits.
 
 The continuation parameter is target line load only; full M=20, L=10
 rheology, elasticity, geometry, datum and boundary conditions stay fixed.
@@ -154,25 +156,28 @@ unchanged. Current continuation runs now retain per-correction GMRES true and
 estimated residual histories, heartbeat progress and indexed non-finite
 failure-stage diagnostics; older accepted field summaries are not rewritten.
 
-The measured `h_c` sequence is `283.268, 285.147, 285.508 nm`; `h_min` is
-`247.225, 249.698, 250.444 nm`. Bulk pressure/film profiles contract to
-`0.00516% / 0.127%` relative L2 change from 513 to 1025 nodes, while
-outlet pressure changes by `4.06%`. The detected sharp spike remains
-unresolved: its 513-to-1025 location moves from `x/b=0.88770` to `0.89844`,
-normalized amplitude from `0.72188` to `0.87839`, and width from `3.128` to
-`0.977 um`.
+The measured `h_c` sequence is `283.268, 285.147, 285.508, 285.599,
+285.622 nm`; `h_min` is `247.225, 249.698, 250.444, 250.700, 250.773 nm`.
+From 2049 to 4097, bulk pressure/film change by `0.000553% / 0.00795%`
+relative L2, while outlet pressure/film change by `1.769% / 0.0112%`.
+The fixed-window total pressure integral changes by `0.065%`, but the sharp
+spike remains unresolved: its half-prominence width changes from `0.662` to
+`0.858 um` (1.34 to 3.46 cells) and its interval pressure integral from
+`565.2` to `704.6 Pa m`. The initial one-cell feature justified 2049; its
+continuing sensitivity justified 4097. No 8193 solve is authorized
+automatically.
 
-At 1025 nodes, Figure 5 bulk-film RMSE/bias/max are `9.28/-9.01/13.02 nm`;
-the central film is `285.51 nm`, `9.80 nm` below digitized `295.31 nm`.
-Bulk-pressure RMSE/bias/max are `10.51/-4.97/20.88 MPa`. The outlet-film
-RMSE is `42.53 nm`, and computed `h_min=250.44 nm` is `26.11 nm` below the
-digitized `276.56 nm`. Thus central/bulk film has reasonable support within
-estimated digitization uncertainty, but outlet constriction and minimum film
-do not. The pressure spike is near the Figure 6 location/amplitude on the
-1025 grid but is too grid-sensitive to claim validation. The paper's
-`P>=0` cavitation treatment also differs from the solver's JFO
-fractional-content closure. See `docs/PHYSICS.md` for the grid and regional
-comparison tables and complete audit values.
+At 4097 nodes, Figure 5 bulk-film RMSE/bias/max are `9.17/-8.90/12.90 nm`;
+the central film is `285.62 nm`, `9.69 nm` below digitized `295.31 nm`.
+Bulk-pressure RMSE/bias/max are `10.49/-5.03/20.90 MPa`. The outlet-film
+RMSE is `42.39 nm`, and computed `h_min=250.77 nm` is `25.78 nm` below the
+digitized `276.56 nm`. Central/bulk film and bulk pressure have support from
+the published numerical benchmark, not experimental physical validation;
+outlet constriction and minimum film do not have agreement. The peak is near
+the Figure 6 location/amplitude but is too grid-sensitive for validation.
+The paper's `P>=0` cavitation treatment also differs from the solver's JFO
+fractional-content closure. Grid, digitization and model sensitivities remain
+separate. See `docs/PHYSICS.md` for five-grid regional tables and audit values.
 
 At 513 nodes, an independent NumPy-vs-CUDA prescribed-offset correction
 differs by `2.72e-14` relative in pressure, `1.74e-16` in film, and
@@ -180,14 +185,22 @@ differs by `2.72e-14` relative in pressure, `1.74e-16` in film, and
 NumPy (`1.09x` speedup) in this run. The sparse JFO system remains CPU-based,
 so no material GPU speedup is assumed beyond this measured case.
 
-The matched benchmark is now physically compared but is not design-grade
-validation. Bulk-film screening is promising; pressure agreement is
-reasonable but not entirely within digitization error, while outlet/minimum
-film and sharp spike metrics remain unresolved. Do not infer finite
-crowned-roller, profiled-roller, tilt, transient or thermal behavior from
-this mode. Further local-resolution work should be undertaken only if the
-spike width/amplitude is required; do not start a 2049-node uniform solve
-automatically.
+Freeze the accepted M20 benchmark as a numerical regression baseline for
+bulk pressure/film and audited equations. This is not design-grade or
+experimental validation: outlet/minimum film and sharp spike metrics remain
+unresolved. Finite profiled-roller geometry development can begin separately,
+with dry-contact and geometry verification before coupled roller EHL. Do not
+infer crowned-roller, tilt, transient or thermal performance from this mode.
+Further local-resolution work is conditional on requiring sharp-feature
+outputs; do not start another uniform solve automatically.
+
+For this five-grid analysis, the final CUDA-enabled Windows full suite
+reported `1000 passed, 1 skipped` in 224.18 s with three non-failing PyTorch
+warnings. An earlier CPU-environment full run had one timing-sensitive
+heartbeat test failure; that test passed on immediate rerun and in both
+CUDA-enabled full suite runs.
+`ruff check .` still reports the unrelated untracked `.kilo` E501 described
+below; `ruff check . --exclude .kilo` passes.
 
 Verification for this milestone: on Windows, `pytest -q` completed with
 `995 passed, 1 skipped` in 301.34 s, with three non-failing PyTorch sparse

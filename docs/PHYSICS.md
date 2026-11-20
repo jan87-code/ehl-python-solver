@@ -431,59 +431,174 @@ values. Historical accepted result directories predate the added per-Arnoldi
 history fields; no accepted numerical field was changed to add this
 observability.
 
-| Nodes | `h_c` (nm) | `h_min` (nm) | `p_max` (MPa, `x/b`) | Spike (`x/b`, `p/p_H`) | Spike width (um) | Load error |
-|---:|---:|---:|---:|---:|---:|---:|
-| 257 | 283.268 | 247.225 | 1062.013, 0.01758 | 0.87695, 0.83368 | 3.9983 | `2.22e-16` |
-| 513 | 285.147 | 249.698 | 1034.605, 0.00684 | 0.88770, 0.72188 | 3.1278 | `0` |
-| 1025 | 285.508 | 250.444 | 1034.548, 0.00684 | 0.89844, 0.87839 | 0.9774 | `0` |
+| Nodes | `h_c` (nm) | `h_min` (nm) | `p_max` (MPa, `x/b`) | `h_c - h_c,ref` (nm) | `h_min - h_min,ref` (nm) | Spike (`x/b`, `p/p_H`) | Spike width (um, cells) | Load error |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 257 | 283.268 | 247.225 | 1062.013, 0.01758 | -12.043 | -29.330 | 0.87695, 0.83368 | 3.998 (1.008) | `2.22e-16` |
+| 513 | 285.147 | 249.698 | 1034.605, 0.00684 | -10.163 | -26.857 | 0.88770, 0.72188 | 3.128 (1.577) | `0` |
+| 1025 | 285.508 | 250.444 | 1034.548, 0.00684 | -9.802 | -26.111 | 0.89844, 0.87839 | 0.977 (0.985) | `0` |
+| 2049 | 285.599 | 250.700 | 1034.534, 0.00684 | -9.712 | -25.855 | 0.90112, 0.89665 | 0.662 (1.335) | `0` |
+| 4097 | 285.622 | 250.773 | 1034.530, 0.00818 | -9.689 | -25.783 | 0.90247, 0.88656 | 0.858 (3.462) | `0` |
 
-All three roots pass independent CPU mass, load, complementarity, film and
-direct-elasticity audits. At 1025 nodes, relative local/global mass-balance
-defects are `2.33e-11 / 7.27e-15`, maximum complementarity is `4.65e-28`,
-the independent direct-elasticity relative discrepancy is `6.76e-16`, and
-film reconstruction differs by `4.24e-21 m`. The accepted GPU run used a
-1025-node state of 2047 unknowns, restart-240 GMRES workspace estimate
-`9.88 MB`, and conservative CPU SuperLU dense-factor estimate `67.0 MB`.
+`h_c,ref=295.311 nm` and `h_min,ref=276.555 nm` are digitized Figure 5
+values. The spike detector reports half-prominence width and amplitude
+relative to dry-Hertz pressure `p_H`; these are measured grid quantities, not
+extrapolated values.
 
-Observed 257-to-513 and 513-to-1025 relative-L2 changes over the physical
-contact `-2<=x/b<=1.5` are respectively `4.02% / 1.64%` for pressure and
-`0.149% / 0.0421%` for film. In the bulk `-0.5<=x/b<=0.5`, pressure changes
-are `1.91% / 0.00516%` and film changes `0.529% / 0.127%`. In the outlet
-`0.5<=x/b<=1.5`, pressure changes are `9.06% / 4.06%` and film changes
-`0.359% / 0.113%`. Central-film changes contract from `0.663%` to `0.127%`;
-minimum-film changes contract from `1.00%` to `0.299%`. The global pressure
-maximum changes by `-2.58%` and then `-0.00546%`. These are measured
-sensitivities, not Richardson/GCI estimates.
+All five accepted roots pass the existing load, local/global mass, JFO
+complementarity, film reconstruction and independent CPU elasticity audits.
+For the 4097-node root, the saved root audit found
+zero relative load error, relative local/global mass defects of
+`6.53e-11` and `1.63e-14`, complementarity residual `6.78e-29`, direct
+elasticity discrepancy `8.11e-16`, and maximum film-reconstruction error
+`6.78e-21 m` (saved root audit). Full-grid CUDA/CPU residual maximum absolute difference is
+`3.62e-14`; the JVP relative L2 difference is `3.17e-16`. The 2049- and
+4097-node accepted solves used CUDA elasticity/residual/JVP operations with
+CPU SuperLU preconditioning; final independent audits were performed on CPU.
 
-The Petrusevich feature is not grid-converged: from 513 to 1025 nodes its
-detected location moves from `x/b=0.88770` to `0.89844`, peak ratio changes
-from `0.72188` to `0.87839 p_H`, half-prominence width contracts from `3.128`
-to `0.977 um`, and integrated feature pressure changes from `2241` to
-`820 Pa m`. The 1025-node peak is near Figure 6's `x/b=0.9035`,
-`p/p_H=0.875`, but the remaining location/height differences and large
-grid sensitivity preclude claiming spike validation. No 2049-node solve was
-started.
+### Grid sensitivity by region
 
-At 1025 nodes, digitized Figure 5 bulk-pressure comparison has
-`RMSE/bias/max = 10.51/-4.97/20.88 MPa` over nine samples; the estimated
-pressure digitization uncertainty is `0.006 p_H = 6.26 MPa`. Bulk-film
-comparison has `RMSE/bias/max = 9.28/-9.01/13.02 nm` over eight samples;
-the estimated film digitization uncertainty is `0.003 b^2/R = 10.23 nm`.
-The computed `h_c=285.51 nm` is `9.80 nm` below the digitized `295.31 nm`,
-within that estimated digitization uncertainty. These support reasonable
-bulk-film and central-film agreement, but not a claim that every bulk-pressure
-sample lies within digitization error.
+Each coarser accepted field was interpolated to the fine-grid coordinates.
+The relative L2 denominator is the fine-grid field norm; RMS is dimensional.
+Pressure and film are compared separately, and no combined uncertainty or
+Richardson/GCI estimate is formed.
+For these grid comparisons bulk means `-0.5 <= x/b <= 0.5` and outlet
+means `0.5 <= x/b <= 1.5`.
 
-The outlet-film comparison has `RMSE/bias/max = 42.53/-29.82/82.32 nm` over
-four samples, well beyond digitization uncertainty. The global
-`h_min=250.44 nm` is `26.11 nm` below the digitized Figure 5 minimum
-`276.56 nm`; minimum-film/constriction agreement is not established.
-The paper uses `P>=0` without the solver's fractional-film-content JFO
-closure. Together with digitization and input-model uncertainty, this means
-the benchmark is a successful matched numerical reproduction attempt with
-promising bulk-film agreement, not design-grade physical validation.
-Further local-resolution work is warranted only if spike width/amplitude is
-needed; do not launch another uniform refinement automatically.
+| Refinement | Full pressure rel. L2 (RMS [MPa]) | Full film rel. L2 (RMS [nm]) |
+|---|---:|---:|
+| 257 -> 513 | 4.022% (20.432) | 0.01989% (1.646) |
+| 513 -> 1025 | 1.6416% (8.343) | 0.005636% (0.466) |
+| 1025 -> 2049 | 1.3548% (6.887) | 0.001591% (0.131) |
+| 2049 -> 4097 | 0.7157% (3.638) | 0.0004693% (0.0387) |
+
+| Refinement | Bulk pressure rel. L2 (RMS [MPa]) | Bulk film rel. L2 (RMS [nm]) | Outlet pressure rel. L2 (RMS [MPa]) | Outlet film rel. L2 (RMS [nm]) |
+|---|---:|---:|---:|---:|
+| 257 -> 513 | 1.919% (18.995) | 0.5274% (1.508) | 8.975% (43.420) | 0.3541% (2.265) |
+| 513 -> 1025 | 0.005179% (0.0513) | 0.1266% (0.363) | 4.043% (19.530) | 0.1121% (0.714) |
+| 1025 -> 2049 | 0.001570% (0.0155) | 0.03171% (0.0908) | 3.345% (16.140) | 0.03510% (0.223) |
+| 2049 -> 4097 | 0.0005533% (0.00548) | 0.007954% (0.0228) | 1.769% (8.532) | 0.01123% (0.0712) |
+
+Bulk fields contract strongly; bulk pressure/film and outlet film are
+effectively stable from 2049 to 4097 nodes. Outlet pressure changes by
+`1.769%` relative L2 over that final refinement.
+
+| Refinement | Spike-window pressure rel. L2 (RMS [MPa]) | Spike-window film rel. L2 (RMS [nm]) | Detector width change |
+|---|---:|---:|---:|
+| 257 -> 513 | 25.005% (127.97) | 1.6885% (4.73) | 3.998 -> 3.128 um |
+| 513 -> 1025 | 11.927% (61.22) | 0.5534% (1.556) | 3.128 -> 0.977 um |
+| 1025 -> 2049 | 9.948% (50.57) | 0.1928% (0.542) | 0.977 -> 0.662 um |
+| 2049 -> 4097 | 5.281% (26.89) | 0.06499% (0.183) | 0.662 -> 0.858 um |
+
+The spike detector's location and amplitude are non-monotone over refinement.
+At 4097 nodes the detected width spans `3.46` cells, but its width increased
+`29.6%` and its half-prominence-interval pressure integral increased from
+`565.2` to `704.6 Pa m` between 2049 and 4097 nodes. These are integrals of
+total pressure over the detected half-prominence interval, not excess
+pressure. The spike-window pressure
+relative L2 difference remains `5.281%`; the shape is not converged.
+
+| Nodes | Half-prominence interval total integral [Pa m] | Fixed-window total `integral(p dx)` [Pa m] | Fixed-window excess over linear endpoint baseline [Pa m] |
+|---:|---:|---:|---:|
+| 257 | 3088.8 | 8099.1 | 2285.3 |
+| 513 | 2240.8 | 8203.4 | 1758.1 |
+| 1025 | 820.4 | 8256.8 | 1824.2 |
+| 2049 | 565.2 | 8271.5 | 1850.2 |
+| 4097 | 704.6 | 8276.9 | 1859.5 |
+
+The fixed window is `0.85 <= x/b <= 0.95`. Its total pressure integral changes
+only `0.065%` from 2049 to 4097, and its baseline-subtracted excess changes
+`0.50%`; these window integrals are stable even though the detector's local
+width/amplitude remain resolution-sensitive. The 2049- and 4097-node solves
+were justified by preceding spike-resolution evidence. Do not start 8193
+nodes automatically.
+
+## Comparison with digitized Venner-ten Napel profiles
+
+The reference dataset is digitized from Venner and ten Napel (1990), Figures 5
+and 6. The comparison uses the unchanged fixed M=20, L=10 inputs. Estimated
+Figure 5 digitization uncertainty is `6.26 MPa` for pressure and `10.23 nm`
+for film; these estimates are not combined with grid or input-model
+uncertainty.
+
+| Nodes | Figure 5 bulk pressure RMSE / bias / max [MPa] | Figure 5 bulk film RMSE / bias / max [nm] | Figure 5 outlet film RMSE / bias / max [nm] |
+|---:|---:|---:|---:|
+| 257 | 16.89 / -5.36 / 29.53 | 11.10 / -10.86 / 15.46 | 44.19 / -32.17 / 84.62 |
+| 513 | 10.60 / -4.76 / 20.87 | 9.63 / -9.38 / 13.39 | 42.92 / -30.37 / 82.87 |
+| 1025 | 10.51 / -4.98 / 20.88 | 9.28 / -9.01 / 13.02 | 42.53 / -29.82 / 82.32 |
+| 2049 | 10.49 / -5.02 / 20.89 | 9.19 / -8.92 / 12.92 | 42.42 / -29.66 / 82.17 |
+| 4097 | 10.49 / -5.03 / 20.90 | 9.17 / -8.90 / 12.90 | 42.39 / -29.61 / 82.12 |
+
+The Figure 5 bulk-pressure samples cover `-0.8 <= x/b <= 0.8` (9 points);
+bulk-film samples cover `-0.8 <= x/b <= 0.6` (8 points); outlet-film samples
+cover `x/b >= 0.8` (4 points). For Figure 5 outlet-pressure samples
+(`x/b >= 0.5`, 3 points), the RMSE/bias/max in MPa for the five grids are
+respectively `12.31/-4.68/14.38`, `9.43/1.40/11.67`,
+`9.24/0.72/12.05`, `9.20/0.60/12.11`, and `9.19/0.56/12.14`. These sparse
+Figure 5 points do not resolve the Figure 6 spike.
+
+At 4097 nodes, bulk-film RMSE is below
+the estimated digitization uncertainty, and `h_c=285.622 nm` is `9.689 nm`
+below the digitized `295.311 nm`. Bulk film and central film are therefore
+supported by this published numerical benchmark comparison, not independently
+validated against experimental measurements. Bulk pressure shows reasonable
+agreement, though its RMSE exceeds the digitization estimate and maximum
+pointwise deviation is `20.90 MPa`.
+
+The outlet-film RMSE (`42.39 nm`) and maximum deviation (`82.12 nm`) remain
+well beyond digitization uncertainty. The global `h_min=250.773 nm` is
+`25.783 nm` below the digitized Figure 5 minimum (`276.555 nm`); the published
+curve does not establish that the global minimum is the same local quantity
+or resolve the minimum precisely. Outlet constriction and global minimum
+film are not validated. The outlet minimum locations for 257 through 4097 are
+`0.96289, 0.95215, 0.95752, 0.95752, 0.95618` in `x/b`; their depths below
+central film are `36.043, 35.449, 35.064, 34.899, 34.849 nm`. Here the
+outlet-window minimum coincides with the computed global minimum.
+
+For Figure 6, the digitized spike is at approximately `x/b=0.9035` and
+`p/p_H=0.875`, with estimated coordinate and pressure digitization
+uncertainties of `0.0025` and `0.001`. The 4097-node detector finds
+`x/b=0.90247` and `p/p_H=0.88656`: the location agrees within the estimated
+coordinate uncertainty and the peak-to-peak amplitude difference is
+`0.01156 p_H`. At the reference abscissa, the interpolated numerical pressure
+is `0.0985 p_H` lower than the digitized peak; coordinate uncertainty and
+the steep, underresolved feature affect this pointwise comparison. The detector width is `0.858 um`; it is
+only about 3.46 cells wide and changes by `29.6%` from 2049 nodes. Figure 6
+peak location/amplitude are suggestive, but spike shape, width and the
+detected-interval pressure integral are unresolved. The fixed-window integral is stable, but does not
+validate the sharp local feature.
+
+**Disposition:** the five-grid sequence validates the coupled solver's load
+closure, discrete JFO/mass/elasticity audits, and bulk-profile numerical
+stability. The matched numerical publication supports the bulk film and central
+film, and reasonably supports bulk pressure; it is not an experimental
+physical-validation benchmark. Outlet/constriction film and global
+minimum film remain discrepant; the sharp Figure 6 pressure spike is not
+numerically resolved well enough for a validated local-amplitude/width claim.
+Freeze the 4097-node case as a line-contact regression baseline for those
+quantities explicitly marked stable, while retaining spike/outlet limitations.
+This is not design-grade physical validation. Further local refinement is
+conditional on needing sharp-feature outputs; do not launch another uniform
+refinement automatically.
+
+The local frozen field is
+`results/line_ehl_m20_newton_4097_refine_v1/solution.npz` with SHA-256
+`4f154b3ef6b28b6b4f8806ce7fbf0cc033719860de8a571c75f49205dafced73`.
+The corresponding `profiles.csv` SHA-256 is
+`01564738313643e2506f82759f1e7c0910ae2bfa7219a388ca8f31e6e79fc309`.
+These result files are ignored, not stored in Git; the recorded hashes
+identify this local reference but do not supply a portable full-field
+regression fixture. The existing benchmark input/property tests and new
+analysis tests run without those result files.
+
+Analysis tables and figures are saved under
+[`../results/line_ehl_m20_grid_analysis_corrected_v2/`](../results/line_ehl_m20_grid_analysis_corrected_v2/);
+the comparison figures are
+[`profiles_and_reference.png`](../results/line_ehl_m20_grid_analysis_corrected_v2/profiles_and_reference.png),
+[`outlet_detail.png`](../results/line_ehl_m20_grid_analysis_corrected_v2/outlet_detail.png)
+and [`grid_differences.png`](../results/line_ehl_m20_grid_analysis_corrected_v2/grid_differences.png).
+These local result files are not tracked; rerun
+`python examples/analyze_line_ehl_m20_grid_sensitivity.py --output-dir <new-directory>`
+with the five accepted result directories available to regenerate them.
 
 ## Prescribed-offset Reynolds-elasticity coupling
 `solve_coupled_reynolds_elasticity` in `src/ehl_solver/coupled.py` couples

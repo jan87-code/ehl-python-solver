@@ -1,7 +1,7 @@
 # Physics model and numerical conventions
 
 ## Ultimate target
-Steady, isothermal 2D point-contact EHL, extended stage-wise to pressure-dependent viscosity and density, cavitation, shear thinning and thermal effects. The repository has an incrementally verified stationary finite-roller JFO/EHL starter for one detached low-tilt geometry; it is not a general finite-roller solver or experimental validation.
+Steady, isothermal 2D point-contact EHL, extended stage-wise to pressure-dependent viscosity and density, cavitation, shear thinning and thermal effects. The repository has an incrementally verified stationary finite-roller JFO/EHL path for the specified detached low-tilt, prescribed- and contact-moment-controlled cases; it is not a general finite-roller solver or experimental validation.
 
 ## Coordinates
 Array shape `(ny, nx)`. `x` follows lubricant entrainment; `y` is transverse. Use SI units at interfaces and explicit grid spacing `dx`, `dy`. Center odd-sized grids about x=y=0 for analytical comparisons.
@@ -16,8 +16,8 @@ regression-tested against the frozen point-contact baseline. Finite
 profiled-roller geometry now also feeds a separate dry-contact mode; a
 distinct dry plane-strain line-contact verification mode and a bounded
 stationary isothermal finite-roller EHL starter are documented below. The
-starter does not imply general crowned-roller, larger-tilt, moment-controlled,
-finite-body or experimental validation.
+starter and the bounded moment-control milestone below do not imply general
+crowned-roller, larger-tilt, finite-body or experimental validation.
 
 The shared `contact_geometry_from_config` factory accepts circular point,
 elliptical point, classical infinite-line, and profiled-roller geometry
@@ -169,9 +169,9 @@ The corresponding `p_max` values are at `(x,y)=(4.18,0) um` for A and
 
 At `(193,513)`, the pressure centroid is `y=0` for A and
 `y=-13.7266/+13.7266 um` for positive/negative tilt; the pressure-weighted
-film centroid is `y=0` and `-12.1599/+12.1599 um`. The axial moment
-`Mx=int(y*p dx dy)` is zero to rounding for A and
-`-0.00137266/+0.00137266 N m` for positive/negative tilt. The mirror check
+film centroid is `y=0` and `-12.1599/+12.1599 um`. The physical contact moment is
+`Mx=-int(y*p dx dy)`: it is zero to rounding for A and
+`+0.00137266/-0.00137266 N m` for positive/negative tilt. The mirror check
 gave zero pressure and theta differences and a film difference below
 `6.5e-15` relative to the film scale. The positive-tilt outer 2%, 5% and
 10% band loads at the negative/positive ends are respectively
@@ -241,8 +241,8 @@ passed. The 193x513 baselines are listed in the preceding section. At 769x513,
 the symmetric case has `h_c=476.313 nm`, `h_min=351.848 nm`,
 `p_max=845.457 MPa`, and zero moment. The `+0.00025 rad` case has
 `h_c=476.351 nm`, `h_min=336.936 nm` at `(x,y)=(28.217,-404.297) um`,
-`p_max=845.505 MPa`, pressure centroid `y=-13.731 um` and moment
-`Mx=-0.0013731 N m`.
+`p_max=845.505 MPa`, pressure centroid `y=-13.731 um` and physical moment
+`Mx=+0.0013731 N m`.
 
 The grid-by-grid film and pressure extrema are:
 
@@ -273,14 +273,14 @@ CUDA/CPU parity check passed.
 Pressure centroid y, moment, `p>=1% p_max` support clearance, outermost-row
 load, and fixed outer-band loads for every accepted grid are:
 
-| Grid | Tilt [rad] | Centroid y [um] | `Mx` [N m] | 1%-peak clearance, negative/positive ends [um (cells)] | Outermost row load, negative/positive [N] | Outer 2% load negative/positive [N] | Outer 5% load negative/positive [N] | Outer 10% load negative/positive [N] |
+| Grid | Tilt [rad] | Centroid y [um] | Physical `Mx` [N m] | 1%-peak clearance, negative/positive ends [um (cells)] | Outermost row load, negative/positive [N] | Outer 2% load negative/positive [N] | Outer 5% load negative/positive [N] | Outer 10% load negative/positive [N] |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | 193x513 | 0 | 0 | 0 | 17.578/17.578 (9/9) | 0/0 | 0.01413/0.01413 | 0.08980/0.08980 | 0.50200/0.50200 |
 | 385x513 | 0 | 0 | 0 | 17.578/17.578 (9/9) | 0/0 | 0.01405/0.01405 | 0.08927/0.08927 | 0.50079/0.50079 |
 | 769x513 | 0 | 0 | 0 | 17.578/17.578 (9/9) | 0/0 | 0.01401/0.01401 | 0.08905/0.08905 | 0.50062/0.50062 |
-| 193x513 | +0.00025 | -13.727 | -0.0013727 | 13.672/21.484 (7/11) | 0/0 | 0.01758/0.01155 | 0.11218/0.07318 | 0.67005/0.38891 |
-| 385x513 | +0.00025 | -13.730 | -0.0013730 | 13.672/21.484 (7/11) | 0/0 | 0.01749/0.01147 | 0.11162/0.07270 | 0.67052/0.38725 |
-| 769x513 | +0.00025 | -13.731 | -0.0013731 | 13.672/23.438 (7/12) | 0/0 | 0.01746/0.01144 | 0.11142/0.07250 | 0.67151/0.38669 |
+| 193x513 | +0.00025 | -13.727 | +0.0013727 | 13.672/21.484 (7/11) | 0/0 | 0.01758/0.01155 | 0.11218/0.07318 | 0.67005/0.38891 |
+| 385x513 | +0.00025 | -13.730 | +0.0013730 | 13.672/21.484 (7/11) | 0/0 | 0.01749/0.01147 | 0.11162/0.07270 | 0.67052/0.38725 |
+| 769x513 | +0.00025 | -13.731 | +0.0013731 | 13.672/23.438 (7/12) | 0/0 | 0.01746/0.01144 | 0.11142/0.07250 | 0.67151/0.38669 |
 
 The endpoint-row minimum film at the symmetric ends changes from 709.39 nm
 at 193x513 to 700.15 nm at 769x513. At positive tilt, negative/positive
@@ -349,8 +349,8 @@ the end; this is a small sub-1%-peak pressure tail, not the location of
 `h_min` or the main support. The outermost pressure rows and their loads are
 zero. The positive-tilt outer 2% loads are 0.02220/0.00947 N; outer 5%
 loads are 0.14265/0.05989 N, and outer 10% loads are 0.95266/0.30651 N
-(negative/positive y). The pressure centroid is `y=-27.441 um` and
-`Mx=-0.0027441 N m`.
+(negative/positive y). The pressure centroid is `y=-27.441 um` and physical contact moment
+`Mx=+0.0027441 N m`.
 
 The `+0.0005 rad` audits close 100 N exactly, with local/global mass
 balance `6.18e-11/1.61e-15`, maximum complementarity `1.30e-21`, positive
@@ -358,7 +358,7 @@ film, `theta` in `[0.0555,1]`, and independent CPU elasticity/film
 reconstruction error `2.96e-21 m`. CUDA/CPU parity passed. The mirrored
 `-0.0005 rad` field passed its independent CPU audit; pressure and theta
 mirror to zero maximum difference, film relative maximum difference is
-`8.02e-15`, and moment reverses to `+0.0027441 N m`. Mirror verification
+`8.02e-15`, and physical moment reverses to `-0.0027441 N m`. Mirror verification
 and continuation reports are in the ignored output
 [`../results/finite_roller_ehl_tilt_cont_20261120_160500/`](../results/finite_roller_ehl_tilt_cont_20261120_160500/).
 Continuation plus mirror-verification wall time was 4353.87 s. Per-stage
@@ -388,7 +388,7 @@ refined changes were:
 - Bulk pressure relative L2/RMS change is `0.32584% / 0.982 MPa`;
   bulk-film relative L2/RMS change is `0.000673% / 0.02047 nm`.
   The pressure centroid moves by 0.000256 um in x and -0.000163 um in y;
-  `Mx` changes from `-0.0027441142` to `-0.0027441306 N m`
+  physical `Mx` changes from `+0.0027441142` to `+0.0027441306 N m`
   (`0.000595%` in magnitude).
 - At the `1% p_max` support threshold, loaded/unloaded clearance increases
   from 5/15 cells (9.766/29.297 um) to 6/17 cells
@@ -415,7 +415,7 @@ film reconstruction error `2.12e-21 m`. CUDA/CPU parity passed (residual
 `9.97e-15`, pressure and theta exact at reported precision). The mirrored
 negative-tilt CPU audit passed: pressure relative L-infinity error
 `4.23e-16`, film `1.92e-14`, theta zero, and `Mx` reverses to
-`+0.0027441306 N m`; scalar films agree within `2.01e-15`.
+`-0.0027441306 N m`; scalar films agree within `2.01e-15`.
 
 **Axial qualification passes for this prescribed 0.5 mrad half-space case.**
 All task-specific criteria pass, including `h_c`, `h_min`, bulk film,
@@ -428,10 +428,82 @@ SuperLU setup, 37.90 s preconditioner-application wall time, 55.33 s GMRES,
 No matched CPU-only full-solve timing exists, so no end-to-end GPU speedup
 is claimed. Keep the outlet pressure spike unresolved and do not infer
 finite-body accuracy, moment equilibrium or experimental validation. The
-detached, axially insensitive root and small end loads support making
-simultaneous force-and-moment closure the next bounded numerical milestone;
-finite-body/FE compliance remains a separate future comparison before
-stronger physical claims. Neither capability was implemented here.
+detached, axially insensitive root and small end loads supported the
+subsequent contact-level force-and-moment milestone, documented below.
+Finite-body/FE compliance remains a separate future comparison before
+stronger physical claims.
+
+### Contact-level finite-roller force-and-moment closure
+
+The bounded extension adds axial tilt `alpha` beside `h0` in the nonlinear
+unknown and enforces
+`(integral(p dA)-F_target)/F_target=0` and
+`(Mx-M_target)/(F_target*L/2)=0`, with physical
+`Mx=-integral(y*p dA)`. The angle is scaled by `5e-4 rad`; for 100 N and
+`L=1 mm`, the moment scale is `0.05 N m`. Acceptance requires both
+`abs(Mx-M_target)<=2e-8 N m` and normalized error `<=2e-7` (effective
+limit `1e-8 N m`). The stationary donor/JFO, Roelands/Dowson-Higginson and
+zero-padded half-space model are unchanged. This establishes contact-level
+equilibrium only; no external shaft, bearing or housing moment law is present.
+
+On the 769x577 grid, all three required targets produced independently
+audited roots at 100 N:
+
+| `M_target` (N m) | recovered `alpha` (mrad) | `h0` (um) | `h_c` (nm) | global `h_min` (nm), `(x,y)` (um) | `y` pressure centroid (um) | 1%-of-`p_max` support clearance, loaded/unloaded ends (cells) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | `1.51e-15` | -1.98709 | 476.313 | 351.878, `(22.991,-399.306)` | 0 | 11 / 11 |
+| +0.00274413056 | +0.500 | -1.98116 | 476.465 | 328.487, `(30.307,-411.458)` | -27.441 | 6 / 17 |
+| -0.00274413056 | -0.500 | -1.98116 | 476.465 | 328.487, `(30.307,+411.458)` | +27.441 | 6 / 17 |
+
+For the tilted pair, `h_min` remains 88.542 um inside the loaded physical
+axial end. The minimum rolling-centreline film is 415.731 nm; the loaded and
+unloaded end-10% minima are 328.487 and 416.148 nm. The outermost axial rows
+carry zero load, and the combined outer-2% load is 0.031675 N (0.0317% of
+total); outer-5% and outer-10% loads are 0.202516 and 1.258791 N. The 1%
+peak support remains 6 and 17 cells from the loaded and unloaded ends,
+respectively. The separate low-pressure 1 kPa support threshold reaches the
+adjacent boundary row and is not used as the main-support clearance measure.
+
+The positive and negative roots mirror: pressure relative L-infinity error
+`1.87e-10`, film `4.02e-12`, theta `3.26e-13`; centroids and physical
+moments reverse sign, while `h_c` is identical and `h_min` differs by
+`4.15e-20 m`. At zero target, recovered tilt is `1.51e-18 rad`, the
+pressure centroid and contact moment are zero, and pressure/film/theta
+symmetry errors are `1.02e-13 / 1.28e-14 / 3.55e-15`. The positive
+moment-controlled field reproduces the prescribed `+0.5 mrad` root with
+pressure relative L2 `2.26e-12`, film `2.86e-15`, theta `1.17e-13`,
+`h_c` relative change `8.9e-16`, and `h_min` relative change `5.5e-14`.
+
+All force residuals are zero at reported precision; positive/negative
+absolute moment residuals are `2.34e-17 / 2.26e-17 N m`. Relative local/global
+mass errors are `1.02e-13 / 1.41e-15` at zero and at most
+`5.66e-11 / 1.58e-15` for the tilted pair; maximum JFO complementarity is
+`7.76e-24`. Independent CPU FFT elasticity/film reconstruction error is
+`2.12e-21 m`. CUDA/CPU parity passes, with residual error below `8.6e-15`
+and pressure/theta equal at reported precision. The downstream nodal pressure
+peak remains unresolved: its half-prominence width is 2.04-2.47 rolling
+cells. `p_max` is reported but is not an acceptance criterion.
+
+The optional 50%-moment interpolation was not accepted. The initial fieldwise
+blend of the zero- and positive-moment roots closed force and moment, but its
+relative local mass residual was `9.95e-2`; after four accepted corrections
+it was still `9.49e-2`, with complementarity increasing from `5.96e-5` to
+`9.38e-3`. The recovered angle remained approximately `0.24999 mrad`.
+Direct and bounded target-continuation attempts also made negligible progress,
+so no intermediate root or continuous moment branch is claimed. Preserve this
+as a nonlinear/active-set continuation limitation, not a failure of the three
+accepted target roots.
+
+The A-C solves took 328.67, 522.69 and 468.60 s end-to-end, respectively;
+they used 5/8/7 Newton corrections and 253/607/569 GMRES iterations.
+SuperLU setup/application and CUDA JVP/FFT timings, complete timing breakdown,
+acceptance tolerances and reports are recorded in
+[`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md). Component timings overlap and
+there is no matched CPU-only full solve, so no end-to-end GPU speedup is
+claimed. Before adding an external angular-stiffness law, resolve the stalled
+intermediate-moment branch. The next physical-model comparison should be
+finite-body/FE compliance at frozen prescribed tilts; neither that comparison
+nor structural coupling is implemented here.
 
 ### Matched roller profiles and axial end loading
 

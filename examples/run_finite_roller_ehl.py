@@ -515,7 +515,7 @@ def _moment_y(probe, state):
 
     pressure, _, _ = probe.fields(state)
     problem = probe.system.problem
-    return float(
+    return -float(
         trapezoid(
             trapezoid(pressure * problem.y_m[:, None], x=problem.x_m, axis=1),
             x=problem.y_m,

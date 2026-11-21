@@ -11,6 +11,10 @@ from ehl_solver.cavitating_newton import (
     CavitatingLinearError,
     solve_cavitating_correction,
 )
+from ehl_solver.finite_roller_ehl import (
+    FiniteRollerEHLCase,
+    finite_roller_hertz_seed,
+)
 from ehl_solver.limited_audit import audit_limited_state, limited_mass_audit
 from ehl_solver.limited_continuation import (
     LimitedPathError,
@@ -21,6 +25,7 @@ from ehl_solver.limited_newton import (
     LimitedNewtonError,
     LimitedObserverError,
     _structural_content_pivots,
+    fraction_to_boundary,
     solve_limited_load,
 )
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
@@ -650,3 +655,20 @@ def test_stage_observer_isolation_and_failure(donor_root):
 
     with pytest.raises(LimitedObserverError):
         continue_limited_transport(donor_root.case, donor_root.state, stage_observer=bad)
+
+
+def test_moment_control_bounds_each_tilt_update_and_absolute_tilt():
+    case = FiniteRollerEHLCase(nx=9, ny=13)
+    seed = finite_roller_hertz_seed(case)
+    probe = LimitedLoadProbe(case, moment_target_n_m=0.0)
+    state = np.r_[seed, 0.0]
+    direction = np.zeros(probe.size)
+    direction[-1] = 1.0
+    assert fraction_to_boundary(probe, state, direction) == pytest.approx(0.1)
+
+    state[-1] = 0.00049 / probe.angle_scale_rad
+    assert fraction_to_boundary(probe, state, direction) == pytest.approx(0.0198)
+    state[-1] = 0.0005 / probe.angle_scale_rad
+    assert fraction_to_boundary(probe, state, direction) == 0.0
+    state[-1] = 0.0005001 / probe.angle_scale_rad
+    assert not probe.feasible(state)

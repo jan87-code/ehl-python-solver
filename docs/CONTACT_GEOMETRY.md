@@ -47,10 +47,10 @@ terms.
 
 `CavitatingElasticityProblem` accepts this geometry interface and retains its
 legacy radii inputs for compatibility. `LineContactGeometry` is used by the
-separate dry plane-strain line-contact mode below. A bounded stationary
-finite-roller EHL starter is documented later; its verification does not
-generalize to larger tilt, finite-body compliance or moment equilibrium.
-Tilt is composed independently from the profile.
+separate dry plane-strain line-contact mode below. The bounded stationary
+finite-roller EHL path includes the contact-moment closure documented later;
+neither result generalizes to larger tilt, finite-body compliance or
+experimental validation. Tilt is composed independently from the profile.
 
 `integrate_contact_pressure` provides the shared force and contact-moment
 hooks for cell-centered pressure fields. For positive compressive pressure
@@ -207,12 +207,163 @@ qualification. A CPU-audited mirrored `-0.0005 rad` field passes pressure,
 film, theta, scalar-film and moment-sign checks.
 
 This qualifies only the specified prescribed-tilt, isothermal half-space
-case; it does not establish finite-body compliance, experimental validation,
-moment equilibrium or general larger-tilt behavior. Simultaneous force and
-moment closure is the next bounded numerical capability to consider; a
-finite-body/FE compliance comparison remains necessary before making stronger
-physical claims. Detailed convergence data and acceptance limits are in
+case; by itself it does not establish finite-body compliance, experimental
+validation or general larger-tilt behavior. Contact-moment closure is evaluated
+below. A finite-body/FE compliance comparison remains necessary before making
+stronger physical claims. Detailed convergence data and acceptance limits are in
 [`PHYSICS.md`](PHYSICS.md) and [`ROADMAP.md`](ROADMAP.md).
+
+### Finite-roller contact-moment control
+
+The bounded moment-controlled extension keeps the existing gap
+`h=h0+x**2/(2Rx)+g(y)+y*tan(alpha)+w` and adds `alpha` as a second scalar
+unknown beside `h0`. Positive `y` is the physical axial coordinate. Positive
+`alpha` adds gap toward `+y`, so the pressure centroid moves toward `-y`.
+For positive compressive pressure acting in `-z`, the physical contact
+moment is `Mx=-integral(y*p dA)`; therefore this positive tilt has positive
+`Mx`, and reversing tilt reflects pressure/film/content and reverses the
+moment.
+`finite_roller_metrics` reports this physical sign under
+`moment_about_x_n_m` and `physical_contact_moment_x_n_m`; the raw pressure
+first moment remains available as `pressure_y_first_moment_n_m`. Earlier
+ignored reports may retain the prior sign in their archived metric field;
+their pressure and film roots are unchanged.
+
+The bordered nonlinear residual uses `(integral(p dA)-F_target)/F_target`
+for force and `(Mx-M_target)/(F_target*L/2)` for moment. The unknowns are
+`h0/h_ref` and `alpha/(5e-4 rad)`. At 100 N and `L=1 mm`, the moment scale is
+`0.05 N m`; both `abs(Mx-M_target)<=2e-8 N m` and normalized error
+`<=2e-7` are required (effective tolerance `1e-8 N m`). The Newton tilt is
+bounded by `+/-0.5 mrad` with no accepted update larger than `0.05 mrad`.
+These are engineering gates for the stated case, not universal tolerances.
+
+This solves contact-level force/moment equilibrium for a prescribed
+`M_target`; no shaft, housing, bearing stiffness, or external structural
+moment law is included. A later structural model may replace the fixed target
+with an alpha-dependent external-moment residual. The model remains
+stationary, isothermal, donor/JFO and half-space compliant; it does not
+establish finite-body accuracy, experimental validation or moment-controlled
+behavior outside the qualified tilt range.
+
+### Contact-moment qualification results
+
+The production run used the hybrid CUDA float64 donor/JFO residual/JVP and CPU
+SuperLU bordered preconditioner on the existing 769x577 domain. Its physical
+inputs and prescribed-tilt baseline were unchanged. The established moment
+scale is `F_target*L/2=0.05 N m`; both `abs(Mx-M_target)<=2e-8 N m` and
+normalized error `<=2e-7` are enforced, so the effective absolute limit is
+`1e-8 N m`. Force relative error must be `<=1e-8`. The allowed tilt is
+`+/-0.5 mrad`, and each accepted Newton tilt update is bounded by `0.05 mrad`.
+These are engineering gates for this grid and case.
+
+| Target `Mx` (N m) | Recovered `alpha` (rad) | `h0` (um) | `h_c` (nm) | Global `h_min` (nm) at `(x,y)` (um) | Pressure centroid `(x,y)` (um) | Physical `Mx` (N m) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | `1.512e-18` | -1.987085 | 476.313069 | 351.877965 at `(22.991,-399.306)` | `(-9.895,0)` | 0 |
+| +0.0027441305566574 | `+5.000e-4` | -1.981158 | 476.464973 | 328.487023 at `(30.307,-411.458)` | `(-9.872,-27.441)` | +0.002744130556657423 |
+| -0.0027441305566574 | `-5.000e-4` | -1.981158 | 476.464973 | 328.487023 at `(30.307,+411.458)` | `(-9.872,+27.441)` | -0.002744130556657422 |
+
+Positive `alpha` increases gap toward `+y`, moves the pressure centroid toward
+`-y`, and produces positive `Mx=-integral(y*p dA)`. The zero-moment solution
+recovers `alpha=1.512e-18 rad`; its pressure centroid and contact moment are
+zero. Independently recomputed pressure/film/theta symmetry errors are
+`1.02e-13 / 1.28e-14 / 3.55e-15`. For the mirrored tilted roots, relative
+pressure L-infinity, film L-infinity and theta errors are
+`1.87e-10 / 4.02e-12 / 3.26e-13`; the centroid and moment signs reverse,
+`h_c` agrees exactly, and `h_min` differs by `4.15e-20 m`.
+
+The positive-moment root reproduces the accepted prescribed `+0.5 mrad`
+reference: pressure relative L2 `2.26e-12`, film relative L2 `2.86e-15`,
+theta L-infinity `1.17e-13`, relative `h_c` change `8.9e-16`, relative
+`h_min` change `5.5e-14`, and pressure-centroid difference
+`2.71e-20 m`. For both tilted roots, `h_min` is 88.542 um inside the loaded
+physical end. The loaded-end 10%-band minimum is 328.487 nm; the opposite
+end minimum is 416.148 nm. The rolling-centreline minimum is 415.731 nm.
+At zero moment, `h_min` is 100.694 um from either axial end.
+
+At 1% of `p_max`, the zero-target support clears each axial end by 11 cells
+(19.097 um). At positive tilt it clears the loaded/unloaded ends by 6/17
+cells (10.417/29.514 um); negative tilt mirrors those distances. A 1 kPa
+threshold includes the low-pressure boundary-adjacent tail and reports one
+cell of clearance; it is not the main-support criterion. The physical
+boundary pressure is zero. Outermost-row load is zero for all three roots.
+The combined outer-2% load is 0.028021 N at zero moment and 0.031675 N at
+either tilted root (0.0280% / 0.0317% of the 100 N load). The corresponding
+outer-5% loads are 0.178088 / 0.202516 N, and outer-10% loads are
+1.001084 / 1.258791 N.
+
+The nodal pressure maxima are 845.479 MPa at zero moment and 845.441 MPa for
+the tilted pair (near `x=108.686 um`, `y=+/-3.472 um` for the pair). The
+downstream spike half-prominence width is 2.465 x-cells at zero and 2.037
+x-cells at either tilt, so its amplitude remains unresolved and does not
+govern acceptance. The fixed 30 um outlet-window load is 4.153784 N at zero
+and 4.182007 N for the tilted roots. The outlet film constriction is at
+`x=122.272 um`, about 415.7 nm, and spans about 23.6 x-cells.
+
+All three roots close the 100 N force to reported precision. Absolute moment
+residuals are zero at zero target and `2.34e-17 / 2.26e-17 N m` at positive/
+negative target; normalized errors are below `4.7e-16`. Relative local/global
+mass errors are `1.02e-13 / 1.41e-15` at zero and
+`2.51e-11 / 1.51e-15` and `5.66e-11 / 1.58e-15` for positive/negative
+tilt. Maximum complementarity is at most `7.76e-24`; theta remains in
+`[0,1]`. Independent CPU `scipy.signal.fftconvolve` elasticity/film
+reconstruction error is `2.12e-21 m`. CUDA/CPU parity passes: residual
+L-infinity error is at most `8.55e-15`, pressure and theta agree at reported
+precision, and film/deformation differences are at most `2.12e-21 /
+2.55e-21 m`.
+The normalized difference between outward flows at the two axial ends,
+`abs(Qy,left-Qy,right)/(abs(Qy,left)+abs(Qy,right))`, is zero by symmetry and
+0.0465 for either tilted root. This side-to-side diagnostic is distinct from
+the independently small global mass-balance residual.
+
+The last accepted correction in each case reports `h0`/`alpha` corrections
+below `3.4e-19 m / 7.6e-16 rad`, field-correction norm at most
+`1.14e-7`, and independently recomputed linear true relative residual below
+`3.5e-10`. The maximum true relative residual over all corrections was
+`3.394e-10 / 3.483e-10 / 3.483e-10` for zero/positive/negative moment.
+Schur indicators remain above `0.57`; the bordered fallback was not used.
+This confirms a nonsingular local correction at the accepted roots, not
+global branch robustness. A follow-up diagnostic now reports a force-constrained
+`dMx/dalpha` estimate from the 2x2 Schur complement, eliminating the offset
+response so the force equation remains satisfied. Its normalized magnitude
+`<=1e-10` is flagged as poor sensitivity; this is a diagnostic, not an
+additional acceptance gate. The original A-C reports predate this diagnostic.
+Their accepted zero-to-positive endpoint secant is `5.48826 N m/rad`
+(normalized sensitivity `0.0548826`).
+
+| Case | Complete wall (s) | Solver wall (s) | Newton / GMRES | CPU SuperLU setup / application (s) | CUDA JVP/FFT / residual (s) | measured transfer (s) | force/moment border setup / application (s) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `M=0` | 328.67 | 322.31 | 5 / 253 | 159.52 / 52.06 | 12.31 / 1.47 | 0.71 | 162.86 / 1.45 |
+| `+M` | 522.69 | 516.90 | 8 / 607 | 236.59 / 113.15 | 28.26 / 2.08 | 1.56 | 241.33 / 3.38 |
+| `-M` | 468.60 | 462.79 | 7 / 569 | 202.90 / 103.88 | 26.31 / 1.93 | 1.45 | 207.02 / 3.18 |
+
+Checkpoint, independent CPU audit and CUDA/CPU parity took
+1.76/0.96/1.83 s, 2.63/0.96/1.77 s and 2.40/0.97/1.70 s for zero,
+positive and negative cases, respectively. Timing components overlap and
+must not be summed as exclusive wall time. No matched CPU-only full solve was
+run, so no end-to-end GPU speedup is claimed. The run emitted an existing
+PyTorch warning about a read-only NumPy array passed through `backend.py`;
+the independent CPU audit and parity gates nevertheless passed.
+
+The optional 50%-moment target was attempted but has no accepted root.
+Directly changing only the angle of the `+0.5 mrad` field and a 75%-target
+continuation made negligible progress. A componentwise blend of the accepted
+zero- and positive-moment states was feasible and initially closed force and
+moment, but its relative local mass balance was `9.951e-2`; after four
+accepted corrections it was `9.487e-2`, while complementarity rose from
+`5.96e-5` to `9.38e-3`. The angle remained near `0.24999 mrad`. The bounded
+attempt was stopped with its checkpoints preserved; it does not invalidate
+the three independently accepted roots, but does prevent claiming a
+continuous intermediate-moment branch.
+
+Detailed reports, heartbeats, and accepted field archives remain in the
+ignored `results/finite_roller_moment_20261120_205804/` output; failed/
+stopped midpoint checkpoints remain in separate ignored result directories.
+The finite-roller moment-control gate is therefore passed for `M=0` and the
+two qualified endpoint moments only. Resolve intermediate-target active-set
+and line-search stagnation before implementing external angular stiffness.
+Among the next physical milestones, prefer a finite-body/FE compliance
+comparison at the frozen prescribed tilts; structural coupling remains
+deferred until its stiffness/rest angle are independently specified.
 
 Dry-contact solvers optionally accept `ContactCompliance` with grid shape,
 spacing, backend, a pressure-to-displacement callable and a safe L2 operator

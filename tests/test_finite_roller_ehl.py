@@ -131,6 +131,16 @@ def test_finite_roller_metrics_include_end_rows_windows_and_flux_profiles():
     assert metrics["load_integrated_n"] == pytest.approx(case.load_n)
     assert metrics["outermost_axial_row_load_n"] == [0.0, 0.0]
     assert metrics["boundary_pressure_max_pa"] == 0.0
+    axial_boundary_flows = metrics["audit"]["mass"]["outward_mass_flow_kg_s"][2:4]
+    expected_axial_imbalance = abs(
+        axial_boundary_flows[0] - axial_boundary_flows[1]
+    ) / max(sum(abs(flow) for flow in axial_boundary_flows), 1e-300)
+    assert metrics["relative_axial_boundary_flow_imbalance"] == pytest.approx(
+        expected_axial_imbalance
+    )
+    assert metrics["relative_axial_boundary_flow_imbalance"] == pytest.approx(
+        0.0, abs=1e-14
+    )
     assert metrics["outer_band_load_n_left_right"]["2"][0] == pytest.approx(
         metrics["outer_band_load_n_left_right"]["2"][1]
     )
@@ -140,6 +150,28 @@ def test_finite_roller_metrics_include_end_rows_windows_and_flux_profiles():
     }
     assert profiles["qx_centerline_kg_m_s"].shape == (case.nx - 1,)
     assert profiles["qy_centerline_kg_m_s"].shape == (case.ny - 1,)
+
+
+def test_finite_roller_metrics_preserve_offset_and_recovered_angle_in_border_state():
+    case = small_case(axial_tilt_rad=0.0005)
+    seed = finite_roller_hertz_seed(case)
+    probe = LimitedLoadProbe(
+        case, transport_fraction=0.0, moment_target_n_m=0.0
+    )
+    controlled_state = np.r_[seed, 0.8]
+    metrics, _ = finite_roller_metrics(case, probe, controlled_state)
+    assert metrics["h0_m"] == pytest.approx(
+        seed[-1] * probe.system.problem.film_scale_m
+    )
+    assert metrics["axial_tilt_rad"] == pytest.approx(0.8 * probe.angle_scale_rad)
+    assert metrics["moment_target_n_m"] == 0.0
+    assert metrics["moment_about_x_n_m"] == metrics["physical_contact_moment_x_n_m"]
+    assert metrics["pressure_y_first_moment_n_m"] == pytest.approx(
+        -metrics["physical_contact_moment_x_n_m"]
+    )
+    assert metrics["moment_residual_n_m"] == pytest.approx(
+        metrics["physical_contact_moment_x_n_m"]
+    )
 
 
 def test_finite_roller_metrics_integrate_a_fixed_physical_spike_window():

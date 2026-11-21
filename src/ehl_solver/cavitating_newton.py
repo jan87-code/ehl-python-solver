@@ -421,7 +421,8 @@ def solve_cavitating_correction(
     finally:
         preconditioner_seconds += time.perf_counter() - factor_started
     report("superlu_factorization_complete", factorization="field", emit=True)
-    if system.target_load_n is None:
+    border_size = system.size - 2 * system.n
+    if system.target_load_n is None or border_size == 0:
         if lu is None:
             error("frozen-film active-set preconditioner failed")
         correction, good = linear_solve(operator, -residual, lu, "field_residual")
@@ -442,27 +443,77 @@ def solve_cavitating_correction(
         block = LinearOperator(
             (2 * system.n, 2 * system.n),
             dtype=np.float64,
-            matvec=lambda v: (operator @ np.r_[v, 0.0])[: 2 * system.n],
+            matvec=lambda v: (
+                operator
+                @ np.r_[v, np.zeros(border_size, dtype=np.float64)]
+            )[: 2 * system.n],
         )
         pressure, good_pressure = linear_solve(
             block, -residual[: 2 * system.n], lu, "field_residual"
         )
         if good_pressure:
-            h0_direction = np.zeros(system.size)
-            h0_direction[-1] = 1
-            column = (operator @ h0_direction)[: 2 * system.n]
-            response, good_response = linear_solve(block, column, lu, "offset_response")
-            if good_response:
-                load_row = matrix[-1, : 2 * system.n].toarray().ravel()
-                denominator = -float(load_row @ response)
-                scale = float(np.linalg.norm(load_row) * np.linalg.norm(response))
-                indicator = abs(denominator) / max(scale, np.finfo(float).tiny)
+            responses = []
+            good_responses = True
+            for index in range(border_size):
+                basis = np.zeros(system.size)
+                basis[2 * system.n + index] = 1.0
+                column = (operator @ basis)[: 2 * system.n]
+                label = (
+                    "offset_response"
+                    if border_size == 1
+                    else f"border_response_{index}"
+                )
+                response, good_response = linear_solve(
+                    block, column, lu, label
+                )
+                responses.append(response)
+                good_responses = good_responses and good_response
+            if good_responses:
+                field_responses = np.column_stack(responses)
+                border_rows = matrix[
+                    2 * system.n :, : 2 * system.n
+                ].toarray()
+                border_block = matrix[
+                    2 * system.n :, 2 * system.n :
+                ].toarray()
+                schur = border_block - border_rows @ field_responses
+                if border_size == 1:
+                    denominator = float(schur[0, 0])
+                    scale = float(
+                        np.linalg.norm(border_rows[0])
+                        * np.linalg.norm(field_responses[:, 0])
+                    )
+                    indicator = abs(denominator) / max(
+                        scale, np.finfo(float).tiny
+                    )
+                else:
+                    row_scale = np.linalg.norm(border_rows, axis=1)
+                    column_scale = np.linalg.norm(field_responses, axis=0)
+                    scaled_schur = schur / np.maximum(
+                        row_scale[:, None] * column_scale[None, :],
+                        np.finfo(float).tiny,
+                    )
+                    singular_values = np.linalg.svd(
+                        scaled_schur, compute_uv=False
+                    )
+                    indicator = float(
+                        singular_values[-1]
+                        / max(singular_values[0], np.finfo(float).tiny)
+                    )
                 if math.isfinite(indicator) and indicator > schur_tolerance:
-                    dh0 = (-residual[-1] - load_row @ pressure) / denominator
-                    correction = np.r_[pressure - response * dh0, dh0]
+                    scalar_correction = np.linalg.solve(
+                        schur,
+                        -residual[2 * system.n :]
+                        - border_rows @ pressure,
+                    )
+                    correction = np.r_[
+                        pressure - field_responses @ scalar_correction,
+                        scalar_correction,
+                    ]
                     report("correction_verification")
                     measured = float(
-                        np.linalg.norm(operator @ correction + residual) / np.linalg.norm(residual)
+                        np.linalg.norm(operator @ correction + residual)
+                        / np.linalg.norm(residual)
                     )
                     if math.isfinite(measured) and measured <= 5 * krylov_rtol:
                         return CavitatingCorrection(

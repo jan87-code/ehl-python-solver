@@ -2,15 +2,22 @@
 
 import numpy as np
 import pytest
+from scipy.sparse import bmat, csc_matrix, diags
 
 from ehl_solver.backend import as_float64, make_backend
 from ehl_solver.cavitating_newton import solve_cavitating_correction
 from ehl_solver.device_jfo import DeviceDonorJFO
 from ehl_solver.device_jfo_krylov import solve_device_jfo_correction
 from ehl_solver.device_jfo_preconditioner import ExperimentalDeviceDonorJFOPreconditioner
+from ehl_solver.finite_roller_ehl import (
+    FiniteRollerEHLCase,
+    finite_roller_hertz_seed,
+    verify_finite_roller_cuda_parity,
+)
 from ehl_solver.hybrid_jfo import (
     CPUBlockSchurPreconditioner,
     HybridJFOCorrectionSolver,
+    _force_constrained_moment_sensitivity,
 )
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.prototype import PointContactCase
@@ -42,6 +49,35 @@ def _directions(probe):
     offset = np.zeros(probe.size)
     offset[-1] = 1e-3
     return random, localized_pressure, localized_content, offset
+
+
+def test_force_constrained_moment_sensitivity_uses_bordered_schur_response():
+    sensitivity, normalized, poor = _force_constrained_moment_sensitivity(
+        np.array([[2.0, 0.5], [1.0, 3.0]]),
+        moment_scale_n_m=0.05,
+        angle_scale_rad=5e-4,
+        tolerance=1e-10,
+    )
+    assert normalized == pytest.approx(2.75)
+    assert sensitivity == pytest.approx(275.0)
+    assert poor is False
+
+    sensitivity, normalized, poor = _force_constrained_moment_sensitivity(
+        np.array([[2.0, 0.5], [1.0, 0.25]]),
+        moment_scale_n_m=0.05,
+        angle_scale_rad=5e-4,
+        tolerance=1e-10,
+    )
+    assert normalized == pytest.approx(0.0)
+    assert sensitivity == pytest.approx(0.0)
+    assert poor is True
+
+    assert _force_constrained_moment_sensitivity(
+        np.array([[0.0, 0.5], [1.0, 3.0]]),
+        moment_scale_n_m=0.05,
+        angle_scale_rad=5e-4,
+        tolerance=1e-10,
+    ) == (None, None, True)
 
 
 @pytest.mark.parametrize("workspace_limit_bytes", [0, -1, True, 1.0])
@@ -272,6 +308,115 @@ def test_cpu_schur_preconditioner_applies_full_frozen_border(backend):
         CPUBlockSchurPreconditioner(
             matrix, cpu.n, backend.device, schur_tolerance=0.0
         )
+
+
+def test_cpu_schur_preconditioner_solves_two_scalar_borders(backend):
+    n = 3
+    field = diags(np.arange(1.0, 2 * n + 1), format="csc")
+    columns = np.array(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 0.5],
+            [0.5, 1.0],
+            [1.0, -0.5],
+            [-0.5, 1.0],
+        ]
+    )
+    matrix = bmat(
+        [
+            [field, csc_matrix(columns)],
+            [csc_matrix(columns.T), csc_matrix((2, 2))],
+        ],
+        format="csc",
+    )
+    rhs = np.random.default_rng(907).normal(size=2 * n + 2)
+    inverse = CPUBlockSchurPreconditioner(matrix, n, backend.device)
+    actual = inverse(as_float64(rhs, backend)).cpu().numpy()
+    np.testing.assert_allclose(matrix @ actual, rhs, rtol=2e-12, atol=2e-12)
+    assert inverse.border_size == 2
+    assert not inverse.used_bordered_fallback
+
+    fallback = CPUBlockSchurPreconditioner(
+        matrix, n, backend.device, schur_tolerance=1.0
+    )
+    fallback_actual = fallback(as_float64(rhs, backend)).cpu().numpy()
+    assert fallback.used_bordered_fallback
+    np.testing.assert_allclose(
+        matrix @ fallback_actual, rhs, rtol=2e-12, atol=2e-12
+    )
+
+
+def test_moment_controlled_device_jvp_and_hybrid_correction_match_cpu(backend):
+    case = FiniteRollerEHLCase(nx=9, ny=13)
+    base_probe = LimitedLoadProbe(case, transport_fraction=0.0)
+    state = np.r_[finite_roller_hertz_seed(case), 0.0]
+    guide = np.zeros_like(state)
+    active_full = state[:base_probe.n] >= state[base_probe.n : 2 * base_probe.n]
+    model = LimitedLoadLinearization(
+        case,
+        state,
+        guide,
+        preconditioner="local",
+        active_full=active_full,
+        transport_fraction=0.0,
+        moment_target_n_m=0.0,
+    )
+    device = DeviceDonorJFO(
+        case, backend, transport_fraction=0.0, moment_target_n_m=0.0
+    )
+    z = as_float64(state, backend)
+    active = backend.xp.as_tensor(
+        active_full, dtype=backend.xp.bool, device=backend.device
+    )
+    np.testing.assert_allclose(
+        device.linear_residual(z, active).cpu().numpy(),
+        model.residual(state),
+        rtol=2e-12,
+        atol=2e-12,
+    )
+    if backend.device == "cuda":
+        parity = verify_finite_roller_cuda_parity(
+            case, state, model.probe
+        )
+        assert parity["passed"]
+
+    direction = np.random.default_rng(2029).normal(size=model.size) * 1e-3
+    direction[-1] = 0.4
+    actual_jvp = device.linearize(z, as_float64(guide, backend), active_full=active)(
+        as_float64(direction, backend)
+    ).cpu().numpy()
+    expected_jvp = model.jacobian_vector(state, direction)
+    np.testing.assert_allclose(actual_jvp, expected_jvp, rtol=5e-11, atol=2e-12)
+
+    reference = solve_cavitating_correction(
+        model, state, maximum_krylov_cycles=10, gmres_restart=60
+    )
+    hybrid = HybridJFOCorrectionSolver(case, backend)
+    actual = hybrid(model, state)
+    np.testing.assert_allclose(
+        model.jacobian_vector(state, actual.direction) + model.residual(state),
+        0.0,
+        rtol=0.0,
+        atol=5e-9 * np.linalg.norm(model.residual(state)),
+    )
+    assert actual.true_linear_residual <= 5e-9
+    sensitivity = actual.timings[
+        "force_constrained_moment_sensitivity_n_m_per_rad"
+    ]
+    normalized_sensitivity = actual.timings[
+        "normalized_force_constrained_moment_sensitivity"
+    ]
+    assert sensitivity is not None
+    assert normalized_sensitivity == pytest.approx(
+        sensitivity
+        * model.probe.angle_scale_rad
+        / model.probe.moment_scale_n_m
+    )
+    assert isinstance(actual.timings["poor_angular_sensitivity"], bool)
+    assert np.linalg.norm(actual.direction - reference.direction) / np.linalg.norm(
+        reference.direction
+    ) < 5e-7
 
 
 def test_hybrid_cuda_operator_cpu_schur_correction_matches_reference(backend):

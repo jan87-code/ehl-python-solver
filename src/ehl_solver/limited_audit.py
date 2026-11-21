@@ -5,6 +5,10 @@ from scipy.integrate import trapezoid
 from scipy.signal import convolve2d, fftconvolve
 
 from ehl_solver.elasticity import cell_integrated_kernel
+from ehl_solver.limited_system import (
+    MOMENT_ABSOLUTE_TOLERANCE_N_M,
+    MOMENT_NORMALIZED_TOLERANCE,
+)
 from ehl_solver.property_reynolds import admissible
 
 _DIRECT_ELASTICITY_AUDIT_MAX_NODES = 20_000
@@ -88,9 +92,19 @@ def audit_limited_state(probe, state, *, direct=False):
         kernel = cell_integrated_kernel(
             problem.shape, problem.dx_m, problem.dy_m, case.contact_modulus_pa
         )
+        geometry = (
+            probe.rigid_geometry_m(state)
+            if hasattr(probe, "rigid_geometry_m")
+            else problem.rigid_geometry_m
+        )
+        offset = (
+            probe.offset_m(state)
+            if hasattr(probe, "offset_m")
+            else state[-1] * problem.film_scale_m
+        )
         reconstructed = (
-            state[-1] * problem.film_scale_m
-            + problem.rigid_geometry_m
+            offset
+            + geometry
             + _independent_elastic_convolution(p, kernel, method=elasticity_method)
         )
         error = float(abs(reconstructed - h).max())
@@ -105,6 +119,22 @@ def audit_limited_state(probe, state, *, direct=False):
         transport_fraction=probe.transport_fraction,
     )
     force = float(trapezoid(trapezoid(p, x=problem.x_m, axis=1), x=problem.y_m))
+    contact_moment_x = float(
+        -trapezoid(
+            trapezoid(p * problem.y_m[:, None], x=problem.x_m, axis=1),
+            x=problem.y_m,
+        )
+    )
+    moment_residual = (
+        None
+        if not probe.moment_control
+        else contact_moment_x - probe.moment_target_n_m
+    )
+    normalized_moment_residual = (
+        None
+        if moment_residual is None
+        else moment_residual / probe.moment_scale_n_m
+    )
     boundaries = np.r_[p[0], p[-1], p[:, 0], p[:, -1]]
     accepted = bool(
         admissible(mass, p, theta, problem.pressure_scale_pa)
@@ -117,6 +147,12 @@ def audit_limited_state(probe, state, *, direct=False):
         and np.array_equal(theta[-1], theta[-2])
         and error <= 1e-10 * problem.film_scale_m
     )
+    if probe.moment_control:
+        accepted = bool(
+            accepted
+            and abs(moment_residual) <= MOMENT_ABSOLUTE_TOLERANCE_N_M
+            and abs(normalized_moment_residual) <= MOMENT_NORMALIZED_TOLERANCE
+        )
     return dict(
         numerically_accepted=accepted,
         mass=mass,
@@ -135,6 +171,16 @@ def audit_limited_state(probe, state, *, direct=False):
                 if elasticity_method == "direct"
                 else "scipy.signal.fftconvolve"
             )
+        ),
+        physical_contact_moment_x_n_m=contact_moment_x,
+        moment_target_n_m=probe.moment_target_n_m,
+        moment_residual_n_m=moment_residual,
+        normalized_moment_residual=normalized_moment_residual,
+        moment_absolute_tolerance_n_m=(
+            MOMENT_ABSOLUTE_TOLERANCE_N_M if probe.moment_control else None
+        ),
+        moment_normalized_tolerance=(
+            MOMENT_NORMALIZED_TOLERANCE if probe.moment_control else None
         ),
         transport_fraction=probe.transport_fraction,
         full_limited_equations=probe.transport_fraction == 1.0,

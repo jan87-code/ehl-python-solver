@@ -404,7 +404,8 @@ def finite_roller_metrics(
     center_y, center_x = len(y_m) // 2, len(x_m) // 2
     force = problem.load_n(pressure)
     pressure_x_moment = _integral(pressure * x_m[None, :], x_m, y_m)
-    pressure_y_moment = _integral(pressure * y_m[:, None], x_m, y_m)
+    pressure_y_first_moment = _integral(pressure * y_m[:, None], x_m, y_m)
+    contact_moment_x = -pressure_y_first_moment
     pressure_film = pressure * film
     pressure_film_load = _integral(pressure_film, x_m, y_m)
     outer_loads = {}
@@ -534,8 +535,10 @@ def finite_roller_metrics(
     cavitated[0], cavitated[-1], cavitated[:, 0], cavitated[:, -1] = False, False, False, False
     cavitation_indices = np.argwhere(cavitated)
     mass_outward = audit["mass"]["outward_mass_flow_kg_s"]
-    axial_net = float(mass_outward[2] + mass_outward[3])
-    axial_scale = max(abs(mass_outward[2]) + abs(mass_outward[3]), 1e-300)
+    axial_left, axial_right = float(mass_outward[2]), float(mass_outward[3])
+    axial_net = axial_left + axial_right
+    axial_scale = max(abs(axial_left) + abs(axial_right), 1e-300)
+    axial_imbalance = abs(axial_left - axial_right) / axial_scale
     qx, qy = donor_fluxes(
         x_m, y_m, film, pressure, theta, case.fluid(), case.entrainment_m_s
     )
@@ -564,14 +567,20 @@ def finite_roller_metrics(
         "p_max_axial_half_height_width_cells": axial_peak_width_cells,
         "pressure_centroid_m": [
             float(pressure_x_moment / force),
-            float(pressure_y_moment / force),
+            float(pressure_y_first_moment / force),
         ],
         "pressure_weighted_film_centroid_m": [
             _integral(pressure_film * x_m[None, :], x_m, y_m) / pressure_film_load,
             _integral(pressure_film * y_m[:, None], x_m, y_m) / pressure_film_load,
         ],
-        "moment_about_x_n_m": pressure_y_moment,
+        "moment_about_x_n_m": contact_moment_x,
+        "physical_contact_moment_x_n_m": contact_moment_x,
+        "pressure_y_first_moment_n_m": pressure_y_first_moment,
         "moment_about_y_n_m": pressure_x_moment,
+        "h0_m": probe.offset_m(state),
+        "axial_tilt_rad": probe.angle_rad(state),
+        "moment_target_n_m": probe.moment_target_n_m,
+        "moment_residual_n_m": audit["moment_residual_n_m"],
         "pressurized_support_threshold_pa": pressure_threshold,
         "pressurized_support_axial_clearance_m": float(axial_clearance),
         "pressurized_support_axial_clearance_cells": float(axial_clearance / problem.dy_m),
@@ -631,7 +640,7 @@ def finite_roller_metrics(
             max(pressure[0].max(), pressure[-1].max(), pressure[:, 0].max(), pressure[:, -1].max())
         ),
         "axial_boundary_net_mass_flow_kg_s": axial_net,
-        "relative_axial_boundary_flow_imbalance": abs(axial_net) / axial_scale,
+        "relative_axial_boundary_flow_imbalance": axial_imbalance,
         "audit": audit,
     }
     profiles = {
@@ -659,8 +668,14 @@ def verify_finite_roller_cuda_parity(case, state, probe=None) -> dict:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for finite-roller production parity checks")
     backend = make_backend("torch", "cuda")
-    evaluator = DeviceDonorJFO(case, backend, transport_fraction=0.0)
     probe = LimitedLoadProbe(case, transport_fraction=0.0) if probe is None else probe
+    evaluator = DeviceDonorJFO(
+        case,
+        backend,
+        transport_fraction=probe.transport_fraction,
+        moment_target_n_m=probe.moment_target_n_m,
+        angle_scale_rad=probe.angle_scale_rad,
+    )
     cpu_residual = probe.residual(state)
     state_device = as_float64(state, backend)
     torch.cuda.synchronize()
@@ -670,8 +685,13 @@ def verify_finite_roller_cuda_parity(case, state, probe=None) -> dict:
     )
     torch.cuda.synchronize()
     pressure_cpu, theta_cpu, film_cpu = probe.fields(state)
-    deformation_cpu = film_cpu - state[-1] * probe.system.problem.film_scale_m
-    deformation_cpu -= probe.system.problem.rigid_geometry_m
+    deformation_cpu = film_cpu - probe.offset_m(state)
+    geometry = (
+        probe.rigid_geometry_m(state)
+        if probe.moment_control
+        else probe.system.problem.rigid_geometry_m
+    )
+    deformation_cpu -= geometry
     residual_difference = float(
         torch.max(
             torch.abs(residual_device - as_float64(cpu_residual, backend))

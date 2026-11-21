@@ -4,6 +4,10 @@ import numpy as np
 import pytest
 
 from ehl_solver.cavitating_newton import CavitatingLinearError, solve_cavitating_correction
+from ehl_solver.finite_roller_ehl import (
+    FiniteRollerEHLCase,
+    finite_roller_hertz_seed,
+)
 from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
 from ehl_solver.limited_transport import freeze_limited_flux_jvp
 from ehl_solver.prototype import PointContactCase
@@ -217,3 +221,52 @@ def test_exhausted_krylov_retains_independently_measured_failed_residuals():
     assert data["linear_true_residuals"][-1] > 5e-9
     assert data["krylov_histories"]
     assert data["linear_iterations"] > 0
+
+
+def test_moment_control_uses_physical_sign_dynamic_tilt_and_two_exact_borders():
+    case = FiniteRollerEHLCase(nx=9, ny=13)
+    seed = finite_roller_hertz_seed(case)
+    probe = LimitedLoadProbe(
+        case, transport_fraction=0.0, moment_target_n_m=0.0
+    )
+    state = np.r_[seed, 0.0]
+    pressure, _, _ = probe.fields(state)
+    assert probe.physical_contact_moment_x_n_m(pressure) == pytest.approx(
+        0.0, abs=1e-14
+    )
+
+    angle_direction = np.zeros(probe.size)
+    angle_direction[-1] = 1.0
+    dh, _, _ = probe.directions(state, angle_direction)
+    np.testing.assert_allclose(
+        dh,
+        np.broadcast_to(
+            case.problem().y_m[:, None] * probe.angle_scale_rad, dh.shape
+        ),
+        rtol=2e-14,
+        atol=1e-18,
+    )
+
+    shifted_pressure = pressure * (
+        1.0 + 0.2 * case.problem().y_m[:, None] / case.half_length_m
+    )
+    assert probe.physical_contact_moment_x_n_m(shifted_pressure) < 0.0
+
+    guide = np.zeros(probe.size)
+    model = LimitedLoadLinearization(
+        case,
+        state,
+        guide,
+        transport_fraction=0.0,
+        moment_target_n_m=0.0,
+    )
+    matrix = model.frozen_matrix(state)
+    direction = np.random.default_rng(2029).normal(size=probe.size)
+    direction *= 1e-3
+    np.testing.assert_allclose(
+        matrix[-2:] @ direction,
+        model.jacobian_vector(state, direction)[-2:],
+        rtol=2e-14,
+        atol=1e-15,
+    )
+    assert matrix.shape == (2 * probe.n + 2, 2 * probe.n + 2)

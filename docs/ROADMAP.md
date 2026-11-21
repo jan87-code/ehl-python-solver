@@ -92,13 +92,14 @@ updated finite-roller and geometry tests passed (`28 passed`). Unfiltered
 `ruff check .` reports the unrelated untracked `.kilo` E501 described below;
 `ruff check . --exclude .kilo` passes.
 
-**Remaining beyond one bounded finite-roller EHL starter:** independently
+**Remaining beyond the qualified finite-roller half-space cases:** independently
 assess finite-body end compliance and realistic end geometry before making
 design-grade edge-load claims; establish grid/edge convergence for any local
 stress target; and obtain relevant experimental pressure/film data for
-physical validation. Prescribed tilt does not solve moment equilibrium.
-Do not infer transient, roughness, thermal or moment-controlled behavior
-from the dry-contact study.
+physical validation. Prescribed-tilt roots alone do not solve moment
+equilibrium; the later contact-moment milestone qualifies only its three
+discrete targets and not the intermediate branch. The dry-contact study does
+not validate transient, roughness, thermal or EHL behavior.
 
 ### Matched roller end-loading decision
 
@@ -135,12 +136,11 @@ existing PyTorch warnings. The final focused finite-roller tests passed
 (`19 passed`). Unfiltered `ruff check .` reports the unrelated pre-existing
 untracked `.kilo` E501; `ruff check . --exclude .kilo` passes.
 
-Next, investigate a physically justified smooth end profile/edge treatment
-that moves the contact patch away from the finite axial boundary, then
-repeat these matched-load and resolution audits; if boundary contact is
-unavoidable, compare with finite-body/FE compliance before relying on
-half-space end loads. Continue to defer finite-roller EHL, moment equilibrium,
-transience, roughness and thermal modeling.
+At that dry-contact stage, finite-roller EHL and moment equilibrium remained
+deferred. Subsequent prescribed-tilt and contact-moment milestones are
+recorded below; transient, roughness and thermal modeling remain deferred.
+Before relying on half-space end loads for physical claims, compare with
+finite-body/FE compliance.
 
 ### Bounded relief/tilt follow-up
 
@@ -249,7 +249,7 @@ accepted, CPU-audited and CUDA-parity-passing roots through `+0.0005 rad`;
 the mirrored `-0.0005 rad` CPU audit confirms pressure/film/theta symmetry
 and moment sign reversal. At 769x513, the positive case has
 `h_c=476.465 nm`, `h_min=328.466 nm` 89.844 um inside the loaded end,
-`p_max=845.517 MPa`, `Mx=-0.0027441 N m`, zero outermost-row load and
+`p_max=845.517 MPa`, physical `Mx=+0.0027441 N m`, zero outermost-row load and
 0.02220/0.00947 N in the negative/positive outer 2% bands. Its main
 `1% p_max` pressure support clears the loaded/unloaded ends by 5/15 axial
 cells, although a low-threshold sub-1% pressure tail is one cell from the
@@ -305,16 +305,33 @@ claimed. Full reports and fields are in the ignored
 [`../results/finite_roller_ehl_axial_20261120_184013/`](../results/finite_roller_ehl_axial_20261120_184013/)
 output.
 
-**Decision:** freeze `+0.0005 rad`, 769x577 as the current
-refinement-qualified prescribed-tilt regression case for the half-space
-model. Because the detached support, film, centroid, moment and end loads
-are insensitive to axial refinement, the next bounded numerical milestone
-should evaluate simultaneous force-and-moment closure (moment-controlled
-tilt). Do not increase prescribed tilt in the same milestone. A finite-body
-or FE-derived compliance comparison remains important before physical
-validation or stronger claims; this axial result does not validate
-end-face compliance, experiments, or the unresolved rolling-direction
-pressure spike. No moment-control or finite-body capability was implemented.
+**Completed next milestone:** simultaneous force-and-contact-moment closure
+at 769x577, using the existing donor/JFO model and hybrid CUDA/CPU backend.
+The zero target and the positive/negative moments from the prescribed
+`+/-0.0005 rad` roots all have accepted independent CPU-audited roots. The
+positive root reproduces the prescribed-tilt baseline; the mirrored roots
+reverse pressure centroid and physical contact moment, with scalar film
+metrics unchanged. The exact moment scaling, acceptance tolerances, physical
+metrics, parity and performance evidence are in
+[`CONTACT_GEOMETRY.md`](CONTACT_GEOMETRY.md).
+
+**Qualification boundary:** moment-controlled equilibrium is qualified for
+those three discrete targets only. The optional 50%-moment target was not
+accepted: a feasible endpoint-field blend closed force and moment initially,
+but relative local mass balance remained about `9.5e-2` after four accepted
+corrections and complementarity worsened. Direct and one bounded target
+continuation also stagnated. Do not treat endpoint roots as evidence of a
+continuous, smoothly traversable moment branch, and do not implement
+external angular stiffness on the assumption that the intermediate branch
+is solved. The unresolved rolling-direction pressure spike remains separate
+from this gate.
+
+**Next justified physical comparison:** prioritize a finite-body/FE compliance
+comparison at the frozen prescribed tilts. Before adding an
+alpha-dependent external moment law, resolve the intermediate-target
+active-set/line-search stagnation and obtain independently supported
+structural stiffness and rest-angle inputs. No finite-body model or external
+structural coupling was implemented in this milestone.
 
 The distinct dry classical line-contact mode is implemented and verified: it
 uses a 1-D cell-integrated logarithmic plane-strain operator, explicit N/m

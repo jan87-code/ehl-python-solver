@@ -1,8 +1,9 @@
 """Experimental limited-flux residual/linearization; no nonlinear EHL solver.
 
 Public case inputs are SI; arrays (ny,nx), +x entrainment, CPU float64.
-Unknowns P=p/pH,D=1-theta,h0/Href in C-order interiors. Mass residual uses
-Lref/(100*qref); complementarity is min(P,D), force is relative SI load.
+Unknowns P=p/pH,D=1-theta,h0/Href in C-order interiors; moment mode adds
+alpha/(5e-4 rad). Mass residual uses Lref/(100*qref), complementarity is
+min(P,D), force is relative SI load, and physical Mx is scaled by F*L/2.
 The true action includes full-source elasticity; sparse preconditioning
 freezes film or keeps only cell-self compliance. No default solver changes.
 """
@@ -21,11 +22,25 @@ from ehl_solver.limited_transport import (
 )
 from ehl_solver.transport_candidate import donor_flux_direction, donor_fluxes
 
+MOMENT_ANGLE_SCALE_RAD = 5e-4
+MOMENT_MAX_ABS_TILT_RAD = 5e-4
+MOMENT_MAX_ANGLE_STEP_RAD = 5e-5
+MOMENT_ABSOLUTE_TOLERANCE_N_M = 2e-8
+MOMENT_NORMALIZED_TOLERANCE = 2e-7
+
 
 class LimitedLoadProbe:
     """Read-only mathematical residual and derivative adapter; not a solver."""
 
-    def __init__(self, case, *, transport_fraction=1.0, workspace_limit_bytes=2**30):
+    def __init__(
+        self,
+        case,
+        *,
+        transport_fraction=1.0,
+        workspace_limit_bytes=2**30,
+        moment_target_n_m=None,
+        angle_scale_rad=MOMENT_ANGLE_SCALE_RAD,
+    ):
         if (
             isinstance(transport_fraction, bool)
             or not np.isfinite(transport_fraction)
@@ -34,18 +49,86 @@ class LimitedLoadProbe:
             raise ValueError("transport_fraction must be finite in [0,1]")
         if type(workspace_limit_bytes) is not int or workspace_limit_bytes < 1:
             raise ValueError("workspace_limit_bytes must be a positive integer")
+        if moment_target_n_m is not None and (
+            not hasattr(case, "axial_tilt_rad")
+            or not hasattr(case, "half_length_m")
+            or isinstance(moment_target_n_m, bool)
+            or not isinstance(moment_target_n_m, (int, float, np.number))
+            or not np.isfinite(moment_target_n_m)
+            or isinstance(angle_scale_rad, bool)
+            or not isinstance(angle_scale_rad, (int, float, np.number))
+            or not np.isfinite(angle_scale_rad)
+            or angle_scale_rad <= 0
+        ):
+            raise ValueError(
+                "moment control requires a finite roller and finite moment/angle scale"
+            )
         self.transport_fraction = float(transport_fraction)
         self.system = case.system(workspace_limit_bytes=workspace_limit_bytes)
         self.case = case
         self.n = self.system.n
-        self.size = self.system.size
+        self.moment_target_n_m = (
+            None if moment_target_n_m is None else float(moment_target_n_m)
+        )
+        self.angle_scale_rad = float(angle_scale_rad)
+        self.moment_scale_n_m = (
+            None if moment_target_n_m is None else case.load_n * case.half_length_m
+        )
+        self.moment_control = moment_target_n_m is not None
+        self.size = self.system.size + int(self.moment_control)
+        self._geometry_reference_m = self.system.problem.rigid_geometry_m.copy()
+        self._geometry_zero_tilt_m = None
+        self._y_geometry_m = None
+        if self.moment_control:
+            problem = self.system.problem
+            self._y_geometry_m = np.broadcast_to(
+                problem.y_m[:, None], problem.shape
+            )
+            self._geometry_zero_tilt_m = (
+                self._geometry_reference_m
+                - self._y_geometry_m * np.tan(case.axial_tilt_rad)
+            )
+
+    def base_state(self, state):
+        state = np.asarray(state, dtype=np.float64)
+        if state.shape != (self.size,) or not np.all(np.isfinite(state)):
+            raise ValueError("finite full pressure/content/offset/angle state required")
+        return state[:-1] if self.moment_control else state
+
+    def angle_rad(self, state):
+        if not self.moment_control:
+            return float(self.case.axial_tilt_rad)
+        state = np.asarray(state, dtype=np.float64)
+        self.base_state(state)
+        return float(state[-1] * self.angle_scale_rad)
+
+    def offset_m(self, state):
+        return float(self.base_state(state)[-1] * self.system.problem.film_scale_m)
+
+    def rigid_geometry_m(self, state):
+        if not self.moment_control:
+            return self._geometry_reference_m
+        angle = self.angle_rad(state)
+        if not np.isfinite(angle) or abs(angle) > MOMENT_MAX_ABS_TILT_RAD:
+            raise ValueError("moment-controlled tilt exceeds the qualified +/-0.5 mrad bound")
+        return self._geometry_zero_tilt_m + self._y_geometry_m * np.tan(angle)
 
     def fields(self, state):
-        self.system.sync(state)
-        p, t, h, _, _ = self.system.base.unpack(state[:-1])
+        base_state = self.base_state(state)
+        self.system.problem.rigid_geometry_m[:] = self.rigid_geometry_m(state)
+        self.system.sync(base_state)
+        p, t, h, _, _ = self.system.base.unpack(base_state[:-1])
         return p * self.system.problem.pressure_scale_pa, t, h
 
     def directions(self, state, direction):
+        state = np.asarray(state, dtype=np.float64)
+        direction = np.asarray(direction, dtype=np.float64)
+        if (
+            state.shape != (self.size,)
+            or direction.shape != (self.size,)
+            or not np.all(np.isfinite(direction))
+        ):
+            raise ValueError("finite full bordered state and direction required")
         problem = self.system.problem
         dp, dt = np.zeros(problem.shape), np.zeros(problem.shape)
         dp[1:-1, 1:-1] = (
@@ -55,7 +138,26 @@ class LimitedLoadProbe:
         # Differentiate the same copied-content closure used by unpack().
         dt[1:-1, -1] = dt[1:-1, -2]
         dt[0], dt[-1] = dt[1], dt[-2]
-        return self.system.film_direction(state, direction), dp, dt
+        base_state = self.base_state(state)
+        base_direction = direction[:-1] if self.moment_control else direction
+        dh = self.system.film_direction(base_state, base_direction)
+        if self.moment_control:
+            angle = self.angle_rad(state)
+            dh = dh + (
+                self._y_geometry_m
+                * (1.0 + np.tan(angle) ** 2)
+                * self.angle_scale_rad
+                * direction[-1]
+            )
+        return dh, dp, dt
+
+    def physical_contact_moment_x_n_m(self, pressure_pa):
+        problem = self.system.problem
+        return float(
+            -np.sum(pressure_pa * problem.y_m[:, None])
+            * problem.dx_m
+            * problem.dy_m
+        )
 
     def mass(self, flux):
         base, problem = self.system.base, self.system.problem
@@ -74,11 +176,20 @@ class LimitedLoadProbe:
                 problem.x_m, problem.y_m, h, p, t, self.case.fluid(), self.case.entrainment_m_s
             )
             flux = (donor[0] + self.transport_fraction * (flux[0] - donor[0]), donor[1])
-        return np.r_[
+        residual = np.r_[
             self.mass(flux),
             np.minimum(state[: self.n], state[self.n : 2 * self.n]),
             (problem.load_n(p) - self.case.load_n) / self.case.load_n,
         ]
+        if self.moment_control:
+            residual = np.r_[
+                residual,
+                (
+                    self.physical_contact_moment_x_n_m(p) - self.moment_target_n_m
+                )
+                / self.moment_scale_n_m,
+            ]
+        return residual
 
     def derivative(self, state, direction, *, legacy=False):
         p, t, h = self.fields(state)
@@ -116,7 +227,11 @@ class LimitedLoadProbe:
         complement = np.where(
             pressure < deficit, vp, np.where(deficit < pressure, vd, np.minimum(vp, vd))
         )
-        return np.r_[self.mass(flux), complement, problem.load_n(dp) / self.case.load_n]
+        result = np.r_[self.mass(flux), complement, problem.load_n(dp) / self.case.load_n]
+        if self.moment_control:
+            moment_direction = self.physical_contact_moment_x_n_m(dp)
+            result = np.r_[result, moment_direction / self.moment_scale_n_m]
+        return result
 
     def freeze(self, state, guide, *, branches=None):
         state = state.copy()
@@ -166,22 +281,42 @@ class LimitedLoadProbe:
                 flux = (donor[0] + self.transport_fraction * (limited[0] - donor[0]), donor[1])
             else:
                 flux = flux_action(dh, dp, dt)
-            return np.r_[
+            result = np.r_[
                 self.mass(flux),
                 complement,
                 problem.load_n(dp) / self.case.load_n,
             ]
+            if self.moment_control:
+                result = np.r_[
+                    result,
+                    self.physical_contact_moment_x_n_m(dp) / self.moment_scale_n_m,
+                ]
+            return result
 
         return action
 
     def feasible(self, state):
         try:
             p, t, h = self.fields(state)
-            return bool(
+            feasible = bool(
                 h.min() > self.system.problem.film_floor_m
                 and p.min() >= -1e-10 * self.system.problem.pressure_scale_pa
                 and t.min() >= -1e-10
                 and t.max() <= 1 + 1e-10
+            )
+            if not feasible or not self.moment_control:
+                return feasible
+            if abs(self.angle_rad(state)) > MOMENT_MAX_ABS_TILT_RAD:
+                return False
+            if not np.isfinite(p).all() or p.max() <= 0.0:
+                return False
+            support_rows = np.flatnonzero(np.any(p > 0.01 * p.max(), axis=1))
+            minimum_row = int(np.unravel_index(np.argmin(h), h.shape)[0])
+            return bool(
+                support_rows.size > 0
+                and support_rows[0] > 1
+                and support_rows[-1] < p.shape[0] - 2
+                and 1 < minimum_row < p.shape[0] - 2
             )
         except ValueError:
             return False
@@ -295,7 +430,8 @@ class LimitedLoadLinearization:
     The fixed guide defines both analytic matrix-free products and the
     sparse preconditioner. Recreate the model to change state or guide.
     Material preconditioning freezes film; local preconditioning adds only
-    cell-self elastic compliance. Offset and load borders remain exact.
+    cell-self elastic compliance. Offset/load and optional angle/moment
+    borders remain exact.
     """
 
     def __init__(
@@ -309,6 +445,8 @@ class LimitedLoadLinearization:
         transport_fraction=1.0,
         reference_state=None,
         workspace_limit_bytes=2**30,
+        moment_target_n_m=None,
+        angle_scale_rad=MOMENT_ANGLE_SCALE_RAD,
     ):
         if preconditioner not in ("material", "local"):
             raise ValueError("preconditioner must be material or local")
@@ -316,6 +454,8 @@ class LimitedLoadLinearization:
             case,
             transport_fraction=transport_fraction,
             workspace_limit_bytes=workspace_limit_bytes,
+            moment_target_n_m=moment_target_n_m,
+            angle_scale_rad=angle_scale_rad,
         )
         self.problem = self.probe.system.problem
         self.n, self.size = self.probe.n, self.probe.size
@@ -475,15 +615,37 @@ class LimitedLoadLinearization:
             ],
             format="csc",
         )
-        e = np.zeros(self.size)
-        e[-1] = 1
-        column = self.jacobian_vector(self.state, e)[:-1]
-        load = np.r_[
-            np.full(self.n, problem.pressure_scale_pa * problem.dx_m * problem.dy_m / case.load_n),
-            np.zeros(self.n),
-        ]
+        border_size = self.size - 2 * self.n
+        columns = np.empty((2 * self.n, border_size), dtype=np.float64)
+        for column_index in range(border_size):
+            direction = np.zeros(self.size)
+            direction[2 * self.n + column_index] = 1.0
+            columns[:, column_index] = self.jacobian_vector(
+                self.state, direction
+            )[: 2 * self.n]
+        rows = np.zeros((border_size, self.size), dtype=np.float64)
+        rows[0, : self.n] = (
+            problem.pressure_scale_pa * problem.dx_m * problem.dy_m / case.load_n
+        )
+        if self.probe.moment_control:
+            moment_weights = (
+                -problem.pressure_scale_pa
+                * problem.y_m[1:-1, None]
+                * problem.dx_m
+                * problem.dy_m
+                / self.probe.moment_scale_n_m
+            )
+            rows[1, : self.n] = np.broadcast_to(
+                moment_weights, (problem.y_m.size - 2, problem.x_m.size - 2)
+            ).ravel()
         self._matrix = bmat(
-            [[block, csr_matrix(column[:, None])], [csr_matrix(load[None]), csr_matrix((1, 1))]],
+            [
+                [block, csr_matrix(columns)],
+                [
+                    csr_matrix(rows[:, : 2 * self.n]),
+                    csr_matrix(rows[:, 2 * self.n :]),
+                ],
+            ],
             format="csc",
         )
         return self._matrix.copy()

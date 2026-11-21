@@ -13,6 +13,32 @@ from ehl_solver.device_jfo import DeviceDonorJFO
 from ehl_solver.device_krylov import device_gmres
 
 
+def _force_constrained_moment_sensitivity(
+    schur, moment_scale_n_m, angle_scale_rad, tolerance
+):
+    if schur is None or np.shape(schur) != (2, 2):
+        return None, None, None
+    schur = np.asarray(schur, dtype=np.float64)
+    if (
+        not np.all(np.isfinite(schur))
+        or not math.isfinite(moment_scale_n_m)
+        or moment_scale_n_m <= 0
+        or not math.isfinite(angle_scale_rad)
+        or angle_scale_rad <= 0
+    ):
+        return None, None, True
+    force_row_scale = max(float(np.linalg.norm(schur[0])), np.finfo(np.float64).tiny)
+    if abs(schur[0, 0]) <= tolerance * force_row_scale:
+        return None, None, True
+    normalized = float(
+        schur[1, 1] - schur[1, 0] * schur[0, 1] / schur[0, 0]
+    )
+    physical = normalized * moment_scale_n_m / angle_scale_rad
+    if not math.isfinite(physical):
+        return None, normalized, True
+    return physical, normalized, abs(normalized) <= tolerance
+
+
 class CPUBlockSchurPreconditioner:
     """Apply the existing frozen local CPU preconditioner to a device vector."""
 
@@ -26,11 +52,18 @@ class CPUBlockSchurPreconditioner:
         started = time.perf_counter()
         self.n = n
         self.device = torch.empty((), device=device).device
-        self.size = 2 * n + 1
+        self.field_size = 2 * n
+        self.border_size = matrix.shape[0] - self.field_size
+        if self.border_size not in (1, 2) or matrix.shape[1] != matrix.shape[0]:
+            raise ValueError("bordered preconditioner requires one or two scalar borders")
+        self.size = matrix.shape[0]
         self.field_factor = None
         self.full_factor = None
         self.used_bordered_fallback = False
         self.schur_indicator = None
+        self.border_response = None
+        self.border_rows = None
+        self.border_schur = None
         self.field_setup_failures = []
         self.application_count = 0
         self.device_to_host_seconds = 0.0
@@ -43,6 +76,8 @@ class CPUBlockSchurPreconditioner:
         self.setup_seconds = 0.0
         self.superlu_setup_seconds = 0.0
         self.superlu_solve_seconds = 0.0
+        self.border_setup_seconds = 0.0
+        self.border_application_seconds = 0.0
         self._torch = torch
         self.progress_callback = progress_callback
         self._report_progress(
@@ -78,28 +113,56 @@ class CPUBlockSchurPreconditioner:
                     superlu_factorization_seconds=self.superlu_setup_seconds,
                 )
 
-        field_matrix = matrix[:2 * n, :2 * n].tocsc()
+        field_matrix = matrix[: self.field_size, : self.field_size].tocsc()
         try:
+            border_started = time.perf_counter()
             self.field_factor = factorize(field_matrix)
-            load_column = matrix[:2 * n, -1].toarray().ravel()
-            self.load_row = matrix[-1, :2 * n].toarray().ravel()
-            self.load_response = self._solve_factor(
-                self.field_factor, load_column, setup_started=started
+            border_columns = matrix[
+                : self.field_size, self.field_size :
+            ].toarray()
+            self.border_rows = matrix[
+                self.field_size :, : self.field_size
+            ].toarray()
+            border_block = matrix[
+                self.field_size :, self.field_size :
+            ].toarray()
+            self.border_response = np.column_stack(
+                [
+                    self._solve_factor(
+                        self.field_factor,
+                        border_columns[:, index],
+                        setup_started=started,
+                    )
+                    for index in range(self.border_size)
+                ]
             )
-            denominator = -float(self.load_row @ self.load_response)
-            scale = float(
-                np.linalg.norm(self.load_row) * np.linalg.norm(self.load_response)
+            self.border_schur = (
+                border_block - self.border_rows @ self.border_response
             )
-            self.schur_indicator = abs(denominator) / max(
-                scale, np.finfo(np.float64).tiny
+            row_scale = np.linalg.norm(self.border_rows, axis=1)
+            column_scale = np.linalg.norm(self.border_response, axis=0)
+            scaled_schur = self.border_schur / np.maximum(
+                row_scale[:, None] * column_scale[None, :],
+                np.finfo(np.float64).tiny,
+            )
+            singular_values = np.linalg.svd(scaled_schur, compute_uv=False)
+            self.schur_indicator = float(
+                singular_values[-1]
+                / max(singular_values[0], np.finfo(np.float64).tiny)
             )
             if (
-                not math.isfinite(denominator)
+                not np.all(np.isfinite(self.border_schur))
+                or not math.isfinite(self.schur_indicator)
                 or self.schur_indicator <= schur_tolerance
             ):
-                raise ArithmeticError("CPU bordered Schur complement is unsafe")
-            self.load_denominator = denominator
-        except (RuntimeError, ArithmeticError, ValueError) as exc:
+                raise ArithmeticError("CPU force/moment Schur complement is unsafe")
+            self.load_row = self.border_rows[0].copy()
+            self.load_response = self.border_response[:, 0].copy()
+            self.load_denominator = float(self.border_schur[0, 0])
+            self.border_setup_seconds = time.perf_counter() - border_started
+        except (RuntimeError, ArithmeticError, ValueError, np.linalg.LinAlgError) as exc:
+            if "border_started" in locals():
+                self.border_setup_seconds = time.perf_counter() - border_started
             self.field_setup_failures.append(str(exc))
             self.field_factor = None
             self.full_factor = factorize(matrix)
@@ -107,6 +170,9 @@ class CPUBlockSchurPreconditioner:
             self.load_row = None
             self.load_response = None
             self.load_denominator = None
+            self.border_response = None
+            self.border_rows = None
+            self.border_schur = None
         self.setup_seconds = time.perf_counter() - started
         self._report_progress(
             "preconditioner_setup_complete",
@@ -192,13 +258,18 @@ class CPUBlockSchurPreconditioner:
             host_solution = self._solve_factor(self.full_factor, host_rhs)
         else:
             field_solution = self._solve_factor(
-                self.field_factor, host_rhs[:2 * self.n]
+                self.field_factor, host_rhs[: self.field_size]
             )
-            h0_direction = (
-                host_rhs[-1] - self.load_row @ field_solution
-            ) / self.load_denominator
-            field_solution -= self.load_response * h0_direction
-            host_solution = np.r_[field_solution, h0_direction]
+            border_started = time.perf_counter()
+            border_solution = np.linalg.solve(
+                self.border_schur,
+                host_rhs[self.field_size :] - self.border_rows @ field_solution,
+            )
+            field_solution -= self.border_response @ border_solution
+            host_solution = np.r_[field_solution, border_solution]
+            self.border_application_seconds += (
+                time.perf_counter() - border_started
+            )
         self.cpu_application_seconds += time.perf_counter() - cpu_started
         if not np.all(np.isfinite(host_solution)):
             raise FloatingPointError("CPU preconditioner returned nonfinite values")
@@ -286,6 +357,22 @@ class HybridJFOCorrectionSolver:
 
         state = np.asarray(state, dtype=np.float64)
         model._check_state(state)
+        moment_target = model.probe.moment_target_n_m
+        if (
+            self.evaluator.moment_target_n_m != moment_target
+            or self.evaluator.angle_scale_rad != model.probe.angle_scale_rad
+        ):
+            initialization_started = time.perf_counter()
+            self.evaluator = DeviceDonorJFO(
+                self.case,
+                self.backend,
+                memory_limit_bytes=self.workspace_limit_bytes,
+                moment_target_n_m=moment_target,
+                angle_scale_rad=model.probe.angle_scale_rad,
+            )
+            self.initialization_seconds += (
+                time.perf_counter() - initialization_started
+            )
         if (
             model.probe.case != self.case
             or model.active_full is None
@@ -474,7 +561,25 @@ class HybridJFOCorrectionSolver:
             schur_tolerance=schur_tolerance,
             progress_callback=report_progress,
         )
-        report_progress("preconditioner_ready", emit=True)
+        (
+            moment_sensitivity,
+            normalized_moment_sensitivity,
+            poor_angular_sensitivity,
+        ) = _force_constrained_moment_sensitivity(
+            preconditioner.border_schur,
+            model.probe.moment_scale_n_m,
+            model.probe.angle_scale_rad,
+            schur_tolerance,
+        )
+        report_progress(
+            "preconditioner_ready",
+            emit=True,
+            force_constrained_moment_sensitivity_n_m_per_rad=moment_sensitivity,
+            normalized_force_constrained_moment_sensitivity=(
+                normalized_moment_sensitivity
+            ),
+            poor_angular_sensitivity=poor_angular_sensitivity,
+        )
 
         def timed_operator(vector):
             nonlocal operator_seconds, operator_applications
@@ -557,6 +662,18 @@ class HybridJFOCorrectionSolver:
             "cpu_preconditioner_setup_seconds": preconditioner.setup_seconds,
             "cpu_superlu_setup_seconds": preconditioner.superlu_setup_seconds,
             "cpu_superlu_solve_seconds": preconditioner.superlu_solve_seconds,
+            "force_moment_border_setup_seconds": preconditioner.border_setup_seconds,
+            "force_moment_border_application_seconds": (
+                preconditioner.border_application_seconds
+            ),
+            "force_moment_schur_indicator": preconditioner.schur_indicator,
+            "force_constrained_moment_sensitivity_n_m_per_rad": (
+                moment_sensitivity
+            ),
+            "normalized_force_constrained_moment_sensitivity": (
+                normalized_moment_sensitivity
+            ),
+            "poor_angular_sensitivity": poor_angular_sensitivity,
             "cpu_preconditioner_applications": preconditioner.application_count,
             "cpu_preconditioner_apply_seconds":
                 preconditioner.cpu_application_seconds,

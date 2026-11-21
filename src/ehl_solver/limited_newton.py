@@ -1,7 +1,8 @@
 """Bounded experimental limited-capacity JFO/load Newton, CPU float64.
 
 Case quantities are SI; state is interior P=p/pH,D=1-theta,h0/Href in
-C order (ny,nx), +x mean entrainment. No projections or relaxed root gates.
+C order (ny,nx), +x mean entrainment; optional moment mode appends the
+scaled angle. No projections or relaxed root gates.
 A numerically accepted finite-grid root is not mesh/physical validation.
 """
 
@@ -14,7 +15,13 @@ from scipy.sparse.csgraph import maximum_bipartite_matching
 
 from ehl_solver.cavitating_newton import CavitatingLinearError, solve_cavitating_correction
 from ehl_solver.limited_audit import audit_limited_state
-from ehl_solver.limited_system import LimitedLoadLinearization, LimitedLoadProbe
+from ehl_solver.limited_system import (
+    MOMENT_ANGLE_SCALE_RAD,
+    MOMENT_MAX_ABS_TILT_RAD,
+    MOMENT_MAX_ANGLE_STEP_RAD,
+    LimitedLoadLinearization,
+    LimitedLoadProbe,
+)
 from ehl_solver.property_load_newton import _content_bound_blockers
 from ehl_solver.prototype import hertz_guess
 
@@ -60,6 +67,20 @@ def fraction_to_boundary(probe, state, direction):
     closing = dh < -gap
     if np.any(closing):
         bound = min(bound, 0.99 * float(np.min(gap[closing] / -dh[closing])))
+    if probe.moment_control:
+        angle = probe.angle_rad(state)
+        angle_change = direction[-1] * probe.angle_scale_rad
+        if angle_change != 0.0:
+            bound = min(
+                bound,
+                MOMENT_MAX_ANGLE_STEP_RAD / abs(angle_change),
+                0.99
+                * (
+                    MOMENT_MAX_ABS_TILT_RAD
+                    - np.sign(angle_change) * angle
+                )
+                / abs(angle_change),
+            )
     return max(0.0, bound)
 
 
@@ -75,15 +96,23 @@ def _line_search(probe, state, direction, merit, slope):
         accepted = False
         reason = "pressure/content/film infeasible"
         if alpha > 0 and probe.feasible(trial):
-            r = probe.residual(trial)
-            value = float(r @ r / (2 * probe.size))
-            accepted = bool(
-                np.isfinite(value)
-                and value <= merit + 1e-4 * alpha * slope
-                and value < merit
-                and not np.array_equal(state, trial)
-            )
-            reason = "feasible Armijo candidate" if accepted else "Armijo/no resolved progress"
+            try:
+                r = probe.residual(trial)
+            except (ValueError, FloatingPointError, OverflowError) as exc:
+                reason = f"nonfinite/overflow trial residual: {type(exc).__name__}: {exc}"
+            else:
+                value = float(r @ r / (2 * probe.size))
+                accepted = bool(
+                    np.isfinite(value)
+                    and value <= merit + 1e-4 * alpha * slope
+                    and value < merit
+                    and not np.array_equal(state, trial)
+                )
+                reason = (
+                    "feasible Armijo candidate"
+                    if accepted
+                    else "Armijo/no resolved progress"
+                )
         trials.append(
             dict(
                 stage="full" if k == 0 else "affine_bound_backtrack",
@@ -129,6 +158,8 @@ def solve_limited_load(
     reference_recovery=False,
     local_balance_tolerance=1e-10,
     intermediate_stagnation_check=False,
+    moment_target_n_m=None,
+    angle_scale_rad=MOMENT_ANGLE_SCALE_RAD,
 ):
     """Experimental bounded solve from an explicitly unaccepted ND guess.
 
@@ -165,16 +196,22 @@ def solve_limited_load(
         case,
         transport_fraction=transport_fraction,
         workspace_limit_bytes=workspace_limit_bytes,
+        moment_target_n_m=moment_target_n_m,
+        angle_scale_rad=angle_scale_rad,
     )
     if intermediate_stagnation_check and not 0 < probe.transport_fraction < 1:
         raise ValueError("Stagnation rejection is only valid for intermediate transport stages")
-    state = (
-        hertz_guess(case, probe.system)[0]
-        if initial_state is None
-        else np.array(initial_state, dtype=np.float64, copy=True)
+    initial = hertz_guess(case, probe.system)[0] if initial_state is None else np.array(
+        initial_state, dtype=np.float64, copy=True
     )
+    if probe.moment_control and initial.shape == (probe.system.size,):
+        state = np.r_[initial, case.axial_tilt_rad / probe.angle_scale_rad]
+    else:
+        state = initial
     if state.shape != (probe.size,) or not np.all(np.isfinite(state)):
-        raise ValueError("Finite full P,D,h0/Href initial state required")
+        raise ValueError(
+            "Finite full P,D,h0/Href[/scaled angle] initial state required"
+        )
     history = []
     mass_balance_history = []
     audit = None
@@ -289,10 +326,14 @@ def solve_limited_load(
                 complementarity_residual_linf=float(
                     np.max(abs(residual[probe.n : 2 * probe.n]))
                 ),
-                force_residual=float(residual[-1]),
+                force_residual=float(
+                    residual[-2] if probe.moment_control else residual[-1]
+                ),
                 audit=audit,
                 models=[],
             )
+            if probe.moment_control:
+                record["moment_residual_normalized"] = float(residual[-1])
             history.append(record)
             report_heartbeat(
                 "setup",
@@ -317,6 +358,8 @@ def solve_limited_load(
                     transport_fraction=probe.transport_fraction,
                     reference_state=reference,
                     workspace_limit_bytes=workspace_limit_bytes,
+                    moment_target_n_m=probe.moment_target_n_m,
+                    angle_scale_rad=probe.angle_scale_rad,
                 )
                 key = model.signature()
                 if key in seen:
@@ -400,6 +443,19 @@ def solve_limited_load(
                     field_setup_failures=linear.field_setup_failures,
                     linear_solver_timings=getattr(linear, "timings", None),
                 )
+                if probe.moment_control:
+                    entry.update(
+                        h0_correction_m=float(
+                            direction[-2] * probe.system.problem.film_scale_m
+                        ),
+                        alpha_correction_rad=float(
+                            direction[-1] * probe.angle_scale_rad
+                        ),
+                        field_correction_l2=float(
+                            np.linalg.norm(direction[: 2 * probe.n])
+                        ),
+                        independently_recomputed_linear_true_residual=measured,
+                    )
                 if not np.isfinite(measured) or measured > 5e-9:
                     entry.update(
                         status="linear_rejected",
@@ -478,6 +534,17 @@ def solve_limited_load(
             record["accepted_recovery"] = entry["recovery"]
             record["accepted_alpha"] = candidate["alpha"]
             record["accepted_merit"] = candidate["merit"]
+            if probe.moment_control:
+                record["accepted_h0_correction_m"] = (
+                    candidate["alpha"] * entry["h0_correction_m"]
+                )
+                record["accepted_alpha_correction_rad"] = (
+                    candidate["alpha"] * entry["alpha_correction_rad"]
+                )
+                record["field_correction_l2"] = entry["field_correction_l2"]
+                record["independently_recomputed_linear_true_residual"] = (
+                    entry["independently_recomputed_linear_true_residual"]
+                )
             guide = trial - state
             state = trial
             if diagnostic_observer is not None:
@@ -496,6 +563,14 @@ def solve_limited_load(
                 nonlinear_residual_l2=record["nonlinear_residual_l2"],
                 nonlinear_residual_linf=record["nonlinear_residual_linf"],
                 correction_norm_l2=float(np.linalg.norm(entry["direction"])),
+                force_residual=record["force_residual"],
+                moment_residual_normalized=record.get(
+                    "moment_residual_normalized"
+                ),
+                accepted_h0_correction_m=record.get("accepted_h0_correction_m"),
+                accepted_alpha_correction_rad=record.get(
+                    "accepted_alpha_correction_rad"
+                ),
             )
     except (RuntimeError, ValueError, FloatingPointError) as exc:
         if isinstance(exc, LimitedObserverError):
